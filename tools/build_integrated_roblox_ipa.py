@@ -26,19 +26,16 @@ REMOTE_OFFSETS_URL = "https://masterstrap.org/Data/IOS/IOS_Offsets.hpp"
 
 
 def find_clang_lld():
-    # 1. System path
     clang = shutil_which("clang")
     lld = shutil_which("ld.lld") or shutil_which("lld") or shutil_which("ld64.lld")
     if clang and lld:
         return clang, lld
 
-    # 2. Windows NDK path
     ndk_clang = Path(r"C:\Program Files (x86)\Android\android-sdk\ndk\27.0.12077973\toolchains\llvm\prebuilt\windows-x86_64\bin\clang.exe")
     ndk_lld = Path(r"C:\Program Files (x86)\Android\android-sdk\ndk\27.0.12077973\toolchains\llvm\prebuilt\windows-x86_64\bin\ld.lld.exe")
     if ndk_clang.is_file() and ndk_lld.is_file():
         return str(ndk_clang), str(ndk_lld)
 
-    # 3. macOS / Linux standard
     return "clang", "ld.lld"
 
 
@@ -61,8 +58,8 @@ def fetch_or_load_fflags_map(local_hpp: Path) -> dict:
         except Exception as e:
             print(f"Warning: Remote fetch failed ({e}). Checking local fallbacks...")
             fallback_paths = [
+                ROOT / "output" / "FFlags.hpp",
                 ROOT / "IOS_FFlags.hpp",
-                ROOT / "output" / "IOS_FFlags.hpp",
                 Path(r"C:\Users\Administrator\Desktop\Website\Data\IOS\IOS_FFlags.hpp")
             ]
             for fb in fallback_paths:
@@ -81,7 +78,7 @@ def fetch_or_load_fflags_map(local_hpp: Path) -> dict:
 
 def run_local_dumper(ipa_path: Path, out_dir: Path) -> Path:
     dumper_pkg = ROOT / "roblox_ios_dumper"
-    if not dumper_pkg.is_dir():
+    if not dumper_pkg.is_dir() or not ipa_path or not ipa_path.is_file():
         return None
     print(f"Running automated iOS Dumper on {ipa_path.name}...")
     try:
@@ -191,7 +188,6 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    NULL",
         "};",
         "",
-        "// Direct SetFastFlag & GetFastFlag memory hooks",
         "static bool SetFastFlag(uintptr_t base, const FFlagPatchEntry* entry) {",
         "    uintptr_t target = base + entry->rva;",
         "    uintptr_t page_size = 16384;",
@@ -289,7 +285,6 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        fclose(log_file);",
         "    }",
         "",
-        "    // Re-assert maintenance loop",
         "    for (int loop = 0; loop < 20; loop++) {",
         "        usleep(500000); // 500ms",
         "        if (base != 0) {",
@@ -375,10 +370,44 @@ def insert_load_dylib(macho_bytes: bytes, dylib_path: str) -> bytes:
     return bytes(data)
 
 
-def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir: Path) -> Path:
+def write_full_inspection_report(out_dir: Path, flags: dict, verified_entries: list, miss_offsets: list, ipa_name: str, out_ipa_name: str):
+    out_dir.mkdir(parents=True, exist_ok=True)
+    report_text = f"""=====================================================
+=== Masterstrap Roblox iOS Build & Inspection Log ===
+=====================================================
+Date: {time.strftime('%Y-%m-%d %H:%M:%S')}
+Input IPA: {ipa_name}
+Output IPA: {out_ipa_name}
+
+SUMMARY:
+  - Total Flags Requested: {len(flags)}
+  - Verified Active Flags: {len(verified_entries)}
+  - Miss Offsets Count:    {len(miss_offsets)}
+  - Success Ratio:         {(len(verified_entries)/len(flags)*100) if flags else 0:.1f}%
+
+--- [VERIFIED ACTIVE FASTFLAGS (SetFastFlag)] ---
+"""
+    for n, r, k, v in verified_entries:
+        report_text += f"  [VERIFIED] (SetFastFlag) {n} -> RVA: 0x{r:X} | Type: {'bool' if k==0 else 'int32'} | Value: {v}\n"
+
+    if miss_offsets:
+        report_text += "\n--- [MISS OFFSETS (FLAG NOT IN RVA MAP)] ---\n"
+        for m in miss_offsets:
+            report_text += f"  [MISS_OFFSET] {m}\n"
+
+    report_file = out_dir / "flag_inject_report.log"
+    report_file.write_text(report_text, encoding="utf-8")
+    print(f"Wrote full report -> {report_file}")
+
+    # Also write a runtime log template
+    runtime_log = out_dir / "masterstrap_ios.log"
+    runtime_log.write_text(report_text, encoding="utf-8")
+
+
+def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir: Path):
     out_dir.mkdir(parents=True, exist_ok=True)
     
-    # 1. Try local dumper first
+    # 1. Try local dumper first if valid IPA given
     dumped_header = None
     if input_ipa and input_ipa.is_file():
         dumped_header = run_local_dumper(input_ipa, out_dir)
@@ -387,94 +416,108 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
     target_header = dumped_header if dumped_header else hpp_path
     table = fetch_or_load_fflags_map(target_header)
 
-    flags = json.loads(settings_json.read_text(encoding="utf-8")) if settings_json.is_file() else {}
-    verified_entries, miss_offsets = resolve_flags_with_miss_report(flags, table)
+    flags = {}
+    if settings_json and settings_json.is_file():
+        flags = json.loads(settings_json.read_text(encoding="utf-8"))
+    else:
+        # Default flags set
+        flags = {
+            "FFlagDebugDisplayFPS": True,
+            "FFlagDebugSkyGray": True,
+            "DFIntTaskSchedulerTargetFps": 2000,
+            "DFIntDebugFRMQualityLevelOverride": 1,
+            "DFIntDebugTextureManagerSkipMips": 12,
+            "FIntDebugForceMSAASamples": 1,
+            "DFIntDebugDynamicRenderKiloPixels": 922,
+            "FFlagAutomaticDRS": True,
+            "FFlagAutomaticDRSUseGpuTime": True,
+            "DFFlagEnableMeshPreloading2": True,
+            "DFFlagOptimizePartsInPart": True,
+            "FIntFRMMaxGrassDistance": 0,
+            "FIntFRMMinGrassDistance": 0,
+            "FIntRobloxGuiBlurIntensity": 0,
+            "FFlagDRSBasicManagement": True,
+            "DFIntRenderPostFxBasePixelCount": 0,
+            "DFIntDebugLimitMinTextureResolutionWhenSkipMips": 64,
+            "FFlagAnimationClipMemCacheEnabled": True,
+            "FFlagAnimationLodBoneEnabled": True,
+            "FFlagEnableAndroidPowerManager": True,
+            "FFlagUnifiedMeshCacheSizeComputation": True,
+            "FFlagAdaptiveMeshCacheSizeForAndroid": True,
+            "DFIntCSGLevelOfDetailSwitchingDistanceL12": 0,
+            "DFIntCSGLevelOfDetailSwitchingDistanceL23": 0,
+            "DFIntCSGLevelOfDetailSwitchingDistanceL34": 0,
+            "DFIntDataSenderMaxBandwidthBps": 100000000,
+            "DFIntDataSenderRate": 38760,
+            "DFIntS2PhysicsSenderRate": 38760,
+            "FFlagBatchNetAssetJoinBlobEnable": True,
+            "FFlagFixAndroidBackgroundedSession": True,
+            "FFlagDebugGraphicsPreferOpenGL": False
+        }
 
+    verified_entries, miss_offsets = resolve_flags_with_miss_report(flags, table)
     print(f"Flags Requested: {len(flags)} | Verified Active RVAs: {len(verified_entries)} | Miss Offsets: {len(miss_offsets)}")
 
-    with tempfile.TemporaryDirectory() as td:
-        tpath = Path(td)
-        dylib_path = tpath / "libmasterstrap.dylib"
-        c_src = generate_native_hook_source(verified_entries, miss_offsets, len(flags))
-        compile_dylib(c_src, dylib_path)
-        dylib_bytes = dylib_path.read_bytes()
+    ipa_name = input_ipa.name if (input_ipa and input_ipa.is_file()) else "No_Direct_IPA"
+    out_ipa_name = "Masterstrap-Roblox-Patched.ipa" if (input_ipa and input_ipa.is_file()) else "No_IPA_Packed"
 
-        out_ipa = out_dir / "Masterstrap-Roblox-Patched.ipa"
+    # Always write report log
+    write_full_inspection_report(out_dir, flags, verified_entries, miss_offsets, ipa_name, out_ipa_name)
 
-        with zipfile.ZipFile(input_ipa, "r") as zin:
-            with zipfile.ZipFile(out_ipa, "w", compression=zipfile.ZIP_DEFLATED) as zout:
-                seen_entries = set()
+    if input_ipa and input_ipa.is_file():
+        with tempfile.TemporaryDirectory() as td:
+            tpath = Path(td)
+            dylib_path = tpath / "libmasterstrap.dylib"
+            c_src = generate_native_hook_source(verified_entries, miss_offsets, len(flags))
+            compile_dylib(c_src, dylib_path)
+            dylib_bytes = dylib_path.read_bytes()
 
-                for item in zin.infolist():
-                    name = item.filename
-                    data = zin.read(name)
+            out_ipa = out_dir / "Masterstrap-Roblox-Patched.ipa"
 
-                    if name == "Payload/Roblox.app/Roblox":
-                        data = insert_load_dylib(data, "@executable_path/Frameworks/libmasterstrap.dylib")
-                    elif name == "Payload/Roblox.app/Frameworks/RobloxLib.framework/RobloxLib":
-                        data = insert_load_dylib(data, "@rpath/libmasterstrap.dylib")
+            with zipfile.ZipFile(input_ipa, "r") as zin:
+                with zipfile.ZipFile(out_ipa, "w", compression=zipfile.ZIP_DEFLATED) as zout:
+                    seen_entries = set()
 
-                    zout.writestr(item, data)
-                    seen_entries.add(name)
+                    for item in zin.infolist():
+                        name = item.filename
+                        data = zin.read(name)
 
-                # Embed dylib
-                dylib_entry = "Payload/Roblox.app/Frameworks/libmasterstrap.dylib"
-                zout.writestr(dylib_entry, dylib_bytes)
+                        if name == "Payload/Roblox.app/Roblox":
+                            data = insert_load_dylib(data, "@executable_path/Frameworks/libmasterstrap.dylib")
+                        elif name == "Payload/Roblox.app/Frameworks/RobloxLib.framework/RobloxLib":
+                            data = insert_load_dylib(data, "@rpath/libmasterstrap.dylib")
 
-                # Embed JSON settings
-                json_bytes = settings_json.read_bytes() if settings_json.is_file() else b"{}"
-                for jp in [
-                    "Payload/Roblox.app/ClientSettings/ClientAppSettings.json",
-                    "Payload/Roblox.app/Frameworks/RobloxLib.framework/ClientSettings/ClientAppSettings.json",
-                    "Payload/Roblox.app/masterstrap_baked_flags.json"
-                ]:
-                    zout.writestr(jp, json_bytes)
+                        zout.writestr(item, data)
+                        seen_entries.add(name)
 
-        print(f"\nSUCCESS -> {out_ipa} ({out_ipa.stat().st_size / (1024*1024):.1f} MB)")
+                    # Embed dylib
+                    dylib_entry = "Payload/Roblox.app/Frameworks/libmasterstrap.dylib"
+                    zout.writestr(dylib_entry, dylib_bytes)
 
-        # Write comprehensive verification log
-        report_text = f"""=====================================================
-=== Masterstrap Roblox iOS Build & Inspection Log ===
-=====================================================
-Date: {time.strftime('%Y-%m-%d %H:%M:%S')}
-Input IPA: {input_ipa.name}
-Output IPA: {out_ipa.name}
+                    # Embed JSON settings
+                    json_bytes = json.dumps(flags, indent=4).encode("utf-8")
+                    for jp in [
+                        "Payload/Roblox.app/ClientSettings/ClientAppSettings.json",
+                        "Payload/Roblox.app/Frameworks/RobloxLib.framework/ClientSettings/ClientAppSettings.json",
+                        "Payload/Roblox.app/masterstrap_baked_flags.json"
+                    ]:
+                        zout.writestr(jp, json_bytes)
 
-SUMMARY:
-  - Total Flags Requested: {len(flags)}
-  - Verified Active Flags: {len(verified_entries)}
-  - Miss Offsets Count:    {len(miss_offsets)}
-  - Success Ratio:         {(len(verified_entries)/len(flags)*100) if flags else 0:.1f}%
-
---- [VERIFIED ACTIVE FASTFLAGS] ---
-"""
-        for n, r, k, v in verified_entries:
-            report_text += f"  [VERIFIED] (SetFastFlag) {n} -> RVA: 0x{r:X} | Type: {'bool' if k==0 else 'int32'} | Value: {v}\n"
-
-        if miss_offsets:
-            report_text += "\n--- [MISS OFFSETS (FLAG NOT IN RVA MAP)] ---\n"
-            for m in miss_offsets:
-                report_text += f"  [MISS_OFFSET] {m}\n"
-
-        report_file = out_dir / "flag_inject_report.log"
-        report_file.write_text(report_text, encoding="utf-8")
-        print(f"Wrote full report -> {report_file}")
-
-    return out_ipa
+            print(f"\nSUCCESS -> {out_ipa} ({out_ipa.stat().st_size / (1024*1024):.1f} MB)")
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Masterstrap Roblox iOS IPA Builder")
-    ap.add_argument("--input-ipa", required=True)
+    ap.add_argument("--input-ipa", default="")
     ap.add_argument("--settings-json", default="")
     ap.add_argument("--hpp", default="")
     ap.add_argument("--out-dir", default=str(DEFAULT_OUT_DIR))
     args = ap.parse_args()
 
     build_pipeline(
-        Path(args.input_ipa),
-        Path(args.settings_json) if args.settings_json else Path(""),
-        Path(args.hpp) if args.hpp else Path(""),
+        Path(args.input_ipa) if args.input_ipa else None,
+        Path(args.settings_json) if args.settings_json else None,
+        Path(args.hpp) if args.hpp else None,
         Path(args.out_dir)
     )
     return 0

@@ -70,9 +70,9 @@ jobs:
             echo "ipa_path=$IPA_PATH" >> "$GITHUB_OUTPUT"
             echo "IPA ready ($(du -h "$IPA_PATH" | cut -f1))"
           else
-            echo "No external IPA found; fetching reference headers from masterstrap.org..."
+            echo "No external IPA found; proceeding with FastFlags verification..."
             echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "ipa_path=$IPA_PATH" >> "$GITHUB_OUTPUT"
+            echo "ipa_path=" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Auto Dump Offsets & FFlags from IPA
@@ -89,25 +89,17 @@ jobs:
 
       - name: Build Masterstrap iOS Native Hook & Integrate IPA
         run: |
-          echo "=== [2/4] Compiling Native Hook & Patching IPA ==="
-          if [ "${{ steps.prepare-ipa.outputs.available }}" = "true" ]; then
-            python tools/build_integrated_roblox_ipa.py \
-              --input-ipa "${{ steps.prepare-ipa.outputs.ipa_path }}" \
-              --settings-json "Masterstrap/app/src/main/assets/game_presets/default.json" \
-              --hpp "output/FFlags.hpp" \
-              --out-dir "output"
-          else
-            echo "Generating verification report from live FastFlags map..."
-            python -c "import sys; from pathlib import Path; sys.path.insert(0, 'tools'); import build_integrated_roblox_ipa as b; table = b.fetch_or_load_fflags_map(Path('output/FFlags.hpp')); print(f'Successfully loaded and verified {len(table)} FastFlags for iOS!')"
-          fi
+          echo "=== [2/4] Compiling Native Hook & Generating Reports ==="
+          python tools/build_integrated_roblox_ipa.py \
+            --input-ipa "${{ steps.prepare-ipa.outputs.ipa_path }}" \
+            --hpp "output/FFlags.hpp" \
+            --out-dir "output"
 
       - name: Inspect Verification Log & Miss Offsets
         run: |
           echo "=== [3/4] Inspection Log & Miss Offsets Report ==="
           if [ -f "output/flag_inject_report.log" ]; then
             cat output/flag_inject_report.log
-          elif [ -f "output/FFlags.hpp" ]; then
-            echo "Live FastFlags Header Ready: $(wc -l < output/FFlags.hpp) lines in output/FFlags.hpp"
           fi
 
       - name: Upload Build Artifacts & Logs
@@ -115,9 +107,9 @@ jobs:
         with:
           name: masterstrap-ios-build-artifacts
           path: |
-            output/Masterstrap-Roblox-Patched.ipa
+            output/*.ipa
             output/flag_inject_report.log
+            output/masterstrap_ios.log
             output/FFlags.hpp
             output/Offsets.hpp
-            output/*.log
           if-no-files-found: warn
