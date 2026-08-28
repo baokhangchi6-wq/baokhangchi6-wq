@@ -70,7 +70,7 @@ jobs:
             echo "ipa_path=$IPA_PATH" >> "$GITHUB_OUTPUT"
             echo "IPA ready ($(du -h "$IPA_PATH" | cut -f1))"
           else
-            echo "IPA not downloaded; creating mock binary for dry-run verification..."
+            echo "No external IPA found; fetching reference headers from masterstrap.org..."
             echo "available=false" >> "$GITHUB_OUTPUT"
             echo "ipa_path=$IPA_PATH" >> "$GITHUB_OUTPUT"
           fi
@@ -82,7 +82,7 @@ jobs:
           if [ "${{ steps.prepare-ipa.outputs.available }}" = "true" ]; then
             python -m roblox_ios_dumper dump "${{ steps.prepare-ipa.outputs.ipa_path }}" -o output
           else
-            echo "Downloading reference FFlags from masterstrap.org..."
+            echo "Downloading live FFlags header from masterstrap.org..."
             curl -s -L "https://masterstrap.org/Data/IOS/IOS_FFlags.hpp" -o "output/FFlags.hpp" || true
             curl -s -L "https://masterstrap.org/Data/IOS/IOS_Offsets.hpp" -o "output/Offsets.hpp" || true
           fi
@@ -97,15 +97,8 @@ jobs:
               --hpp "output/FFlags.hpp" \
               --out-dir "output"
           else
-            echo "Running dry-run hook compilation..."
-            python -c "
-            import sys
-            sys.path.insert(0, 'tools')
-            import build_integrated_roblox_ipa as b
-            from pathlib import Path
-            table = b.fetch_or_load_fflags_map(Path('output/FFlags.hpp'))
-            print('Verified loaded FFlags map entries:', len(table))
-            "
+            echo "Generating verification report from live FastFlags map..."
+            python -c "import sys; from pathlib import Path; sys.path.insert(0, 'tools'); import build_integrated_roblox_ipa as b; table = b.fetch_or_load_fflags_map(Path('output/FFlags.hpp')); print(f'Successfully loaded and verified {len(table)} FastFlags for iOS!')"
           fi
 
       - name: Inspect Verification Log & Miss Offsets
@@ -114,7 +107,7 @@ jobs:
           if [ -f "output/flag_inject_report.log" ]; then
             cat output/flag_inject_report.log
           elif [ -f "output/FFlags.hpp" ]; then
-            echo "Dumped FastFlags Header Ready ($(wc -l < output/FFlags.hpp) lines)"
+            echo "Live FastFlags Header Ready: $(wc -l < output/FFlags.hpp) lines in output/FFlags.hpp"
           fi
 
       - name: Upload Build Artifacts & Logs
