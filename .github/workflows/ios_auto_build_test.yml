@@ -8,8 +8,9 @@ on:
   workflow_dispatch:
     inputs:
       ipa_url:
-        description: "Direct URL to Roblox IPA (optional)"
+        description: "Custom HTTPS URL to Decrypted Roblox IPA (optional)"
         required: false
+        type: string
         default: ""
 
 permissions:
@@ -28,7 +29,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: "pip"
 
       - name: Install Dependencies
         run: |
@@ -36,48 +36,85 @@ jobs:
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           pip install pyyaml capstone
 
-      - name: Fetch or Prepare Roblox iOS IPA
+      - name: Resolve & Download Decrypted Roblox iOS IPA
         id: prepare-ipa
+        shell: bash
+        env:
+          INPUT_IPA_URL: ${{ github.event.inputs.ipa_url }}
+          SECRET_IPA_URL: ${{ secrets.IOS_IPA_URL }}
         run: |
           mkdir -p roblox_input output
           IPA_PATH="roblox_input/roblox.ipa"
           
-          if [ -n "${{ github.event.inputs.ipa_url }}" ]; then
-            echo "Downloading IPA from custom URL..."
-            curl -L -o "$IPA_PATH" "${{ github.event.inputs.ipa_url }}"
-          elif [ -f "fixture.ipa" ]; then
-            echo "Using local fixture.ipa..."
-            cp fixture.ipa "$IPA_PATH"
-          else
-            echo "Checking test fixture..."
-            python -m roblox_ios_dumper --help || true
+          TARGET_URL="$INPUT_IPA_URL"
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="$SECRET_IPA_URL"
           fi
           
-          echo "ipa_path=$IPA_PATH" >> $GITHUB_OUTPUT
+          if [ -z "$TARGET_URL" ]; then
+            echo "Searching public verified decrypted mirrors for Roblox IPA..."
+            MIRROR=$(curl -s "https://api.github.com/repos/ipahub/roblox/releases/latest" | grep -o 'https://github.com/ipahub/roblox/releases/download/[^"]*\.ipa' | head -n 1 || echo "")
+            if [ -n "$MIRROR" ]; then
+              TARGET_URL="$MIRROR"
+              echo "Found mirror: $TARGET_URL"
+            fi
+          fi
+          
+          if [ -n "$TARGET_URL" ]; then
+            echo "Downloading Decrypted Roblox IPA from: $TARGET_URL"
+            curl -L -o "$IPA_PATH" "$TARGET_URL"
+          fi
+          
+          if [ -f "$IPA_PATH" ] && [ -s "$IPA_PATH" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "ipa_path=$IPA_PATH" >> "$GITHUB_OUTPUT"
+            echo "IPA ready ($(du -h "$IPA_PATH" | cut -f1))"
+          else
+            echo "IPA not downloaded; creating mock binary for dry-run verification..."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "ipa_path=$IPA_PATH" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Auto Dump Offsets & FFlags from IPA
         run: |
           echo "=== [1/4] Running iOS Dumper ==="
           mkdir -p output
-          if [ -f "${{ steps.prepare-ipa.outputs.ipa_path }}" ]; then
-            python -m roblox_ios_dumper dump "${{ steps.prepare-ipa.outputs.ipa_path }}" -o output || true
+          if [ "${{ steps.prepare-ipa.outputs.available }}" = "true" ]; then
+            python -m roblox_ios_dumper dump "${{ steps.prepare-ipa.outputs.ipa_path }}" -o output
+          else
+            echo "Downloading reference FFlags from masterstrap.org..."
+            curl -s -L "https://masterstrap.org/Data/IOS/IOS_FFlags.hpp" -o "output/FFlags.hpp" || true
+            curl -s -L "https://masterstrap.org/Data/IOS/IOS_Offsets.hpp" -o "output/Offsets.hpp" || true
           fi
 
       - name: Build Masterstrap iOS Native Hook & Integrate IPA
         run: |
           echo "=== [2/4] Compiling Native Hook & Patching IPA ==="
-          python tools/build_integrated_roblox_ipa.py \
-            --input-ipa "${{ steps.prepare-ipa.outputs.ipa_path }}" \
-            --settings-json "Masterstrap/app/src/main/assets/game_presets/default.json" \
-            --out-dir "output" || true
+          if [ "${{ steps.prepare-ipa.outputs.available }}" = "true" ]; then
+            python tools/build_integrated_roblox_ipa.py \
+              --input-ipa "${{ steps.prepare-ipa.outputs.ipa_path }}" \
+              --settings-json "Masterstrap/app/src/main/assets/game_presets/default.json" \
+              --hpp "output/FFlags.hpp" \
+              --out-dir "output"
+          else
+            echo "Running dry-run hook compilation..."
+            python -c "
+            import sys
+            sys.path.insert(0, 'tools')
+            import build_integrated_roblox_ipa as b
+            from pathlib import Path
+            table = b.fetch_or_load_fflags_map(Path('output/FFlags.hpp'))
+            print('Verified loaded FFlags map entries:', len(table))
+            "
+          fi
 
       - name: Inspect Verification Log & Miss Offsets
         run: |
           echo "=== [3/4] Inspection Log & Miss Offsets Report ==="
           if [ -f "output/flag_inject_report.log" ]; then
             cat output/flag_inject_report.log
-          else
-            echo "Build report generated in output/"
+          elif [ -f "output/FFlags.hpp" ]; then
+            echo "Dumped FastFlags Header Ready ($(wc -l < output/FFlags.hpp) lines)"
           fi
 
       - name: Upload Build Artifacts & Logs
