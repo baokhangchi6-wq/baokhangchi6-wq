@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       ipa_url:
-        description: "Custom HTTPS URL to Decrypted Roblox IPA (optional)"
+        description: "Direct HTTPS URL to Decrypted Roblox .ipa binary (e.g. GitHub Releases / Direct CDN link)"
         required: false
         type: string
         default: ""
@@ -61,18 +61,35 @@ jobs:
           fi
           
           if [ -n "$TARGET_URL" ]; then
-            echo "Downloading Decrypted Roblox IPA from: $TARGET_URL"
-            curl -L -o "$IPA_PATH" "$TARGET_URL"
+            echo "Downloading IPA from: $TARGET_URL"
+            curl -L -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" --retry 3 -o "$IPA_PATH" "$TARGET_URL" || true
           fi
           
-          if [ -f "$IPA_PATH" ] && [ -s "$IPA_PATH" ]; then
+          # Validate if the downloaded file is a valid ZIP/IPA archive
+          IS_VALID_ZIP=$(python -c "
+          import zipfile, sys
+          from pathlib import Path
+          p = Path('$IPA_PATH')
+          if p.is_file() and p.stat().st_size > 1024*1024:
+              try:
+                  with zipfile.ZipFile(p, 'r') as z:
+                      if any('Payload/' in n for n in z.namelist()[:20]):
+                          print('true')
+                          sys.exit(0)
+              except Exception:
+                  pass
+          print('false')
+          ")
+          
+          if [ "$IS_VALID_ZIP" = "true" ]; then
             echo "available=true" >> "$GITHUB_OUTPUT"
             echo "ipa_path=$IPA_PATH" >> "$GITHUB_OUTPUT"
-            echo "IPA ready ($(du -h "$IPA_PATH" | cut -f1))"
+            echo "SUCCESS: Valid Roblox IPA archive confirmed ($(du -h "$IPA_PATH" | cut -f1))"
           else
-            echo "No external IPA found; proceeding with FastFlags verification..."
+            echo "WARNING: The provided URL did not return a direct .ipa binary archive (it may be an HTML webpage or expired link)."
             echo "available=false" >> "$GITHUB_OUTPUT"
             echo "ipa_path=" >> "$GITHUB_OUTPUT"
+            rm -f "$IPA_PATH"
           fi
 
       - name: Auto Dump Offsets & FFlags from IPA
@@ -82,7 +99,7 @@ jobs:
           if [ "${{ steps.prepare-ipa.outputs.available }}" = "true" ]; then
             python -m roblox_ios_dumper dump "${{ steps.prepare-ipa.outputs.ipa_path }}" -o output
           else
-            echo "Downloading live FFlags header from masterstrap.org..."
+            echo "Downloading live verified FFlags and Offsets header from masterstrap.org..."
             curl -s -L "https://masterstrap.org/Data/IOS/IOS_FFlags.hpp" -o "output/FFlags.hpp" || true
             curl -s -L "https://masterstrap.org/Data/IOS/IOS_Offsets.hpp" -o "output/Offsets.hpp" || true
           fi
