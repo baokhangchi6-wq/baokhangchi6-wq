@@ -1,0 +1,20 @@
+{
+  "DFFlagInputQueueProcessingUseRawTime": true,
+  "FFlagInputRouteEventsDirectlyToCore": true,
+  "DFFlagDisableInputEventPreFiltering": true,
+  "FIntInputQueueMaxEventCapacity": 16384,
+  "FFlagInputThreadInMainSpin": true,
+  "FFlagInputEnableMouseDynamicSens": false,
+  "FFlagInputEnableLinearMouseFilter": false,
+  "FIntSmoothMouseSpringFrequencyTenths": -1,
+  "FFlagInputDirectMouseNoInterpolation": true,
+  "FFlagInputEnableRawMouseInput2": true,
+  "FFlagFixFirstPersonMouseCursorSnapping_CenterPos": true,
+  "FFlagFixCameraOffsetPreRender": true,
+  "FFlagUserCameraToggleFix": true,
+  "DFFlagInputQueueUseHighPrecisionTimer": true,
+  "FFlagInputThreadPriorityOverrideRealtime": true,
+  "DFIntInputThreadPriorityOverride": 3,
+  "DFFlagInputQueueUseHighPrecisionTimer2": true,
+  "FIntInputQueueWarmupLoops": 10
+}

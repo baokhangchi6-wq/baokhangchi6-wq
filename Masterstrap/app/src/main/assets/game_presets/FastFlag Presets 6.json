@@ -1,0 +1,12 @@
+{
+  "DFFlagTextureQualityOverrideEnabled": "True",
+  "DFIntCanHideGuiGroupId": "32380007",
+  "DFIntMaxFrameBufferSize": "5",
+  "DFIntTaskSchedulerTargetFps": "260",
+  "FFlagDebugSkyGray": "True",
+  "FIntDebugForceMSAASamples": "1",
+  "FIntDebugTextureManagerSkipMips": "2",
+  "FIntFontSizePadding": "3",
+  "FIntTerrainArraySliceSize": "0",
+  "FLogNetwork": "7"
+}

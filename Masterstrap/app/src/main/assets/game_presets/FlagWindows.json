@@ -1,0 +1,73 @@
+{
+  "_comment": "Danh sách các flag chỉ dành cho Windows, KHÔNG phù hợp với Android. Nguồn: allgame.json + rivals.json",
+
+  "DirectX_and_D3D": {
+    "_reason": "Direct3D (D3D) là API đồ họa độc quyền của Microsoft, chỉ tồn tại trên Windows. Android dùng OpenGL ES / Vulkan.",
+    "FFlagDebugGraphicsPreferD3D11": true,
+    "FFlagDebugGraphicsPreferD3D11FL10": true,
+    "FFlagGraphicsEnableD3D10Compute": false,
+    "FFlagDebugGraphicsDisableDirect3D11": false,
+    "FIntRenderEnableGlobalInstancingD3D11Percent": 100
+  },
+
+  "OpenGL_Vulkan_Disable": {
+    "_reason": "Tắt OpenGL/Vulkan trên Android sẽ làm app crash ngay lập tức vì Android PHẢI dùng OpenGL ES hoặc Vulkan để render.",
+    "FFlagDebugGraphicsDisableOpenGL": true,
+    "FFlagDebugGraphicsDisableVulkan": true,
+    "FFlagDebugGraphicsDisableVulkan11": true,
+    "FFlagDebugGraphicsPreferOpenGL": false,
+    "FFlagDebugGraphicsPreferVulkan": false
+  },
+
+  "Fullscreen_and_Window_Management": {
+    "_reason": "Fullscreen title bar, Alt+Enter, và quản lý cửa sổ là khái niệm của Windows Desktop. Android không có cửa sổ (window) theo nghĩa này.",
+    "FFlagHandleAltEnterFullscreenManually": false,
+    "HandleAltEnterFullscreenManually": false,
+    "FIntFullscreenTitleBarTriggerDelayMillis": 3600000
+  },
+
+  "Windows_Launch_Analytics": {
+    "_reason": "Flag theo dõi luồng khởi động trên Windows/Mac web launcher, không liên quan đến Android.",
+    "FFlagWindowsLaunchAnalytics": false,
+    "FFlagTrackWinWebLaunchFlow": false,
+    "FFlagTrackMacWebLaunchFlow": false
+  },
+
+  "Windows_Crash_Upload": {
+    "_reason": "Token upload crash dump dành riêng cho Windows Player và Mac Player. Android dùng cơ chế báo lỗi riêng.",
+    "DFStringCrashUploadToBacktraceWindowsPlayerToken": null,
+    "DFStringCrashUploadToBacktraceMacPlayerToken": null,
+    "DFIntWriteFullDmpPercent": 0,
+    "DFIntCrashUploadToBacktracePercentage": 0,
+    "DFFlagCrashUploadFullDumps": false,
+    "FFlagTrackPlaceIdForCrashEnabled": false
+  },
+
+  "Mouse_and_Keyboard_Input": {
+    "_reason": "Mouse spring, shift-lock, keyboard timer là các flag dành cho chuột vật lý và bàn phím Windows. Trên Android không có những thiết bị này.",
+    "DFFlagMouseMoveOncePerFrame": false,
+    "FFlagMouseGetPartOptimization": true,
+    "FFlagMouseLocationUpdateSooner": true,
+    "FFlagImproveShiftLockTransition": true,
+    "FIntSmoothMouseSpringFrequencyTenths": 200,
+    "FIntActivatedCountTimerMSKeyboard": 1,
+    "FIntActivatedCountTimerMSMouse": 1
+  },
+
+  "DPI_Scale": {
+    "_reason": "DPI Scale là khái niệm của màn hình desktop Windows (HiDPI). Android tự quản lý DPI theo density của thiết bị.",
+    "DFFlagDisableDPIScale": true,
+    "DFFlagDebugOverrideDPIScale": false
+  },
+
+  "Bootstrapper": {
+    "_reason": "Bootstrapper Telemetry chỉ áp dụng cho Roblox Player trên Windows (qua bootstrapper .exe), không áp dụng cho Android.",
+    "FIntBootstrapperTelemetryReportingHundredthsPercentage": 0
+  },
+
+  "VR_Toggle": {
+    "_reason": "VR toggle chỉ dành cho headset VR kết nối với Windows PC.",
+    "FFlagAlwaysShowVRToggleV3": false,
+    "FFlagVoiceChatServiceManagerUseAvatarChat": false
+  }
+}

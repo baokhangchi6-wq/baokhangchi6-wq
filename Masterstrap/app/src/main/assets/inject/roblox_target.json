@@ -1,0 +1,13 @@
+{
+  "version": "2.733.988 Global, 2.733.988 VNG",
+  "versionCode": 2733,
+  "packageVng": "com.roblox.client.vnggames",
+  "packageGlobal": "com.roblox.client",
+  "abi": "arm64-v8a",
+  "offsets": {
+    "getfastflag": "0x0",
+    "getfastflag_alt": "0x0",
+    "getfastflag_string": "0x0"
+  },
+  "source": "Offsetmanager/Roblox-Internal-External-Offsets + barpyfartz/AndroidRScoop"
+}

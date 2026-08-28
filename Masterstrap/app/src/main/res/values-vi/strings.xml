@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">masterstrap</string>
+    <string name="app_display_name">Masterstrap</string>
+    <string name="app_tagline">FastFlag &amp; Tăng Tốc Game</string>
+    
+    <!-- 5 Bottom Navigation Tabs -->
+    <string name="nav_fastflag">FastFlag</string>
+    <string name="nav_ff_settings">Cài đặt FF</string>
+    <string name="nav_start">Khởi động</string>
+    <string name="nav_gamemode">Game Mode</string>
+    <string name="nav_preset">Preset</string>
+    
+    <!-- Actions -->
+    <string name="btn_save">Lưu Cấu Hình</string>
+    <string name="btn_save_launch">Khởi động (Lưu &amp; Mở Game)</string>
+    <string name="btn_back">❮ Quay lại</string>
+    <string name="btn_apply">Áp dụng</string>
+    <string name="btn_boost">Boost</string>
+    <string name="btn_activate">Kích hoạt</string>
+    <string name="btn_cancel">Hủy</string>
+    <string name="btn_confirm">Xác nhận</string>
+    <string name="btn_close">Đóng</string>
+    <string name="btn_claim">Nhận Thưởng</string>
+    <string name="dialog_claim_ad_title">Xem quảng cáo để mở khóa</string>
+    <string name="dialog_claim_ad_msg">Xem một đoạn video ngắn để nhận quyền sử dụng tính năng và tiếp tục.</string>
+    
+    <!-- FastFlag Editor -->
+    <string name="title_fastflag_editor">Trình biên tập FastFlag</string>
+    <string name="desc_fastflag_editor">Thêm, nhập hoặc chỉnh sửa từng FastFlag riêng lẻ</string>
+    <string name="search_hint">Tìm kiếm cờ (ví dụ: FFlagDebug, FPS)...</string>
+    <string name="btn_add_flag">+ Thêm</string>
+    <string name="btn_import_json">Nhập JSON</string>
+    <string name="btn_export_json">Xuất JSON</string>
+    <string name="btn_clear_all">Xóa tất cả</string>
+    <string name="dialog_add_flag_title">Thêm FastFlag Tùy Chỉnh</string>
+    <string name="hint_flag_name">Tên cờ (ví dụ: FFlagFastLoading)</string>
+    <string name="hint_flag_value">Giá trị (ví dụ: True / 120 / Low)</string>
+    <string name="col_flag_name">Tên cờ</string>
+    <string name="col_flag_type">Loại</string>
+    <string name="col_flag_value">Giá trị</string>
+    <string name="col_flag_action">Thao tác</string>
+    <string name="title_datagrid">Bảng Quản Lý FastFlag</string>
+    <string name="tab_datagrid">DataGrid</string>
+    <string name="tab_toggles">Tùy Chọn</string>
+    <string name="tab_gamemode">Game Mode</string>
+
+    <!-- FastFlag Sections -->
+    <string name="section_graphics_quality">Chất lượng đồ họa</string>
+    <string name="section_verified_preferences">Thiết lập Roblox xác minh</string>
+    <string name="section_mobile_performance">Hiệu năng thiết bị di động</string>
+    <string name="section_rendering_fx">Hiệu ứng kết xuất &amp; hình ảnh</string>
+    <string name="section_interface_camera">Giao diện &amp; Camera</string>
+    <string name="section_graphics_framerate">Đồ họa &amp; Tốc độ khung hình</string>
+    <string name="section_network">Mạng &amp; Băng thông</string>
+    <string name="section_power_session">Nguồn điện &amp; Phiên chơi</string>
+    <string name="section_memory_assets">Bộ nhớ &amp; Tài nguyên</string>
+    <string name="section_performance_boost">Tối ưu hiệu năng</string>
+    <string name="section_game_session">Phiên trò chơi</string>
+
+    <!-- FastFlag Tab Toggles & Dropdowns -->
+    <string name="ff_master_switch_title">Áp dụng tối ưu hóa Roblox</string>
+    <string name="ff_master_switch_desc">Áp dụng các tùy chọn tối ưu hóa mỗi khi lưu và khởi chạy Roblox.</string>
+    <string name="ff_msaa_title">Chất lượng khử răng cưa (MSAA)</string>
+    <string name="ff_msaa_desc">Ghi đè MSAA của Roblox bằng FastFlag tương thích với Android.</string>
+    <string name="ff_frm_title">Ghi đè mức chất lượng FRM</string>
+    <string name="ff_frm_desc">Chọn mức chất lượng kết xuất cố định của Roblox từ 1 đến 21.</string>
+    <string name="ff_rendering_mode_title">Chế độ kết xuất đồ họa</string>
+    <string name="ff_rendering_mode_desc">Ưu tiên cờ OpenGL trên Android hoặc để Tự động theo hệ thống.</string>
+    <string name="ff_dynamic_res_title">Độ phân giải kết xuất động</string>
+    <string name="ff_dynamic_res_desc">Giới hạn số điểm ảnh kết xuất 3D nội bộ trong khi giữ nguyên UI sắc nét.</string>
+    <string name="toggle_unlock_fps">Mở khóa giới hạn FPS</string>
+    <string name="toggle_unlock_fps_desc">Gỡ bỏ giới hạn trần 240 FPS mặc định để chơi mượt mà tối đa.</string>
+    <string name="ff_fps_title">Tốc độ khung hình (FPS)</string>
+    <string name="fps_unlocker_title">Khung hình (FPS)</string>
+    <string name="ff_fps_desc">Chọn mức FPS phù hợp với màn hình và hiệu năng thiết bị để chuyển động mượt mà.</string>
+    <string name="ff_force_lowest_title">Ép đồ họa Roblox mức thấp nhất</string>
+    <string name="ff_force_lowest_desc">Khóa mức đồ họa gốc của Roblox ở mức 1 khi khởi động. Cần quyền root.</string>
+    <string name="ff_reduced_motion_title">Giảm hiệu ứng chuyển động</string>
+    <string name="ff_reduced_motion_desc">Sử dụng tính năng ReducedMotion gốc của Roblox để giảm tải chuyển động.</string>
+    <string name="ff_haptics_title">Rung phản hồi trong game</string>
+    <string name="ff_haptics_desc">Điều khiển thiết lập HapticStrength. Tắt để loại bỏ rung phản hồi.</string>
+    <string name="ff_fps_boost_title">Tăng tốc đồ họa 1 chạm</string>
+    <string name="ff_fps_boost_desc">Tối ưu khử răng cưa, hiệu ứng và cỏ cùng bộ nhớ 3D để ưu tiên FPS tối đa.</string>
+    <string name="ff_low_poly_title">Giảm chi tiết mô hình 3D</string>
+    <string name="ff_low_poly_desc">Sử dụng mô hình đơn giản ở khoảng cách xa để giảm tải bộ nhớ và GPU.</string>
+    <string name="ff_low_texture_title">Giảm tải vân bề mặt (Texture)</string>
+    <string name="ff_low_texture_desc">Bỏ qua các tầng texture độ phân giải quá cao để tiết kiệm RAM và VRAM.</string>
+    <string name="ff_android_mesh_title">Tối ưu bộ nhớ mô hình 3D</string>
+    <string name="ff_android_mesh_desc">Tự động cân bằng bộ nhớ dành cho mô hình 3D trên thiết bị Android.</string>
+    <string name="ff_mesh_preload_title">Tải trước mô hình 3D</string>
+    <string name="ff_mesh_preload_desc">Nạp sớm mô hình 3D để giảm thiểu hiện tượng giật khi vật thể xuất hiện.</string>
+    <string name="ff_optimize_parts_title">Tối ưu hóa các khối đối tượng</string>
+    <string name="ff_optimize_parts_desc">Sử dụng đường dẫn xử lý tối ưu của Roblox cho các game có nhiều object.</string>
+    <string name="ff_disable_shadows_title">Tắt bóng đổ</string>
+    <string name="ff_disable_shadows_desc">Tắt phần lớn bóng đổ trong game để giảm tải GPU và tăng độ mượt, đặc biệt trên thiết bị cấu hình thấp.</string>
+    <string name="ff_disable_postfx_title">Giảm hiệu ứng hậu kỳ</string>
+    <string name="ff_disable_postfx_desc">Loại bỏ bloom, blur, độ sâu trường ảnh để giảm tải tối đa cho GPU.</string>
+    <string name="ff_disable_grass_title">Tắt cỏ trong game</string>
+    <string name="ff_disable_grass_desc">Đặt khoảng cách vẽ cỏ về 0 để tăng mượt mà trong các khung cảnh ngoài trời.</string>
+    <string name="ff_skygray_title">Bầu trời xám (SkyGray)</string>
+    <string name="ff_skygray_desc">Thay thế bầu trời thông thường bằng nền xám đơn sắc để khung cảnh nhẹ hơn.</string>
+    <string name="ff_display_fps_title">Hiển thị bộ đếm FPS</string>
+    <string name="ff_display_fps_desc">Bật bộ đếm FPS tích hợp sẵn của Roblox trên góc màn hình.</string>
+    <string name="ff_disable_gui_blur_title">Tắt nền mờ menu</string>
+    <string name="ff_disable_gui_blur_desc">Loại bỏ nền mờ đằng sau các menu Roblox giúp giao diện rõ và nhẹ hơn.</string>
+
+    <!-- FF Settings Tab Toggles -->
+    <string name="ffs_automatic_drs_title">Ổn định tốc độ khung hình</string>
+    <string name="ffs_automatic_drs_desc">Tự động giảm độ phân giải kết xuất khi GPU quá tải để giữ trải nghiệm mượt mà.</string>
+    <string name="ffs_animation_lod_title">Giảm tải hoạt ảnh từ xa</string>
+    <string name="ffs_animation_lod_desc">Đơn giản hóa hoạt ảnh nhân vật ở xa để giảm tải CPU trong game đông người.</string>
+    <string name="ffs_android_vsync_title">Đồng bộ khung hình mượt mà</string>
+    <string name="ffs_android_vsync_desc">Đồng bộ khung hình với màn hình để giảm hiện tượng xé hình và giật cục.</string>
+    <string name="ffs_drs_basic_title">Kiểm soát đồ họa thích ứng</string>
+    <string name="ffs_drs_basic_desc">Cho phép Roblox tự điều chỉnh độ phân giải theo hiệu năng thực tế của máy.</string>
+    <string name="ffs_drs_gpu_time_title">Phản hồi theo tải GPU</string>
+    <string name="ffs_drs_gpu_time_desc">Sử dụng thời gian vẽ khung hình GPU thực tế để căn chỉnh đồ họa chính xác.</string>
+    <string name="ffs_batch_net_title">Tải tài nguyên game nhanh hơn</string>
+    <string name="ffs_batch_net_desc">Gộp các yêu cầu tải tài nguyên để giảm tải mạng khi vào game.</string>
+    <string name="ffs_desync_title">Desync</string>
+    <string name="ffs_desync_desc">Áp dụng cấu hình thử nghiệm với tần suất cập nhật chuyển động và vật lý cao. Hiệu quả phụ thuộc vào game và kết nối.</string>
+    <string name="msg_desync_enabled">Đã mở khóa và bật Desync.</string>
+    <string name="msg_game_preset_applied">Đã áp dụng cấu hình %1$s (%2$d flag). Nhấn Start để mở Roblox.</string>
+    <string name="ffs_power_mgr_title">Giảm hao pin khi chạy ngầm</string>
+    <string name="ffs_power_mgr_desc">Hỗ trợ quản lý nguồn điện Android khi game đang ở chế độ nền.</string>
+    <string name="ffs_bg_session_title">Khôi phục phiên chơi ổn định</string>
+    <string name="ffs_bg_session_desc">Giúp Roblox khôi phục phiên kết nối chuẩn xác sau khi mở lại từ nền.</string>
+    <string name="ffs_unified_mesh_title">Tối ưu bộ nhớ mô hình 3D</string>
+    <string name="ffs_unified_mesh_desc">Cân bằng RAM dành cho mô hình 3D trên Android.</string>
+    <string name="ffs_anim_cache_title">Bộ nhớ đệm hoạt ảnh lặp lại</string>
+    <string name="ffs_anim_cache_desc">Lưu trữ sẵn dữ liệu hoạt ảnh để tránh phải giải mã lặp đi lặp lại.</string>
+
+    <!-- Game Mode Toggles -->
+    <string name="gm_master_title">Bật Game Mode</string>
+    <string name="gm_master_desc">Kích hoạt cấu hình tối ưu khi Roblox khởi động.</string>
+    <string name="gm_system_perf_title">Tăng Tốc Hiệu Năng Hệ Thống</string>
+    <string name="gm_system_perf_desc">Yêu cầu chế độ Game Mode của Android để tối ưu luồng hiển thị.</string>
+    <string name="gm_cpu_priority_title">Ưu Tiên Hiệu Năng CPU</string>
+    <string name="gm_cpu_priority_desc">Tăng mức ưu tiên tiến trình Roblox để giảm độ trễ điều phối CPU.</string>
+    <string name="gm_smart_ram_title">Dọn Dẹp RAM Thông Minh</string>
+    <string name="gm_smart_ram_desc">Thu hồi bộ nhớ đệm chạy ngầm trước khi mở game khi RAM bị đầy.</string>
+    <string name="gm_wifi_opt_title">Tối Ưu Độ Trễ Wi-Fi</string>
+    <string name="gm_wifi_opt_desc">Giữ kết nối Wi-Fi ở hiệu năng cao để giảm độ trễ ping khi chơi game.</string>
+    <string name="gm_unrestricted_power_title">Nguồn Điện Không Giới Hạn</string>
+    <string name="gm_unrestricted_power_desc">Loại trừ Roblox khỏi giới hạn tiết kiệm pin để tránh gián đoạn game.</string>
+    <string name="gm_fast_launch_title">Mở Game Siêu Tốc</string>
+    <string name="gm_fast_launch_desc">Tắt hiệu ứng chuyển cảnh của Android khi mở Roblox để khởi động nhanh hơn.</string>
+    <string name="gm_keep_display_title">Giữ Màn Hình Luôn Sáng</string>
+    <string name="gm_keep_display_desc">Ngăn màn hình tắt trong khi đang ở trong phiên chơi game.</string>
+
+    <!-- Settings & About -->
+    <string name="title_settings_about">Cài đặt &amp; Giới thiệu</string>
+    <string name="title_preferences">Tùy chọn hiển thị</string>
+    <string name="label_app_theme">Giao diện ứng dụng</string>
+    <string name="desc_app_theme">Phong cách hiển thị Tối hoặc Sáng</string>
+    <string name="label_language">Ngôn ngữ</string>
+    <string name="desc_language">Ngôn ngữ hiển thị của ứng dụng</string>
+    <string name="label_preferred_roblox_app">Phiên bản Roblox ưu tiên</string>
+    <string name="desc_preferred_roblox_app">Chọn phiên bản Roblox để áp dụng cấu hình và mở game</string>
+    <string name="title_community_links">Kênh chính thức &amp; Liên kết</string>
+    <string name="title_license_key">Mã Bản Quyền (License Key)</string>
+    <string name="desc_license_key">Nhập mã bản quyền để mở khóa đầy đủ tính năng &amp; bỏ qua quảng cáo.</string>
+    <string name="plan_free">Bản Miễn Phí</string>
+    <string name="plan_active">Đã Kích Hoạt</string>
+    
+    <!-- Preset Categories -->
+    <string name="section_safe_boost">Boost An Toàn (Ổn định &amp; Độ trễ)</string>
+    <string name="section_turbo_boost">Turbo Boost</string>
+    <string name="title_tab_fastflag_settings">Cài đặt FastFlag</string>
+    <string name="gm_safe_ram_title">Tối ưu bộ nhớ mô hình 3D</string>
+    <string name="gm_safe_ram_desc">Cho phép Roblox tự cân bằng bộ nhớ đệm mô hình 3D theo dung lượng khả dụng của thiết bị Android.</string>
+    <string name="gm_safe_network_title">Tải tài nguyên khi vào game nhanh hơn</string>
+    <string name="gm_safe_network_desc">Dùng cơ chế gộp tải tài nguyên được Roblox hỗ trợ để giảm thao tác mạng lặp lại khi vào game.</string>
+    <string name="gm_safe_power_title">Quản lý nguồn điện Android</string>
+    <string name="gm_safe_power_desc">Cho phép Roblox phối hợp với hệ thống quản lý nguồn Android mà không can thiệp giới hạn nhiệt của thiết bị.</string>
+    <string name="gm_safe_touch_title">Tăng độ nhạy cảm ứng</string>
+    <string name="gm_safe_touch_desc">Phản hồi thao tác vuốt chạm nhanh hơn, loại bỏ cảm giác trễ khi điều khiển nhân vật.</string>
+    <string name="gm_safe_frame_pacing_title">Khử giật xé hình</string>
+    <string name="gm_safe_frame_pacing_desc">Cân bằng tốc độ xuất từng khung hình giúp hình ảnh chuyển động êm ái, không bị khựng.</string>
+    <string name="msg_enable_master_first">Vui lòng bật Game Mode Turbo trước!</string>
+    <string name="category_popular">Phổ biến</string>
+    <string name="category_hot">Thịnh Hành (Hot)</string>
+    <string name="category_general_presets">Cấu hình chung</string>
+    <string name="category_game_presets">Cấu hình Game</string>
+    <string name="category_inferium_presets">Cấu hình Inferium</string>
+    <string name="title_community_presets">Preset Cộng Đồng &amp; Game</string>
+    <string name="desc_community_presets">Chọn cấu hình game tối ưu. Các cờ sẽ được kết hợp với tùy chỉnh khi lưu và khởi chạy.</string>
+
+    <!-- Messages & Dialogs -->
+    <string name="msg_saved_success">Đã xuất cấu hình thành công vào ClientAppSettings.json!</string>
+    <string name="msg_save_failed">Lưu cấu hình thất bại. Vui lòng cấp quyền bộ nhớ.</string>
+    <string name="msg_roblox_not_found">Không tìm thấy ứng dụng Roblox trên thiết bị.</string>
+    <string name="msg_preset_applied">Đã áp dụng preset thành công!</string>
+    <string name="msg_license_activated">Đã kích hoạt bản quyền! Đã tắt quảng cáo.</string>
+    <string name="msg_invalid_license">Vui lòng nhập mã bản quyền hợp lệ</string>
+    <string name="title_app_settings">Cài đặt</string>
+    <string name="desc_app_settings">Thiết lập hiển thị chỉ áp dụng khi mở Roblox patched</string>
+    <string name="title_display_settings">Hiển thị</string>
+    <string name="title_stretch_screen">Kéo giãn màn hình</string>
+    <string name="desc_stretch_screen">Kết xuất Roblox bằng bộ đệm hẹp hơn theo chiều ngang rồi kéo giãn để phủ đầy màn hình.</string>
+    <string name="note_stretch_screen">Chỉ áp dụng khi mở Roblox patched từ Masterstrap. 100% giữ nguyên tỷ lệ gốc.</string>
+    <string name="value_stretch_screen_percent">%1$d%%</string>
+</resources>

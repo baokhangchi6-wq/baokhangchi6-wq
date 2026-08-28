@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/linear_background"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#E6050811"
+    android:gravity="center"
+    android:clipChildren="false"
+    android:clipToPadding="false"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <com.masterstrap.rbx.ui.custom.BoostLaunchProgressView
+        android:id="@+id/boost_launch_progress"
+        android:layout_width="match_parent"
+        android:layout_height="360dp"
+        android:layout_gravity="center" />
+
+    <TextView
+        android:id="@+id/textview_taskcurrently"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:gravity="center"
+        android:letterSpacing="0.03"
+        android:text="Launching Roblox…"
+        android:textColor="#F0F9FF"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:shadowColor="#8038BDF8"
+        android:shadowDx="0"
+        android:shadowDy="0"
+        android:shadowRadius="12" />
+
+    <TextView
+        android:id="@+id/textview_loadingstatus"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:id="@+id/linear_cancel_container"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:visibility="gone" />
+</LinearLayout>

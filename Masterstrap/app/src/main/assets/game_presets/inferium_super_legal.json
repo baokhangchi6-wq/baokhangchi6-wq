@@ -1,0 +1,63 @@
+{
+  "DFIntTaskSchedulerTargetFps": 237,
+  "FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate": false,
+  "FFlagDebugDisableVsync": true,
+
+  "FFlagDebugGraphicsPreferD3D11": true,
+  "FFlagGraphicsPreCompileShaders": true,
+  "FFlagDebugForceLowQualityShaders": true,
+
+  "FFlagRenderShadows": false,
+  "FFlagRenderGlobalShadows": false,
+  "FFlagRenderLocalLightShadows": false,
+  "FIntRenderShadowIntensity": 0,
+
+  "FFlagRenderTextureQuality": 0,
+  "DFIntTextureQualityOverride": 0,
+  "FFlagRenderHighQuality": false,
+  "FFlagRenderLightingQuality": false,
+
+  "DFFlagDebugGraphicsDisableParticles": true,
+  "DFFlagDebugGraphicsDisablePostFx": true,
+  "FFlagDebugGraphicsDisablePostFxUI": true,
+  "FFlagDebugGraphicsDisableUiBlur": true,
+  "FFlagDebugGraphicsDisableUIAntiAliasing": true,
+  "FFlagDebugDisableAnisotropicFiltering": true,
+
+  "FFlagEnablePriorityStreaming2": true,
+  "FFlagEnableQuickGameLaunch": true,
+  "FFlagUseFastJoinPath": true,
+
+  "FIntLuauInstructionBudgetMultiplier": 24,
+  "FIntGcStepMultiplier": 96,
+  "FFlagLuauCompileBackground": true,
+  "FFlagFastGarbageCollection": true,
+
+  "FFlagNetworkUseSubTickPacketProcessing": true,
+  "FFlagNetworkOptimizeIncomingPacketQueue": true,
+  "FFlagDisableNetworkNaglesAlgorithm": true,
+
+  "DFIntMaxNetworkBufferSize": 262144,
+  "DFIntNetworkIncomingPacketQueueMaxCapacity": 256,
+  "DFIntConnectionMTUSize": 1460,
+
+  "DFFlagInputUseRawInput": true,
+  "FFlagInputSyncEnableDirectInput": true,
+  "FFlagEnableNewMouseUpdateLogic2": true,
+
+  "FFlagFixCameraOffsetPreRender": true,
+  "FFlagMovePreRender": true,
+
+  "FFlagPhysicsFixedStep": true,
+  "FFlagPhysicsSubstepping": true,
+  "FFlagParallelPhysicsPGSConstraints": true,
+  "DFIntMaxSimPhysicsStepsPerFrame": 2,
+
+  "FFlagFixNetworkPhysicsInterpolation": true,
+
+  "FFlagOptimizeNetworkTransport": true,
+  "FFlagOptimizeNetworkRouting": true,
+  "FFlagOptimizeNetwork": true,
+  "FFlagTaskSchedulerUseHybridThreading": true,
+  "FFlagGraphicsEnableOcclusionCulling": true
+}

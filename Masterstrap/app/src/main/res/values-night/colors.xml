@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark Palette for Masterstrap -->
+    <color name="bg_white">#12161F</color>
+    <color name="card_white">#1A202C</color>
+    <color name="card_stroke">#2D3748</color>
+    
+    <color name="text_primary">#F7F8FC</color>
+    <color name="text_secondary">#94A3B8</color>
+    <color name="text_muted">#64748B</color>
+    
+    <color name="brand_primary">#3B82F6</color>
+    <color name="brand_primary_light">#1E293B</color>
+    
+    <color name="accent_green">#10B981</color>
+    <color name="accent_green_light">#064E3B</color>
+    
+    <color name="accent_red">#EF4444</color>
+    <color name="accent_red_light">#7F1D1D</color>
+
+    <color name="tab_selected">#F7F8FC</color>
+    <color name="tab_unselected">#94A3B8</color>
+
+    <!-- Compat surface colors -->
+    <color name="surfaceCard">#1A202C</color>
+    <color name="surfaceCardAlt">#242B38</color>
+    <color name="surfaceStroke">#2D3748</color>
+    <color name="surfaceAccent">#1E293B</color>
+</resources>

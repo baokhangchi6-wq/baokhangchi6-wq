@@ -1,0 +1,281 @@
+{
+  "_comment": "Masterstrap - Android FastFlag Reference (flags NOT yet in the app UI)",
+  "_generated": "2026-07-20",
+  "_scope": "Flags below are CONFIRMED in masterstrap_fflags_map.hpp but are NOT covered by FastFlag or FastFlag Settings tabs. Sorted by usefulness priority.",
+
+  "already_in_app": [
+    "FFlagDebugSkyGray",
+    "DFFlagDisableDPIScale",
+    "DFIntCSGLevelOfDetailSwitchingDistanceL12/L23/L34",
+    "FIntRobloxGuiBlurIntensity",
+    "FIntCameraMaxZoomDistance",
+    "FIntDebugForceMSAASamples",
+    "DFIntDebugFRMQualityLevelOverride",
+    "DFFlagEnableMeshPreloading2",
+    "DFFlagOptimizePartsInPart",
+    "FFlagDebugGraphicsPreferOpenGL (Rendering Mode)",
+    "DFIntDebugDynamicRenderKiloPixels (Dynamic Resolution)",
+    "FIntRenderShadowmapBias",
+    "DFIntRenderPostFxBasePixelCount",
+    "FIntFRMMaxGrassDistance / FIntFRMMinGrassDistance",
+    "FFlagDebugDisplayFPS",
+    "DFIntDebugTextureManagerSkipMips",
+    "DFIntDebugLimitMinTextureResolutionWhenSkipMips",
+    "FFlagAdaptiveMeshCacheSizeForAndroid",
+    "DFIntDebugFRMQualityLevelOverride (fps boost)",
+    "FIntDebugForceMSAASamples (fps boost)",
+    "DFIntTaskSchedulerTargetFps (fps boost)",
+    "FFlagAutomaticDRS",
+    "FFlagBloomFrmCutoff",
+    "FFlagAndroidGLView",
+    "FFlagAnimationLodBoneEnabled",
+    "FFlagAuroraLimit60HzRenderSim",
+    "FFlagBatchNetAssetJoinBlobEnable",
+    "FFlagBandwidthTracker",
+    "FIntAutomaticDRSHundredthPercent",
+    "FIntAutomaticDRSQLThreshold",
+    "FIntAnimationParallelThreadMax"
+  ],
+
+  "new_candidates": {
+
+    "priority_high": {
+      "_description": "Có offset đã xác nhận, tác động rõ rệt trên Android, an toàn để thêm toggle/combobox",
+
+      "FFlagEnableAndroidVsync": {
+        "key": "FFlagEnableAndroidVsync",
+        "offset": "0x6831918",
+        "type": "Bool",
+        "value_on": true,
+        "description": "Đồng bộ render frame với VSync của màn hình Android. Loại bỏ screen tearing. Nên bật trên màn hình OLED/AMOLED.",
+        "ui_suggestion": "Toggle: Enable VSync"
+      },
+
+      "FFlagEnableAndroidPowerManager": {
+        "key": "FFlagEnableAndroidPowerManager",
+        "offset": "0x650CFC0",
+        "type": "Bool",
+        "value_on": true,
+        "description": "Sử dụng Android PowerManager để phát hiện khi thiết bị bị throttle nhiệt. Engine sẽ tự điều chỉnh workload. Quan trọng trên thiết bị yếu.",
+        "ui_suggestion": "Toggle: Android Power Manager"
+      },
+
+      "FFlagFixAndroidBackgroundedSession": {
+        "key": "FFlagFixAndroidBackgroundedSession",
+        "offset": "0x64F67D8",
+        "type": "Bool",
+        "value_on": true,
+        "description": "Sửa lỗi session bị drop khi app bị đưa xuống background (ví dụ: nhận cuộc gọi, chuyển app). Quan trọng cho độ ổn định.",
+        "ui_suggestion": "Toggle: Fix Background Session"
+      },
+
+      "FIntHumanoidParallelThreadMax": {
+        "key": "FIntHumanoidParallelThreadMax",
+        "offset": "0x65E3828",
+        "type": "Int",
+        "recommended_values": [1, 2, 4],
+        "default": 1,
+        "description": "Số luồng song song cho engine tính toán vật lý nhân vật (Humanoid). 2 luồng giảm CPU bottleneck khi có nhiều nhân vật trong scene.",
+        "ui_suggestion": "Dropdown: Humanoid Thread Max (1/2/4)"
+      },
+
+      "FFlagUnifiedMeshCacheSizeComputation": {
+        "key": "FFlagUnifiedMeshCacheSizeComputation",
+        "offset": "0x650CDF0",
+        "type": "Bool",
+        "value_on": true,
+        "description": "Bật tính toán unified mesh cache, phối hợp với AdaptiveMeshCache để tối ưu VRAM. Nên bật cùng FFlagAdaptiveMeshCacheSizeForAndroid.",
+        "ui_suggestion": "Toggle: Unified Mesh Cache"
+      },
+
+      "FIntDefaultMeshCacheSizeMB": {
+        "key": "FIntDefaultMeshCacheSizeMB",
+        "offset": "0x650CE20",
+        "type": "Int",
+        "recommended_values": [128, 256, 512],
+        "default": 256,
+        "description": "Giới hạn kích thước mesh cache theo MB. 128MB cho thiết bị 2-3GB RAM, 256MB cho 4-6GB, 512MB cho 8GB+.",
+        "ui_suggestion": "Dropdown: Mesh Cache Limit (128/256/512 MB)"
+      },
+
+      "FFlagAnimationClipMemCacheEnabled": {
+        "key": "FFlagAnimationClipMemCacheEnabled",
+        "offset": "0x65C6648",
+        "type": "Bool",
+        "value_on": true,
+        "description": "Cache animation clip đã giải mã trong RAM. Giảm CPU re-decode khi nhân vật lặp animation. Đặc biệt hiệu quả trong server đông người.",
+        "ui_suggestion": "Toggle: Animation Clip Memory Cache"
+      },
+
+      "FIntAnimationRetargeterCacheSize": {
+        "key": "FIntAnimationRetargeterCacheSize",
+        "offset": "0x65C6600",
+        "type": "Int",
+        "recommended_values": [8, 16, 32],
+        "default": 16,
+        "description": "Số slot cache cho animation retargeter (rig conversion). Tăng lên 16-32 khi có nhiều loại avatar trong game.",
+        "ui_suggestion": "Dropdown: Animation Retargeter Cache (8/16/32)"
+      }
+    },
+
+    "priority_medium": {
+      "_description": "Hữu ích nhưng tùy thuộc vào phần cứng hoặc loại game",
+
+      "FFlagDebugRenderDisableWangMobile": {
+        "key": "FFlagDebugRenderDisableWangMobile",
+        "offset": "0x6574038",
+        "type": "Bool",
+        "value_on": true,
+        "description": "Tắt Wang-tile shader trên mobile. Giảm shader complexity trên GPU yếu. Một số game terrain-heavy có thể thấy khác biệt visual nhỏ.",
+        "ui_suggestion": "Toggle: Disable Wang Tile (Mobile)"
+      },
+
+      "FFlagScrollerDeferTouchScrollToFrameEnd": {
+        "key": "FFlagScrollerDeferTouchScrollToFrameEnd",
+        "offset": "0x6732158",
+        "type": "Bool",
+        "value_on": true,
+        "description": "Dời xử lý touch scroll event sang cuối frame render. UI scroll mượt hơn, giảm jank trên thiết bị có màn hình 90/120Hz.",
+        "ui_suggestion": "Toggle: Smooth Touch Scroll"
+      },
+
+      "FIntFrameRateMSToReduceTouchEvents": {
+        "key": "FIntFrameRateMSToReduceTouchEvents",
+        "offset": "0x6718278",
+        "type": "Int",
+        "recommended_values": [8, 16, 33],
+        "default": 16,
+        "description": "Khoảng thời gian (ms) để throttle touch event khi FPS thấp. 16ms = 60FPS target, 33ms = 30FPS target. Giảm CPU overhead do touch event quá nhiều.",
+        "ui_suggestion": "Dropdown: Touch Event Throttle (8ms/16ms/33ms)"
+      },
+
+      "FIntNewAndroidCpuSpeedMethodPollFreq": {
+        "key": "FIntNewAndroidCpuSpeedMethodPollFreq",
+        "offset": "0x6A29B50",
+        "type": "Int",
+        "recommended_values": [200, 500, 1000],
+        "default": 500,
+        "description": "Tần suất (ms) đọc CPU clock speed trên Android. 500ms là balance tốt giữa accuracy và overhead. 1000ms cho thiết bị yếu.",
+        "ui_suggestion": "Dropdown: CPU Poll Frequency (200/500/1000ms)"
+      },
+
+      "FIntFmodAndroidCloseSleepTimeMs": {
+        "key": "FIntFmodAndroidCloseSleepTimeMs",
+        "offset": "0x651D780",
+        "type": "Int",
+        "recommended_values": [10, 20, 50],
+        "default": 20,
+        "description": "Thời gian sleep (ms) khi audio engine tắt. Giảm xuống 10ms để tăng tốc shutdown, hữu ích khi chuyển game nhanh.",
+        "ui_suggestion": "Dropdown: Audio Close Sleep (10/20/50ms)"
+      },
+
+      "FFlagDRSBasicManagement": {
+        "key": "FFlagDRSBasicManagement",
+        "offset": "0x6584118",
+        "type": "Bool",
+        "value_on": true,
+        "description": "Bật DRS basic management. Companion flag của FFlagAutomaticDRS. Cả 2 cần bật cùng nhau để DRS hoạt động đúng.",
+        "ui_suggestion": "Toggle ẩn, bật tự động khi AutomaticDRS = True"
+      },
+
+      "FFlagAutomaticDRSEnableLowDPI": {
+        "key": "FFlagAutomaticDRSEnableLowDPI",
+        "offset": "0x6519840",
+        "type": "Bool",
+        "value_on": true,
+        "description": "Cho phép DRS hoạt động trên màn hình Low-DPI (hầu hết điện thoại tầm trung Android). Không bật flag này thì DRS sẽ không trigger trên nhiều thiết bị.",
+        "ui_suggestion": "Toggle: DRS for Low-DPI Screens"
+      },
+
+      "FFlagAutomaticDRSUseGpuTime": {
+        "key": "FFlagAutomaticDRSUseGpuTime",
+        "offset": "0x65195F8",
+        "type": "Bool",
+        "value_on": true,
+        "description": "DRS sử dụng GPU timing thay vì CPU timing để quyết định khi nào giảm resolution. Chính xác hơn, tránh false trigger.",
+        "ui_suggestion": "Toggle: DRS Use GPU Time"
+      },
+
+      "FIntRenderShadowHugeRadius": {
+        "key": "FIntRenderShadowHugeRadius",
+        "offset": "0x6587988",
+        "type": "Int",
+        "recommended_values": [0, 50, 100],
+        "default": 0,
+        "description": "Bán kính shadow caster 'khổng lồ'. 0 = disable, tiết kiệm shadow atlas VRAM đáng kể. Khuyến nghị để 0 trên Android.",
+        "ui_suggestion": "Toggle: Disable Huge Shadow Radius"
+      },
+
+      "FIntRenderMaxShadowAtlasUsageBeforeDownscale": {
+        "key": "FIntRenderMaxShadowAtlasUsageBeforeDownscale",
+        "offset": "0x6586A80",
+        "type": "Int",
+        "recommended_values": [30, 50, 80],
+        "default": 50,
+        "description": "Khi shadow atlas đạt X% full thì tự downscale. 30% = aggressively downscale sớm, tiết kiệm VRAM tốt nhất.",
+        "ui_suggestion": "Dropdown: Shadow Atlas Downscale Threshold (30/50/80%)"
+      }
+    },
+
+    "priority_low": {
+      "_description": "Ít tác động trực tiếp hơn, hoặc phụ thuộc nhiều vào game cụ thể",
+
+      "FFlagHighlightOutlinesOnMobile": {
+        "key": "FFlagHighlightOutlinesOnMobile",
+        "offset": "0x65B19F8",
+        "type": "Bool",
+        "value_on": false,
+        "description": "Tắt highlight outline trên mobile (ví dụ: viền xanh khi select part). Tiết kiệm fillrate trên GPU yếu.",
+        "ui_suggestion": "Toggle: Disable Highlight Outlines (Mobile)"
+      },
+
+      "FFlagAndroidSurfaceCompositor": {
+        "key": "FFlagAndroidSurfaceCompositor",
+        "offset": "0x67BAD38",
+        "type": "Bool",
+        "value_on": false,
+        "description": "Tắt Surface Compositor layer trên Android. Giảm 1 bước composite, nhưng có thể ảnh hưởng đến overlay như screenshot/record.",
+        "ui_suggestion": "Toggle: Disable Surface Compositor"
+      },
+
+      "FFlagReportDRSStats": {
+        "key": "FFlagReportDRSStats",
+        "offset": "0x65B1A10",
+        "type": "Bool",
+        "value_on": false,
+        "description": "Tắt DRS telemetry reporting. Giảm nhẹ network overhead. Không ảnh hưởng gameplay.",
+        "ui_suggestion": "Toggle ẩn, tắt mặc định"
+      },
+
+      "FIntRenderShadowMapDepthCacheMinNodes": {
+        "key": "FIntRenderShadowMapDepthCacheMinNodes",
+        "offset": "0x6588548",
+        "type": "Int",
+        "recommended_values": [1, 2, 4],
+        "default": 2,
+        "description": "Min node trong shadow depth cache. Giảm xuống 1 để dùng ít VRAM hơn cho shadow.",
+        "ui_suggestion": "Dropdown: Shadow Depth Cache Min (1/2/4)"
+      }
+    }
+  },
+
+  "summary": {
+    "total_new_candidates": 18,
+    "high_priority_count": 7,
+    "medium_priority_count": 8,
+    "low_priority_count": 3,
+    "recommended_to_add_to_app": [
+      "FFlagEnableAndroidVsync",
+      "FFlagEnableAndroidPowerManager",
+      "FFlagFixAndroidBackgroundedSession",
+      "FIntHumanoidParallelThreadMax",
+      "FFlagUnifiedMeshCacheSizeComputation",
+      "FIntDefaultMeshCacheSizeMB",
+      "FFlagAnimationClipMemCacheEnabled",
+      "FFlagDebugRenderDisableWangMobile",
+      "FFlagScrollerDeferTouchScrollToFrameEnd",
+      "FFlagAutomaticDRSEnableLowDPI",
+      "FFlagAutomaticDRSUseGpuTime"
+    ]
+  }
+}

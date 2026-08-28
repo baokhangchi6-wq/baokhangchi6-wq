@@ -1,0 +1,34 @@
+{
+  "FFlagDebugDisplayUnthemedInstances": true,
+  "FStringPartTexturePackTablePre2022": "",
+  "FStringPartTexturePackTable2022": "",
+  "FStringTerrainMaterialTablePre2022": "",
+  "FStringTerrainMaterialTable2022": "",
+  "FFlagDebugRenderingDisableMaterials": true,
+  "FFlagRenderTerrainMaterials": false,
+
+  "DFIntTaskSchedulerTargetFps": 999,
+  "FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate": false,
+  "FFlagDebugDisableVsync": true,
+
+  "FFlagDebugForceLowQualityShaders": true,
+  "DFIntTextureQualityOverride": 0,
+  "FFlagRenderTextureQuality": 0,
+  "FFlagRenderShadows": false,
+  "FFlagRenderGlobalShadows": false,
+  "FFlagRenderLocalLightShadows": false,
+  "FFlagRenderBloom": false,
+  "FFlagRenderLightingQuality": 0,
+
+  "DFFlagDebugGraphicsDisablePostFx": true,
+  "FFlagDebugGraphicsDisablePostFxUI": true,
+  "FFlagDebugGraphicsDisableUiBlur": true,
+  "FFlagDebugGraphicsDisableUIAntiAliasing": true,
+
+  "FFlagOptimizeNetwork": true,
+  "FFlagOptimizeNetworkTransport": true,
+  "FFlagFastCharacterLoad": true,
+  "FFlagFastGarbageCollection": true,
+  "FFlagFastLoadAssets": true,
+  "FFlagEnableFastAssetCaching": true
+}

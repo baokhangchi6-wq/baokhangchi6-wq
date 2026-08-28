@@ -1,0 +1,23 @@
+{
+  "DFFlagTextureQualityOverrideEnabled": "True",
+  "DFIntCSGLevelOfDetailSwitchingDistance": "0",
+  "DFIntCSGLevelOfDetailSwitchingDistanceL12": "0",
+  "DFIntCSGLevelOfDetailSwitchingDistanceL23": "0",
+  "DFIntCSGLevelOfDetailSwitchingDistanceL34": "0",
+  "DFIntCanHideGuiGroupId": "3461453",
+  "DFIntDebugFRMQualityLevelOverride": "1",
+  "DFIntMaxFrameBufferSize": "5",
+  "DFIntTaskSchedulerTargetFps": "240",
+  "DFIntVisibilityCheckRayCastLimitPerFrame": "10",
+  "FFlagDebugGraphicsPreferMetal": "True",
+  "FFlagDebugSkyGray": "True",
+  "FFlagHighlightOutlinesOnMobile": "True",
+  "FIntDebugForceMSAASamples": "1",
+  "FIntDebugTextureManagerSkipMips": "4",
+  "FIntFRMMaxGrassDistance": "0",
+  "FIntFRMMinGrassDistance": "0",
+  "FIntFontSizePadding": "3",
+  "FIntRenderShadowmapBias": "0",
+  "FIntTerrainArraySliceSize": "0",
+  "FLogNetwork": "7"
+}

@@ -1,0 +1,114 @@
+# 1 "Tweak.xmi"
+# 1 "<built-in>" 1
+# 1 "<built-in>" 3
+# 388 "<built-in>" 3
+# 1 "<command line>" 1
+# 1 "<built-in>" 2
+# 1 "/Users/johnappleseed/theos/Prefix.pch" 1
+# 10 "/Users/johnappleseed/theos/Prefix.pch"
+# 1 "/Users/johnappleseed/theos/vendor/include/_Prefix/BackwardsCompat.h" 1
+# 11 "/Users/johnappleseed/theos/Prefix.pch" 2
+#pragma clang module import Foundation /* clang -E: implicit import for #import <Foundation/Foundation.h> */
+
+
+
+
+
+
+
+
+#pragma clang module import UIKit /* clang -E: implicit import for #import <UIKit/UIKit.h> */
+# 1 "/Users/johnappleseed/theos/vendor/include/_Prefix/IOSMacros.h" 1
+# 22 "/Users/johnappleseed/theos/Prefix.pch" 2
+
+
+# 1 "/Users/johnappleseed/theos/vendor/include/HBLog.h" 1
+# 19 "/Users/johnappleseed/theos/vendor/include/HBLog.h"
+# 1 "/Users/johnappleseed/theos/vendor/include/CoreFoundation/CFLogUtilities.h" 1
+# 35 "/Users/johnappleseed/theos/vendor/include/CoreFoundation/CFLogUtilities.h"
+#pragma clang module import CoreFoundation.CFBase /* clang -E: implicit import for #include <CoreFoundation/CFBase.h> */
+#pragma clang module import CoreFoundation.CFString /* clang -E: implicit import for #include <CoreFoundation/CFString.h> */
+
+
+
+
+enum {
+    kCFLogLevelEmergency = 0,
+    kCFLogLevelAlert = 1,
+    kCFLogLevelCritical = 2,
+    kCFLogLevelError = 3,
+    kCFLogLevelWarning = 4,
+    kCFLogLevelNotice = 5,
+    kCFLogLevelInfo = 6,
+    kCFLogLevelDebug = 7,
+};
+
+extern void CFLog(int32_t level, CFStringRef format, ...);
+# 20 "/Users/johnappleseed/theos/vendor/include/HBLog.h" 2
+# 25 "/Users/johnappleseed/theos/Prefix.pch" 2
+# 2 "<built-in>" 2
+# 1 "Tweak.xmi" 2
+#pragma clang module import Darwin.C.stdio /* clang -E: implicit import for #include <stdio.h> */
+#pragma clang module import Darwin.POSIX.syslog /* clang -E: implicit import for #include <syslog.h> */
+#pragma clang module import Foundation /* clang -E: implicit import for #include <Foundation/Foundation.h> */
+#pragma clang module import Darwin.Mach.mach_traps /* clang -E: implicit import for #include <mach/mach_traps.h> */
+#pragma clang module import Darwin.Mach.vm_map /* clang -E: implicit import for #include <mach/vm_map.h> */
+#pragma clang module import Darwin.Mach.mach_init /* clang -E: implicit import for #include <mach/mach_init.h> */
+#pragma clang module import MachO.dyld /* clang -E: implicit import for #include <mach-o/dyld.h> */
+# 1 "/Users/Shared/hatelauncher/Main.h" 1
+
+void SUNDAE();
+static int sad = 2;
+# 9 "Tweak.xmi" 2
+#pragma clang module import ObjectiveC.runtime /* clang -E: implicit import for #import <objc/runtime.h> */
+# 1 "/Users/johnappleseed/theos/vendor/include/substrate.h" 1
+# 29 "/Users/johnappleseed/theos/vendor/include/substrate.h"
+#pragma clang module import MachO.nlist /* clang -E: implicit import for #include <mach-o/nlist.h> */
+
+
+
+
+#pragma clang module import ObjectiveC.runtime /* clang -E: implicit import for #include <objc/runtime.h> */
+#pragma clang module import ObjectiveC.message /* clang -E: implicit import for #include <objc/message.h> */
+
+
+#pragma clang module import Darwin.POSIX.dlfcn /* clang -E: implicit import for #include <dlfcn.h> */
+#pragma clang module import Darwin.C.stdlib /* clang -E: implicit import for #include <stdlib.h> */
+# 59 "/Users/johnappleseed/theos/vendor/include/substrate.h"
+_Bool MSHookProcess(pid_t pid, const char *library);
+
+typedef const void *MSImageRef;
+
+MSImageRef MSGetImageByName(const char *file);
+void *MSFindSymbol(MSImageRef image, const char *name);
+
+void MSHookFunction(void *symbol, void *replace, void **result);
+
+
+
+__attribute__((__deprecated__))
+IMP MSHookMessage(Class _class, SEL sel, IMP imp, const char *prefix );
+
+void MSHookMessageEx(Class _class, SEL sel, IMP imp, IMP *result);
+# 11 "Tweak.xmi" 2
+
+extern kern_return_t mach_vm_region
+(
+ vm_map_t target_task,
+ mach_vm_address_t *address,
+ mach_vm_size_t *size,
+ vm_region_flavor_t flavor,
+ vm_region_info_t info,
+ mach_msg_type_number_t *infoCnt,
+ mach_port_t *object_name
+ );
+%hook InputCapture
+-(id)init:(CGRect)arg1 vrMode:(BOOL)arg2 {
+    id o = %orig();
+
+SUNDAE();
+
+    return o;
+
+}
+%end

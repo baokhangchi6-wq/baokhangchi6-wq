@@ -1,0 +1,173 @@
+// note some could be wrong, since i havent fully verified all of it and im tired (this took hours... man i really hate this)
+
+=== FILE BYTE -> OPCODE (Disassembler Map) ===
+file=0x00  runtime=0xB8  handler=0x03F7BAD8  words=1  LOP_NOP
+file=0x04  runtime=0x25  handler=0x03F7BEB8  words=1  LOP_POWK
+file=0x09  runtime=0x80  handler=0x03F7D504  words=1  LOP_MUL
+file=0x0D  runtime=0xF0  handler=0x03F7D5E0  words=1  LOP_JUMPXEQKN
+file=0x0E  runtime=0x03  handler=0x03F7BC60  words=1  LOP_JUMPIFNOT
+file=0x12  runtime=0x10  handler=0x03F7E9F4  words=1  LOP_CALL
+file=0x13  runtime=0x66  handler=0x03F7D1A0  words=1  LOP_GETTABLEN
+file=0x17  runtime=0x2D  handler=0x03F7BE74  words=1  LOP_JUMPIF
+file=0x18  runtime=0x1D  handler=0x03F7B688  words=1  LOP_SETGLOBAL
+file=0x1C  runtime=0x30  handler=0x03F7BCD0  words=2  LOP_LENGTH
+file=0x21  runtime=0x2B  handler=0x03F7BB80  words=1  LOP_MODK
+file=0x26  runtime=0xA5  handler=0x03F7D3D0  words=1  LOP_SUB
+file=0x2A  runtime=0xF6  handler=0x03F7D7D0  words=1  LOP_JUMPXEQKB
+file=0x2B  runtime=0x3F  handler=0x03F7BDF8  words=1  LOP_JUMPIFNOT_2
+file=0x2F  runtime=0x55  handler=0x03F7B4A4  words=1  LOP_COVERAGE
+file=0x30  runtime=0x47  handler=0x03F7B8F4  words=1  LOP_SETTABLEKS
+file=0x34  runtime=0xB1  handler=0x03F7C110  words=1  LOP_FASTCALL3
+file=0x35  runtime=0xEE  handler=0x03F7BD1C  words=2  LOP_GETGLOBAL
+file=0x39  runtime=0x6A  handler=0x03F7D4D8  words=1  LOP_MINUS
+file=0x3E  runtime=0x8E  handler=0x03F7D164  words=1  LOP_DIVK
+file=0x43  runtime=0xE8  handler=0x03F7CF9C  words=1  LOP_ADD
+file=0x47  runtime=0x70  handler=0x03F7CED8  words=1  LOP_JUMPXEQKNIL
+file=0x48  runtime=0x2F  handler=0x03F7B5C8  words=1  LOP_JUMPBACK
+file=0x4C  runtime=0x21  handler=0x03F7BBD4  words=1  LOP_FASTCALL1
+file=0x4D  runtime=0xB5  handler=0x03F7B71C  words=2  LOP_GETTABLEKS
+file=0x51  runtime=0x42  handler=0x03F7B8B4  words=1  LOP_FORGPREP_INEXT
+file=0x52  runtime=0x22  handler=0x03F7BA18  words=1  LOP_MOVE
+file=0x56  runtime=0x69  handler=0x03F7D2CC  words=1  LOP_NOT
+file=0x5B  runtime=0x92  handler=0x03F7D0DC  words=1  LOP_MULK
+file=0x5F  runtime=0x7F  handler=0x03F7C0B0  words=1  LOP_NAMECALL
+file=0x60  runtime=0x37  handler=0x03F7BE28  words=1  LOP_JUMPIFNOTLT
+file=0x64  runtime=0xC9  handler=0x03F7D7A0  words=1  LOP_FASTCALL
+file=0x65  runtime=0xA6  handler=0x03F7B350  words=1  LOP_JUMP
+file=0x69  runtime=0x08  handler=0x03F7B9B4  words=1  LOP_JUMPX
+file=0x6A  runtime=0x1A  handler=0x03F7B5E0  words=1  LOP_SETTABLE
+file=0x6E  runtime=0x89  handler=0x03F7B3D8  words=1  LOP_FORGLOOP
+file=0x6F  runtime=0xE4  handler=0x03F7B3BC  words=1  LOP_LOADK
+file=0x73  runtime=0xD9  handler=0x03F7CEA0  words=1  LOP_CONCAT
+file=0x78  runtime=0x77  handler=0x03F7CE64  words=1  LOP_SUBK
+file=0x7C  runtime=0x5D  handler=0x03F7BF74  words=1  LOP_GETTABLEKS_2
+file=0x7D  runtime=0x7C  handler=0x03F7D598  words=1  LOP_JUMPIFNOTLE
+file=0x81  runtime=0xA0  handler=0x03F7B50C  words=1  LOP_FASTCALL2K
+file=0x82  runtime=0xB3  handler=0x03F7E824  words=1  LOP_RETURN
+file=0x86  runtime=0x58  handler=0x03F7C23C  words=1  LOP_LOADKX
+file=0x87  runtime=0xA9  handler=0x03F7D024  words=1  LOP_GETTABLE
+file=0x8B  runtime=0xF4  handler=0x03F7CF54  words=1  LOP_FORNLOOP
+file=0x8C  runtime=0x81  handler=0x03F7BAB8  words=1  LOP_LOADN
+file=0x90  runtime=0xC1  handler=0x03F7D48C  words=1  LOP_ANDK
+file=0x95  runtime=0xD6  handler=0x03F7D098  words=1  LOP_ADDK
+file=0x99  runtime=0x90  handler=0x03F7B20C  words=1  LOP_NAMECALL_2
+file=0x9A  runtime=0x6D  handler=0x03F7C254  words=1  LOP_JUMPIFEQ
+file=0x9E  runtime=0xAB  handler=0x03F7B35C  words=1  LOP_FASTCALL2
+file=0x9F  runtime=0xF2  handler=0x03F7BF00  words=1  LOP_FORGPREP
+file=0xA3  runtime=0xA7  handler=0x03F7C1B4  words=1  LOP_PREPVARARGS
+file=0xA4  runtime=0xEA  handler=0x03F7C294  words=1  LOP_GETIMPORT
+file=0xA8  runtime=0x4E  handler=0x03F7D318  words=1  LOP_FORNPREP
+file=0xA9  runtime=0xE6  handler=0x03F7B1E4  words=1  LOP_LOADB
+file=0xAD  runtime=0x16  handler=0x03F7BAE4  words=1  LOP_ORK
+file=0xB2  runtime=0x3A  handler=0x03F7B9D0  words=1  LOP_POW
+file=0xB6  runtime=0xD5  handler=0x03F7D624  words=1  LOP_IDIVK
+file=0xB7  runtime=0xED  handler=0x03F7D840  words=1  LOP_JUMPIFLT
+file=0xBB  runtime=0x8C  handler=0x03F7BD7C  words=1  LOP_FASTCALL_2
+file=0xBC  runtime=0xDF  handler=0x03F7B0B8  words=1  LOP_GETTABLEKS_3
+file=0xC0  runtime=0xA2  handler=0x03F7D670  words=1  LOP_DUPCLOSURE
+file=0xC1  runtime=0xF5  handler=0x03F7CDFC  words=1  LOP_CLOSEUPVALS
+file=0xC5  runtime=0xE7  handler=0x03F7CDCC  words=1  LOP_SETLIST
+file=0xC6  runtime=0x6B  handler=0x03F7B3AC  words=1  LOP_LOADNIL
+file=0xCF  runtime=0xF9  handler=0x03F7CF04  words=1  LOP_MOD
+file=0xD3  runtime=0xEB  handler=0x03F7D118  words=1  LOP_IDIV
+file=0xD4  runtime=0x33  handler=0x03F7B4C4  words=1  LOP_JUMPIFLE
+file=0xD8  runtime=0xDB  handler=0x03F7CFE4  words=1  LOP_DIVRK
+file=0xD9  runtime=0x82  handler=0x03F7D1EC  words=1  LOP_NEWCLOSURE
+file=0xDD  runtime=0x38  handler=0x03F7B794  words=1  LOP_GETVARARGS
+file=0xDE  runtime=0x06  handler=0x03F7BB2C  words=1  LOP_SETUPVAL
+file=0xE2  runtime=0xE0  handler=0x03F7D804  words=1  LOP_DUPTABLE
+file=0xE3  runtime=0xF3  handler=0x03F7B57C  words=1  LOP_NATIVECALL
+file=0xE7  runtime=0xA4  handler=0x03F7D458  words=1  LOP_AND
+file=0xEC  runtime=0x57  handler=0x03F7D388  words=1  LOP_DIV
+file=0xF0  runtime=0x62  handler=0x03F7D418  words=1  LOP_JUMPXEQKS
+file=0xF1  runtime=0x4A  handler=0x03F7BC8C  words=1  LOP_JUMPIFNOTEQ
+file=0xF5  runtime=0xB2  handler=0x03F7D550  words=1  LOP_SUBRK
+file=0xF6  runtime=0x05  handler=0x03F7BA34  words=1  LOP_SETTABLEN
+file=0xFB  runtime=0x00  handler=0x03F7B090  words=1  LOP_GETUPVAL
+file=0xFF  runtime=0x84  handler=0x03F7CE28  words=1  LOP_NEWTABLE
+
+=== OPCODE -> FILE BYTE ===
+LOP_ADD                  = 0x43
+LOP_ADDK                 = 0x95
+LOP_AND                  = 0xE7
+LOP_ANDK                 = 0x90
+LOP_CALL                 = 0x12
+LOP_CLOSEUPVALS          = 0xC1
+LOP_CONCAT               = 0x73
+LOP_COVERAGE             = 0x2F
+LOP_DIV                  = 0xEC
+LOP_DIVK                 = 0x3E
+LOP_DIVRK                = 0xD8
+LOP_DUPCLOSURE           = 0xC0
+LOP_DUPTABLE             = 0xE2
+LOP_FASTCALL             = 0x64
+LOP_FASTCALL1            = 0x4C
+LOP_FASTCALL2            = 0x9E
+LOP_FASTCALL2K           = 0x81
+LOP_FASTCALL3            = 0x34
+LOP_FASTCALL_2           = 0xBB
+LOP_FORGLOOP             = 0x6E
+LOP_FORGPREP             = 0x9F
+LOP_FORGPREP_INEXT       = 0x51
+LOP_FORNLOOP             = 0x8B
+LOP_FORNPREP             = 0xA8
+LOP_GETGLOBAL            = 0x35
+LOP_GETIMPORT            = 0xA4
+LOP_GETTABLE             = 0x87
+LOP_GETTABLEKS           = 0x4D
+LOP_GETTABLEKS_2         = 0x7C
+LOP_GETTABLEKS_3         = 0xBC
+LOP_GETTABLEN            = 0x13
+LOP_GETUPVAL             = 0xFB
+LOP_GETVARARGS           = 0xDD
+LOP_IDIV                 = 0xD3
+LOP_IDIVK                = 0xB6
+LOP_JUMP                 = 0x65
+LOP_JUMPBACK             = 0x48
+LOP_JUMPIF               = 0x17
+LOP_JUMPIFEQ             = 0x9A
+LOP_JUMPIFLE             = 0xD4
+LOP_JUMPIFLT             = 0xB7
+LOP_JUMPIFNOT            = 0x0E
+LOP_JUMPIFNOTEQ          = 0xF1
+LOP_JUMPIFNOTLE          = 0x7D
+LOP_JUMPIFNOTLT          = 0x60
+LOP_JUMPIFNOT_2          = 0x2B
+LOP_JUMPX                = 0x69
+LOP_JUMPXEQKB            = 0x2A
+LOP_JUMPXEQKN            = 0x0D
+LOP_JUMPXEQKNIL          = 0x47
+LOP_JUMPXEQKS            = 0xF0
+LOP_LENGTH               = 0x1C
+LOP_LOADB                = 0xA9
+LOP_LOADK                = 0x6F
+LOP_LOADKX               = 0x86
+LOP_LOADN                = 0x8C
+LOP_LOADNIL              = 0xC6
+LOP_MINUS                = 0x39
+LOP_MOD                  = 0xCF
+LOP_MODK                 = 0x21
+LOP_MOVE                 = 0x52
+LOP_MUL                  = 0x09
+LOP_MULK                 = 0x5B
+LOP_NAMECALL             = 0x5F
+LOP_NAMECALL_2           = 0x99
+LOP_NATIVECALL           = 0xE3
+LOP_NEWCLOSURE           = 0xD9
+LOP_NEWTABLE             = 0xFF
+LOP_NOP                  = 0x00
+LOP_NOT                  = 0x56
+LOP_ORK                  = 0xAD
+LOP_POW                  = 0xB2
+LOP_POWK                 = 0x04
+LOP_PREPVARARGS          = 0xA3
+LOP_RETURN               = 0x82
+LOP_SETGLOBAL            = 0x18
+LOP_SETLIST              = 0xC5
+LOP_SETTABLE             = 0x6A
+LOP_SETTABLEKS           = 0x30
+LOP_SETTABLEN            = 0xF6
+LOP_SETUPVAL             = 0xDE
+LOP_SUB                  = 0x26
+LOP_SUBK                 = 0x78
+LOP_SUBRK                = 0xF5

@@ -1,0 +1,140 @@
+# 1 "Tweak.xmi"
+# 1 "<built-in>" 1
+# 1 "<built-in>" 3
+# 388 "<built-in>" 3
+# 1 "<command line>" 1
+# 1 "<built-in>" 2
+# 1 "/Users/johnappleseed/theos/Prefix.pch" 1
+# 10 "/Users/johnappleseed/theos/Prefix.pch"
+# 1 "/Users/johnappleseed/theos/vendor/include/_Prefix/BackwardsCompat.h" 1
+# 11 "/Users/johnappleseed/theos/Prefix.pch" 2
+#pragma clang module import Foundation 
+
+
+
+
+
+
+
+
+#pragma clang module import UIKit 
+# 1 "/Users/johnappleseed/theos/vendor/include/_Prefix/IOSMacros.h" 1
+# 22 "/Users/johnappleseed/theos/Prefix.pch" 2
+
+
+# 1 "/Users/johnappleseed/theos/vendor/include/HBLog.h" 1
+# 19 "/Users/johnappleseed/theos/vendor/include/HBLog.h"
+# 1 "/Users/johnappleseed/theos/vendor/include/CoreFoundation/CFLogUtilities.h" 1
+# 35 "/Users/johnappleseed/theos/vendor/include/CoreFoundation/CFLogUtilities.h"
+#pragma clang module import CoreFoundation.CFBase 
+#pragma clang module import CoreFoundation.CFString 
+
+
+
+
+enum {
+    kCFLogLevelEmergency = 0,
+    kCFLogLevelAlert = 1,
+    kCFLogLevelCritical = 2,
+    kCFLogLevelError = 3,
+    kCFLogLevelWarning = 4,
+    kCFLogLevelNotice = 5,
+    kCFLogLevelInfo = 6,
+    kCFLogLevelDebug = 7,
+};
+
+extern void CFLog(int32_t level, CFStringRef format, ...);
+# 20 "/Users/johnappleseed/theos/vendor/include/HBLog.h" 2
+# 25 "/Users/johnappleseed/theos/Prefix.pch" 2
+# 2 "<built-in>" 2
+# 1 "Tweak.xmi" 2
+#pragma clang module import Darwin.C.stdio 
+#pragma clang module import Darwin.POSIX.syslog 
+#pragma clang module import Foundation 
+#pragma clang module import Darwin.Mach.mach_traps 
+#pragma clang module import Darwin.Mach.vm_map 
+#pragma clang module import Darwin.Mach.mach_init 
+#pragma clang module import MachO.dyld 
+# 1 "/Users/Shared/hatelauncher/Main.h" 1
+
+void SUNDAE();
+static int sad = 2;
+# 9 "Tweak.xmi" 2
+#pragma clang module import ObjectiveC.runtime 
+# 1 "/Users/johnappleseed/theos/vendor/include/substrate.h" 1
+# 29 "/Users/johnappleseed/theos/vendor/include/substrate.h"
+#pragma clang module import MachO.nlist 
+
+
+
+
+#pragma clang module import ObjectiveC.runtime 
+#pragma clang module import ObjectiveC.message 
+
+
+#pragma clang module import Darwin.POSIX.dlfcn 
+#pragma clang module import Darwin.C.stdlib 
+# 59 "/Users/johnappleseed/theos/vendor/include/substrate.h"
+_Bool MSHookProcess(pid_t pid, const char *library);
+
+typedef const void *MSImageRef;
+
+MSImageRef MSGetImageByName(const char *file);
+void *MSFindSymbol(MSImageRef image, const char *name);
+
+void MSHookFunction(void *symbol, void *replace, void **result);
+
+
+
+__attribute__((__deprecated__))
+IMP MSHookMessage(Class _class, SEL sel, IMP imp, const char *prefix );
+
+void MSHookMessageEx(Class _class, SEL sel, IMP imp, IMP *result);
+# 11 "Tweak.xmi" 2
+
+#if defined(__clang__)
+#if __has_feature(objc_arc)
+#define _LOGOS_SELF_TYPE_NORMAL __unsafe_unretained
+#define _LOGOS_SELF_TYPE_INIT __attribute__((ns_consumed))
+#define _LOGOS_SELF_CONST const
+#define _LOGOS_RETURN_RETAINED __attribute__((ns_returns_retained))
+#else
+#define _LOGOS_SELF_TYPE_NORMAL
+#define _LOGOS_SELF_TYPE_INIT
+#define _LOGOS_SELF_CONST
+#define _LOGOS_RETURN_RETAINED
+#endif
+#else
+#define _LOGOS_SELF_TYPE_NORMAL
+#define _LOGOS_SELF_TYPE_INIT
+#define _LOGOS_SELF_CONST
+#define _LOGOS_RETURN_RETAINED
+#endif
+
+@class InputCapture; 
+static InputCapture* (*_logos_orig$_ungrouped$InputCapture$init$vrMode$)(_LOGOS_SELF_TYPE_INIT InputCapture*, SEL, CGRect, BOOL) _LOGOS_RETURN_RETAINED; static InputCapture* _logos_method$_ungrouped$InputCapture$init$vrMode$(_LOGOS_SELF_TYPE_INIT InputCapture*, SEL, CGRect, BOOL) _LOGOS_RETURN_RETAINED; 
+
+# 12 "Tweak.xmi"
+extern kern_return_t mach_vm_region
+(
+ vm_map_t target_task,
+ mach_vm_address_t *address,
+ mach_vm_size_t *size,
+ vm_region_flavor_t flavor,
+ vm_region_info_t info,
+ mach_msg_type_number_t *infoCnt,
+ mach_port_t *object_name
+ );
+
+static InputCapture* _logos_method$_ungrouped$InputCapture$init$vrMode$(_LOGOS_SELF_TYPE_INIT InputCapture* __unused self, SEL __unused _cmd, CGRect arg1, BOOL arg2) _LOGOS_RETURN_RETAINED {
+    id o = _logos_orig$_ungrouped$InputCapture$init$vrMode$(self, _cmd, arg1, arg2);
+
+SUNDAE();
+
+    return o;
+
+}
+
+static __attribute__((constructor)) void _logosLocalInit() {
+{Class _logos_class$_ungrouped$InputCapture = objc_getClass("InputCapture"); MSHookMessageEx(_logos_class$_ungrouped$InputCapture, @selector(init:vrMode:), (IMP)&_logos_method$_ungrouped$InputCapture$init$vrMode$, (IMP*)&_logos_orig$_ungrouped$InputCapture$init$vrMode$);} }
+# 32 "Tweak.xmi"

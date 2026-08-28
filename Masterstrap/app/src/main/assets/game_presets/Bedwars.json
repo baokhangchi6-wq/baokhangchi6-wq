@@ -1,0 +1,21 @@
+{
+  "FIntNetworkCharacterPredictiveSimulationMode": 2,
+  "DFIntNetworkHumanoidStatePredictionMultiplier": 5,
+  "DFFlagHumanoidServerMoveInterpolationFix": true,
+  "FIntNetworkCloseCombatRadiusFocus": 60,
+  "DFIntSpatialHashCombatGridRadius": 60,
+  "FFlagNetworkSkipInterpolationForLocalCharacter": true,
+  "FFlagPhysicsContactSolverForceInstantFloorAlign": true,
+  "DFFlagHumanoidSmoothStunReplication": false,
+  "FFlagHumanoidIgnoreActivePhysicsImpulse": true,
+  "DFFlagHumanoidAlwaysSendRunningState": true,
+  "FFlagNetworkForceInstantReplication": true,
+  "FFlagPhysicsInterpolationNoDelay": true,
+  "FFlagNetworkUseSubTickPacketProcessing": true,
+  "FFlagNetworkUseSubTickPrediction3": true,
+  "DFIntPlayerNetworkUpdateRate": 120,
+  "DFIntPlayerNetworkUpdateQueueSize": 60,
+  "FFlagNetworkDisablePacketThrottling": true,
+  "DFIntNetworkPacketLimitOverride": 999999,
+  "DFIntMaxNetworkBufferSize": 2097152
+}

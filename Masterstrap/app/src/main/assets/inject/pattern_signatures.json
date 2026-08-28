@@ -1,0 +1,13 @@
+{
+  "version": "2.733.988 Global, 2.733.988 VNG",
+  "signatures": [
+    {
+      "name": "GetFastFlag",
+      "fallbackOffset": "0x0"
+    },
+    {
+      "name": "GetFastFlag_alt",
+      "fallbackOffset": "0x0"
+    }
+  ]
+}

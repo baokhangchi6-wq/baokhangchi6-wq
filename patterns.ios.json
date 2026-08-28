@@ -1,0 +1,1599 @@
+{
+  "schema": 2,
+  "platform": "ios",
+  "patterns": [
+    {
+      "name": "setfflag",
+      "string": "[FLog::FastLogValueChanged] Setting variable {}",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "enableloadmodule",
+      "string": "EnableLoadModule",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": true
+    },
+    {
+      "name": "print",
+      "string": "Current identity is %d",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "game_loaded",
+      "string": "onGameLoaded() SessionReporterState_GameLoaded placeId:%lld",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "scriptcontextstartscript",
+      "string": "Script Start",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luau_load",
+      "string": "%s: bytecode version mismatch (expected [%d..%d], got %d)",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "ongameloaded",
+      "string": "onGameLoaded() SessionReporterState_GameLoaded placeId:%lld",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "ongameleave",
+      "string": "onGameLeaveBegin() SessionReporterState_GameExitRequested placeId:%lld",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "fireproximityprompt",
+      "string": "ProximityPrompt_Triggered",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "renderjob_constructor",
+      "string": "[FLog::SurfaceController] SurfaceController::RenderJob[%s:%d]::RenderJob",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "physicssendermaxbandwidthbps",
+      "string": "PhysicsSenderMaxBandwidthBps",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "getproperty",
+      "string": "Unable to query property {}. It is not scriptable",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "setinstance",
+      "string": null,
+      "hex_pattern": "FF 83 01 D1 FD 7B 02 A9 F7 1B 00 F9 F6 57 04 A9 F4 4F 05 A9 FD 83 00 91 ?? ?? ?? ?? F3 03 00 AA E0 03 01 AA ?? ?? ?? ?? F4 03 01 AA C8 02 40 F9 A8 83 1F F8 E8 23 00 91 ?? ?? ?? ?? F7 07 40 F9 97 00 00 B4 E1 23 00 91 E0 03 13 AA ?? ?? ?? ?? F5 0B 40 F9 B5 00 00 B4 A1 22 00 91 00 00 80 92 ?? ?? ?? ?? 40 05 00 B4",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "popinstancebody",
+      "string": null,
+      "hex_pattern": "00 E4 00 6F ?? ?? ?? ?? A0 C3 01 D1 ?? ?? ?? ?? 08 00 80 92 BF 7F 39 A9 BF 03 1E B8 BF FF 3E A9 A0 83 3D AD A0 03 9D 3C ?? ?? ?? ?? ?? ?? ?? ?? E0 03 14 AA 01 00 80 92 E2 03 1F AA ?? ?? ?? ?? 68 D2 42 F9 A0 83 1A F8 BF 83 18 F8 08 01 40 92 76 16 08 8B C9 A2 5B A9 3F 01 08 EB A0 00 00 54 00 8D 5F F8 C8 E2 00 F9 A0 83 18 F8 2E 00 00 14",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "firetouchinterest",
+      "string": null,
+      "hex_pattern": "08 5C 40 F9 68 05 00 B4 F7 03 00 AA ?? ?? ?? ?? F5 03 04 2A F3 03 03 2A F4 03 02 AA F6 03 01 AA ?? ?? ?? ?? 60 04 00 36 E0 03 16 AA ?? ?? ?? ?? F8 03 00 AA E0 03 14 AA ?? ?? ?? ?? B8 03 00 B4 80 03 00 B4 68 1E 00 12 1F 05 00 71 A0 01 00 54",
+      "xref_index": 0,
+      "offset": -20,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "fireserver",
+      "string": "FireServer can only be called from the client",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "invokeserver",
+      "string": "InvokeServer can only be called from the client",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "fireallclients",
+      "string": "FireAllClients can only be called from the server",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "invokeclient",
+      "string": "InvokeClient can only be called from the server",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "fireserver_bridge",
+      "string": null,
+      "hex_pattern": "ff 03 04 d1 fd 7b 0c a9 f8 5f 0d a9 f6 57 0e a9 f4 4f 0f a9 fd 03 03 91 ?? ?? ?? ?? f4 03 02 aa f5 03 01 aa",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "fireevent",
+      "string": null,
+      "hex_pattern": "ff 83 04 d1 fd 7b 10 a9 fc 4f 11 a9 fd 03 04 91 a3 93 38 a9 ?? ?? ?? ?? a9 e3 01 d1 a5 9b 39 a9 ea 03 00 91 a3 43 01 d1 a7 83 1a f8 4a 01 02 91 e0 07 00 ad e2 0f 01 ad e4 17 02 ad ?? ?? ?? ?? e6 1f 03 ad 68 02 40 f9 a8 83 1f f8 28 a1 00 91 a9 83 00 91 a9 a3 3d a9 e8 04 80 92 a9 a3 00 d1 08 f0 df f2 aa a3 3e a9 08 00 40 f9 20 05 40 ad 08 39 42 f9 a0 87 3d ad 00 01 3f d6",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "jobstop",
+      "string": "[FLog::TaskSchedulerRun] JobStop %s",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "jobstart",
+      "string": "[FLog::TaskSchedulerRun] JobStart %s",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "lockviolationcrash",
+      "string": "LockViolationInstanceCrash",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "lockviolationscriptcrash",
+      "string": "LockViolationScriptCrash",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "stdstringconstructor",
+      "string": null,
+      "hex_pattern": "fd 7b bd a9 f6 57 01 a9 f4 4f 02 a9 fd 03 00 91 f3 03 00 aa 00 00 40 f9 f5 03 01 aa 74 0a 40 f9 60 02 00 b4 00 00 80 f9 40 03 00 37",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "rbx_abortlogger",
+      "string": null,
+      "hex_pattern": "81 C2 04 91 40 01 80 52",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "allocator_free",
+      "string": null,
+      "hex_pattern": "ff c3 01 d1 fd 7b 04 a9 f5 2b 00 f9 f4 4f 06 a9 fd 03 01 91 ?? ?? ?? ?? ?? ?? ?? ?? a8 02 40 f9 a8 83 1f f8 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? f3 03 00 aa 08 fd df 08 ?? ?? ?? ?? e0 03 13 aa",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "hashtableresize",
+      "string": null,
+      "hex_pattern": "FD 7B ?? A9 ?? ?? ?? F9 F4 4F 02 A9 FD 03 00 91 14 14 40 F9 F3 03 01 AA 14 01 00 B4",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "taskschedulerconstructor",
+      "string": "HumanoidParallelManagerTaskQueue",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "taskschedulerinlinerawjob",
+      "string": "HumanoidParallelManagerTaskQueue",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "taskschedulertargetfps",
+      "string": null,
+      "hex_pattern": "fd 7b bd a9 ?? 0b 00 f9 ?? 4f ?? a9 fd 03 00 91 ?? ?? ?? 90 ?? ?? ?? 91 ?? ?? ?? ?? ?? ?? ?? 91 ?? ?? ?? ?? ?? ?? ?? 91 ?? ?? ?? a9",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "taskscheduler_processjob",
+      "string": null,
+      "hex_pattern": "FF 43 01 D1 FD 7B 01 A9 F8 5F 02 A9 F6 57 03 A9 F4 4F 04 A9 FD 43 00 91 ?? ?? ?? ?? ?? ?? ?? ?? C8 02 40 F9 E8 07 00 F9 28 00 40 F9 48 06 00 B4",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "resumewaitingscripts",
+      "string": "WaitingHybridScriptsJob",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "taskdesynchronize",
+      "string": "task.desynchronize() may only be called from a script that is a descendant of an Actor",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "scriptcontextresume",
+      "string": "Can't resume script in this context",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "scriptcontextspawn",
+      "string": "ScriptContext is null",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "scriptcontexttaskqueue",
+      "string": "ScriptContextTaskQueue",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "setscriptcapabilities",
+      "string": null,
+      "hex_pattern": "FD 7B ?? A9 F6 57 01 A9 F4 4F 02 A9 FD 03 00 91 F6 03 00 AA E0 03 01 AA F3 03 03 2A F4 03 02 AA F5 03 01 AA ?? ?? ?? ?? 00 ?? ?? 91 E1 03 14 AA ?? ?? ?? ?? E0 03 16 AA E1 03 15 AA E2 03 14 AA E3 03 13 2A ?? ?? ?? ?? E8 03 00 2A E0 03 15 AA 01 1D 00 12 F4 4F 42 A9 F6 57 41 A9 FD 7B ?? A8 ?? ?? ?? 14",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "checkcapabilities",
+      "string": null,
+      "hex_pattern": "FD 7B BD A9 F5 0B 00 F9 F4 4F 02 A9 FD 03 00 91 F4 03 02 AA F3 03 01 AA 7F 1C 00 72 F5 03 00 AA ?? ?? ?? 54 ?? ?? 40 F9 ?? ?? ?? 97 F4 03 00 AA ?? ?? 40 F9 ?? ?? ?? 91 ?? ?? ?? 94 ?? ?? 40 F9 8A 46 4A 92",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "contexttocapabilities",
+      "string": null,
+      "hex_pattern": "08 00 40 B9 08 05 00 51 1F 31 00 71 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 20 59 68 F8 C0 03 5F D6 E0 03 1F AA C0 03 5F D6",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "hascapabilities",
+      "string": null,
+      "hex_pattern": "FD 7B BE A9 F3 0B 00 F9 FD 03 00 91 F3 03 01 AA ?? ?? ?? ?? 7F 02 20 EA E0 17 9F 1A F3 0B 40 F9 FD 7B C2 A8 C0 03 5F D6",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "hasrunaccess",
+      "string": null,
+      "hex_pattern": "FD 7B BF A9 FD 03 00 91 01 01 80 52 ?? ?? ?? ?? 00 00 00 12 FD 7B C1 A8 C0 03 5F D6",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "canaccess",
+      "string": null,
+      "hex_pattern": "FD 7B BD A9 F6 57 01 A9 F4 4F 02 A9 FD 03 00 91 F4 03 03 AA F6 03 02 AA F3 03 01 AA ?? ?? ?? ?? F5 03 00 2A E0 03 16 AA ?? ?? ?? ?? ?? ?? ?? ?? BF 06 00 71 ?? ?? ?? ?? 1F 04 00 71 ?? ?? ?? ?? 88 1E 40 92 08 1D 40 D2 1F 01 13 EA E0 17 9F 1A ?? ?? ?? ?? 1F 04 00 71 ?? ?? ?? ?? E0 03 1F 2A F4 4F 42 A9 F6 57 41 A9 FD 7B C3 A8 C0 03 5F D6",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "rbx_scriptcontextconstructor",
+      "string": null,
+      "hex_pattern": "75 46 00 F9 ?? ?? ?? ?? ?? ?? ?? ?? 75 A2 00 A9 69 0E 00 F9 60 62 03 91 ?? ?? ?? ??",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "getglobalstateforinstance",
+      "string": null,
+      "hex_pattern": "62 00 80 52 a4 09 80 52 e5 03 1f aa e7 03 1f 2a ?? ?? ?? 97",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "getglobalstate",
+      "string": null,
+      "hex_pattern": "FF C3 02 D1 FD 7B 05 A9 FC 6F 06 A9 FA 67 07 A9 F8 5F 08 A9 F6 57 09 A9 F4 4F 0A A9 FD 43 01 91 ?? ?? ?? ?? F5 03 01 AA F4 03 00 AA ?? ?? ?? ?? E8 02 40 F9 A8 83 1F F8 53 00 40 F9 ?? ?? ?? ??",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "scriptstart",
+      "string": null,
+      "hex_pattern": "fd 7b bc a9 f7 0b 00 f9 f6 57 02 a9 f4 4f 03 a9 fd 03 00 91 f3 03 04 aa f4 03 03 aa f5 03 02 aa f6 03 01 aa f7 03 08 aa ?? ?? ?? ?? e8 03 17 aa",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "lazyinitializercore",
+      "string": null,
+      "hex_pattern": "28 FD 46 D3 95 C2 0F 91 A8 7A 68 F8 08 25 C9 9A C8 00 00 36",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "rbx_reflectionpropertydescriptorpushvalue",
+      "string": null,
+      "hex_pattern": "A8 2E 42 39 ?? ?? 20 36 A8 36 40 F9 09 31 40 B9 29 05 00 51 ?? ?? ?? 71",
+      "xref_index": 0,
+      "offset": -112,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "scripttimeoutcheck",
+      "string": null,
+      "hex_pattern": "FD 7B BE A9 F3 0B 00 F9 FD 03 00 91 08 00 01 91 08 FD DF 08 68 00 00 37 E0 03 1F 2A 06 00 00 14",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luau_bytecodeload",
+      "string": null,
+      "hex_pattern": "ff 03 02 d1 fd 7b 05 a9 f6 57 06 a9 f4 4f 07 a9 fd 43 01 91 ?? ?? ?? ?? 08 00 80 12 f4 03 00 aa",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luau_validateheader",
+      "string": null,
+      "hex_pattern": "ff c3 01 d1 fd 7b 03 a9 f8 5f 04 a9 f6 57 05 a9 f4 4f 06 a9 fd c3 00 91 ?? ?? ?? ?? ?? ?? ?? ?? e8 02 40 f9 a8 83 1f f8 28 08 40 f9 1f 61 04 f1 63 0a 00 54 f4 03 01 aa ?? ?? ?? ?? 01 0a 00 b4 29 00 40 39 c9 09 00 34 f3 03 02 aa e2 03 08 aa ?? ?? ?? ?? 60 02 00 b9",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luau_pushstringerror",
+      "string": null,
+      "hex_pattern": "fd 7b bd a9 f5 0b 00 f9 f4 4f 02 a9 fd 03 00 91 ?? ?? ?? ?? f3 03 00 aa f4 03 01 aa 15 d1 22 cb ?? ?? ?? ?? e0 03 01 aa ?? ?? ?? ?? e2 03 00 aa e0 03 13 aa e1 03 14 aa ?? ?? ?? ?? a0 02 00 f9",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "lua_yield",
+      "string": "attempt to yield across metamethod/C-call boundary",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luauloadcorescripts",
+      "string": null,
+      "hex_pattern": "fd 7b ba a9 fc 6f 01 a9 fa 67 02 a9 f8 5f 03 a9 f6 57 04 a9 f4 4f 05 a9 fd 03 00 91 ff 83 06 d1",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "lua_clock",
+      "string": null,
+      "hex_pattern": "48 E0 3B D5 C9 7E 5F C8 CB 06 40 F9 CA 0E 40 F9",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "lua_clonefunction",
+      "string": null,
+      "hex_pattern": "20 05 C1 3C ?? ?? ?? 91 40 05 81 3C ?? ?? ?? 39 1F 01 0B EB 63 FF FF 54",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "lua_checkstack",
+      "string": null,
+      "hex_pattern": "FF 03 01 D1 FD 7B 01 A9 F5 13 00 F9 F4 4F 03 A9 FD 43 00 91 ?? ?? ?? ?? 08 E8 83 52 ?? ?? ?? ?? 3F 00 08 6B",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "lua_xmove",
+      "string": null,
+      "hex_pattern": "FD 7B BE A9 F4 4F 01 A9 FD 03 00 91 F3 03 01 AA F4 03 00 AA E0 03 01 AA 81 00 80 52 ?? ?? ?? ?? C0 00 00 34 E0 03 14 AA E1 03 13 AA F4 4F 41 A9",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "lua_settop",
+      "string": null,
+      "hex_pattern": "29 51 34 8B 1F 01 09 EB 22 01 00 54 0A 41 00 91 1F 0D 00 B9 5F 01 09 EB E8 03 0A AA 83 FF FF 54",
+      "xref_index": 0,
+      "offset": -80,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "lua_insert",
+      "string": null,
+      "hex_pattern": "?? ?? ?? 3C ?? ?? ?? D1 ?? ?? ?? EB ?? ?? ?? 3D ?? ?? ?? AA ?? ?? ?? 54 ?? ?? ?? F9 00 01 C0 3D 00 00 80 3D",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "lua_gc",
+      "string": null,
+      "hex_pattern": "3F 10 00 71 ?? ?? 80 12 ?? ?? ?? 54 3F 1C 00 71 ?? ?? ?? 54 3F 14 00 71 ?? ?? ?? 54 3F 18 00 71",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "lua_next",
+      "string": null,
+      "hex_pattern": "4B 0D 40 B9 EB 02 00 35 94 06 00 11 4A 41 00 91 1F 01 14 6B 68 FF FF 54",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "lua_pushvalue",
+      "string": null,
+      "hex_pattern": "?? ?? ?? 94 ?? ?? ?? F9 ?? ?? ?? 3D ?? ?? ?? 3D ?? ?? ?? F9 ?? ?? 00 91 ?? ?? ?? F9 ?? ?? ?? A9 ?? ?? ?? A8 C0 03 5F D6",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "lua_pushlstring",
+      "string": null,
+      "hex_pattern": "FD 7B BD A9 F6 57 01 A9 F4 4F 02 A9 FD 03 00 91 ?? ?? ?? ?? F4 03 02 AA F3 03 00 AA F5 03 01 AA ?? ?? ?? ?? 3F 01 08 EB 83 00 00 54 E0 03 13 AA",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "lua_pushstring",
+      "string": null,
+      "hex_pattern": "FD 7B ?? A9 F4 4F 01 A9 FD 03 00 91 F4 03 00 AA ?? ?? 00 B4 E0 03 01 AA F3 03 01 AA ?? ?? ?? 94 E2 03 00 AA E0 03 14 AA E1 03 13 AA",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "lua_type",
+      "string": null,
+      "hex_pattern": "1F ?? ?? EB ?? ?? ?? 54 00 ?? 40 B9 ?? ?? ?? 14 00 00 80 12 FD 7B ?? A8 C0 03 5F D6",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "lua_typename",
+      "string": null,
+      "hex_pattern": "3f 04 00 31 ?? ?? ?? 54 ?? ?? ?? ?? ?? ?? ?? ?? 00 d9 61 f8 c0 03 5f d6 ?? ?? ?? ?? ?? ?? ?? ?? c0 03 5f d6",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "lua_toboolean",
+      "string": null,
+      "hex_pattern": "?? 0c 40 b9 ?? ?? ?? 34 1f 05 00 71 ?? ?? ?? 54 ?? ?? 40 b9 1f 01 00 71 ?? 07 9f 1a",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "lua_touserdata",
+      "string": null,
+      "hex_pattern": "?? 0c 40 b9 1f 09 00 71 ?? ?? ?? 54 1f 25 00 71 ?? ?? ?? 54 ?? 00 40 f9 ?? 41 00 91",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "lua_isuserdata",
+      "string": null,
+      "hex_pattern": "08 0c 40 b9 1f 25 00 71 04 19 42 7a e0 17 9f 1a",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "lua_tointegerx",
+      "string": null,
+      "hex_pattern": "FF 03 01 D1 FD 7B 02 A9 F4 4F 03 A9 FD 83 00 91 ?? ?? ?? ?? F3 03 02 AA 3F 04 00 71 ?? ?? ?? ?? 88 02 40 F9 A8 83 1F F8 4B 01 00 54 ?? ?? 40 F9 ?? ?? 40 F9 08 51 21 8B 08 41 00 D1 1F 01 09 EB ?? ?? ?? ?? ?? ?? ?? 91 00 31 89 9A 08 00 00 14 C8 E1 84 12 3F 00 08 6B 8B 00 00 54 ?? ?? ?? ?? 00 D1 21 8B 02 00 00 14 ?? ?? ?? ?? 08 0C 40 B9 1F 0D 00 71 80 00 00 54 E1 23 00 91 ?? ?? ?? ?? C0 01 00 B4 00 00 40 FD 00 00 78 1E 73 00 00 B4 28 00 80 52 68 02 00 B9 88 02 40 F9 A9 83 5F F8 1F 01 09 EB 01 01 00 54 F4 4F 43 A9 FD 7B 42 A9 FF 03 01 91 C0 03 5F D6",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "lua_iscfunction",
+      "string": null,
+      "hex_pattern": "08 0c 40 b9 1f 21 00 71 ?? ?? ?? 54 08 00 40 f9 08 ?? 40 39 1f 01 00 71 e0 07 9f 1a",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "lua_islfunction",
+      "string": null,
+      "hex_pattern": "08 0c 40 b9 1f 21 00 71 ?? ?? ?? 54 08 00 40 f9 08 ?? 40 39 1f 01 00 71 e0 17 9f 1a",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "lua_settable",
+      "string": null,
+      "hex_pattern": "FD 7B BE A9 F3 0B 00 F9 FD 03 00 91 3F 04 00 71 F3 03 00 AA 4B 01 00 54 ?? ?? ?? ?? ?? ?? ?? ?? 4A 01 ?? 91 09 51 21 8B ?? ?? ?? ?? 29 41 00 D1 3F 01 08 EB 21 31 8A 9A",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "lua_gettable",
+      "string": null,
+      "hex_pattern": "00 00 40 F9 01 41 00 D1 ?? ?? ?? 97 ?? ?? 40 F9 00 00 C0 3D 00 01 9F 3C ?? ?? 40 F9 00 C1 5F B8",
+      "xref_index": 0,
+      "offset": -124,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "lua_createtable",
+      "string": null,
+      "hex_pattern": "FD 7B BD A9 F6 57 01 A9 F4 4F 02 A9 FD 03 00 91 ?? ?? ?? ?? F4 03 02 2A F3 03 00 AA F5 03 01 2A ?? ?? ?? ?? 3F 01 08 EB 83 00 00 54 E0 03 13 AA",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "lua_rawseti",
+      "string": null,
+      "hex_pattern": "?? ?? 00 72 ?? ?? 00 54 ?? ?? ?? AA ?? ?? ?? 94 ?? ?? 40 F9 ?? 41 00 D1 ?? ?? 00 F9",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "lua_rawset",
+      "string": null,
+      "hex_pattern": "?? ?? 40 F9 ?? 81 00 D1 ?? ?? 00 F9 ?? ?? ?? A9 ?? ?? ?? F9 FD 7B ?? A8 C0 03 5F D6",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "lua_getinfo",
+      "string": null,
+      "hex_pattern": "6A 55 95 52 4A 55 B5 72 09 01 09 CB 29 FD 44 D3 29 7D 0A 1B 3F 01 01 6B ?? ?? ?? ?? E9 03 01 2A 0A 06 80 52",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "lua_resumewrapper",
+      "string": null,
+      "hex_pattern": "fd 7b bd a9 f5 0b 00 f9 f4 4f 02 a9 fd 03 00 91 f4 03 02 2a f3 03 00 aa ?? ?? ?? ?? ?? ?? ?? 34",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "lua_newthread",
+      "string": null,
+      "hex_pattern": "FD 7B ?? A9 ?? ?? ?? A9 FD 03 00 91 ?? ?? 40 F9 ?? ?? ?? AA ?? ?? ?? A9 ?? ?? ?? EB ?? ?? ?? 54",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "lua_resumecheck",
+      "string": "cannot resume non-suspended coroutine",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "lua_resume",
+      "string": "too many arguments to resume",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaD_precall",
+      "string": null,
+      "hex_pattern": "fd 7b bc a9 f7 0b 00 f9 f6 57 02 a9 f4 4f 03 a9 fd 03 00 91 28 0c 40 b9 f4 03 02 2a f6 03 01 aa f3 03 00 aa 1f 21 00 71 ?? ?? ?? 54 e0 03 13 aa e1 03 16 aa",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaD_calldispatcher",
+      "string": null,
+      "hex_pattern": "FD 7B BD A9 F5 0B 00 F9 F4 4F 02 A9 FD 03 00 91 F4 03 00 AA E8 03 01 AA E1 03 02 AA 00 01 3F D6",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaD_reallocstack",
+      "string": null,
+      "hex_pattern": "fd 7b bd a9 f6 57 01 a9 f4 4f 02 a9 fd 03 00 91 28 00 80 52 f3 03 00 aa 08 80 a0 72 3f 00 08 6b ?? ?? ?? 54 f5 03 01 2a 3f 14 00 31 ?? ?? ?? 54",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaD_seterrorobj",
+      "string": "error in error handling",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaD_checkCstack",
+      "string": "C stack overflow",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaF_freeproto",
+      "string": null,
+      "hex_pattern": "FD 7B BD A9 F5 0B 00 F9 F4 4F 02 A9 FD 03 00 91 ?? ?? ?? ?? F4 03 01 AA F3 03 02 AA ?? ?? ?? ?? ?? ?? ?? ?? F5 03 00 AA 02 F5 7E D3",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaG_typeerror",
+      "string": "attempt to %s a %s value",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaG_runerror",
+      "string": null,
+      "hex_pattern": "01 40 80 52 e2 0f 01 ad e2 03 08 aa e4 17 02 ad ?? ?? ?? f9 e6 1f 03 ad ?? 01 40 f9",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaG_indexerror",
+      "string": "this %s does not have a key named '%s'",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaG_namecallerror",
+      "string": "attempt to call missing method '%s' of %s",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaG_readonlyerror",
+      "string": "attempt to modify a readonly table",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaG_forerror",
+      "string": "invalid 'for' %s (number expected, got %s)",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaG_concaterror",
+      "string": "attempt to concatenate %s with %s",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaG_ordererror",
+      "string": "attempt to compare %s %s %s",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaG_aritherror",
+      "string": "attempt to perform arithmetic (%s) on %s and %s",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaH_new",
+      "string": null,
+      "hex_pattern": "fd 7b bd a9 f6 57 01 a9 f4 4f 02 a9 fd 03 00 91 f3 03 02 2a ?? ?? ?? 39 f6 03 01 2a 01 06 80 52 f4 03 00 aa",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaH_newkey",
+      "string": null,
+      "hex_pattern": "?? ?? ?? A9 ?? ?? ?? A9 ?? ?? ?? A9 ?? ?? ?? A9 ?? ?? ?? A9 FD 83 00 91 ?? ?? ?? ?? ?? 03 ?? AA ?? 03 ?? AA ?? ?? ?? F9 ?? 03 ?? AA ?? 02 40 F9 ?? 83 1F F8 ?? 0C 40 B9 1F 0D 00 71",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaH_next",
+      "string": "invalid key to 'next'",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaH_mainposition",
+      "string": null,
+      "hex_pattern": "?? 0C 40 B9 1F 0D 00 71 ?? ?? ?? 54 1F 05 00 71 ?? ?? ?? 54 1F 09 00 71 ?? ?? ?? 54 1F 0D 00 71 ?? ?? ?? 54 ?? 20 40 29 ?? 32 9D 52 ?? 7A AB 72",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaH_settable",
+      "string": "table index is nil",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaH_resizearray",
+      "string": null,
+      "hex_pattern": "?? 80 A0 72 ?? ?? ?? 6B ?? ?? ?? 54 ?? 03 ?? 2A ?? ?? F8 37 ?? ?? 80 B9 ?? 03 ?? AA ?? ?? 40 F9 ?? 7E 7C D3",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaH_getstr",
+      "string": null,
+      "hex_pattern": "?? ?? 40 39 ?? ?? 40 b9 ?? ?? ?? 1a ?? ?? 40 f9 ?? ?? ?? 0a ?? ?? ?? 8b ?? ?? 40 b9 ?? ?? ?? 12 ?? ?? ?? 71 ?? ?? ?? 54 0a 09 40 f9 5f 01 02 eb",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaH_get",
+      "string": null,
+      "hex_pattern": "FD 7B BD A9 F5 0B 00 F9 F4 4F 02 A9 FD 03 00 91 ?? 0C 40 B9 ?? ?? ?? 34 F4 03 01 AA 1F 0D 00 71 ?? ?? ?? 54 1F 19 00 71 ?? ?? ?? 54 ?? 02 40 F9",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaH_getn",
+      "string": null,
+      "hex_pattern": "?? ?? ?? A9 ?? ?? ?? F9 ?? ?? ?? A9 FD 03 00 91 ?? 0C 40 B9 ?? ?? 00 34 ?? 03 ?? AA ?? 0D 00 71 ?? ?? 00 54 ?? 19 00 71",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaH_getnum",
+      "string": null,
+      "hex_pattern": "09 08 40 B9 28 04 00 51 1F 01 09 6B 82 00 00 54 09 ?? 40 F9 20 D1 28 8B C0 03 5F D6",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaH_rehash",
+      "string": null,
+      "hex_pattern": "48 0C 40 B9 1F 0D 00 71 A1 01 00 54 40 00 40 FD 08 00 78 1E 01 01 62 1E 00 20 61 1E 01 01 00 54 29 08 40 B9 08 05 00 51 1F 01 09 6B 82 00 00 54 ?? ?? 40 F9 20 D1 28 8B C0 03 5F D6",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaL_error",
+      "string": null,
+      "hex_pattern": "E0 07 00 AD ?? ?? ?? AA ?? ?? ?? D1 E2 0F 01 AD E4 17 02 AD ?? ?? ?? F9 E6 1F 03 AD",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaL_buffinit",
+      "string": null,
+      "hex_pattern": "E8 03 00 AA ?? ?? 00 91 ?? ?? 08 91 5F 04 08 F1 ?? 24 00 A9 28 7C 01 A9 ?? ?? ?? 54 ?? ?? 08 D1 E0 03 01 AA 02 00 80 12 E1 03 08 AA ?? ?? ?? 14 C0 03 5F D6",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaL_prepbuffsize",
+      "string": null,
+      "hex_pattern": "FD 7B BB A9 FA 67 01 A9 F8 5F 02 A9 F6 57 03 A9 F4 4F 04 A9 FD 03 00 91 ?? ?? 41 A9 ?? ?? 00 91 ?? ?? 00 91 1F 01 00 F1 ?? 04 40 F9 54 03 89 9A 09 01 14 CB 28 01 01 8B 1F 01 09 AB ?? ?? ?? 54 29 05 49 8B F3 03 00 AA E0 03 15 AA F8 03 02 2A 3F 01 08 EB",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaL_addvalue",
+      "string": null,
+      "hex_pattern": "?? ?? ?? F9 ?? ?? ?? AA ?? ?? ?? 97 ?? ?? ?? B4 ?? ?? ?? AA ?? ?? ?? A9 ?? ?? ?? F9 ?? ?? ?? CB ?? ?? ?? EB ?? ?? ?? 54 ?? ?? ?? AA ?? ?? ?? 12 ?? ?? ?? 94",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaL_typerror",
+      "string": null,
+      "hex_pattern": "FD 7B BE A9 F4 4F 01 A9 FD 03 00 91 F3 03 01 2A E1 03 02 2A F4 03 00 AA ?? ?? ?? 97 E2 03 00 AA E0 03 14 AA E1 03 13 2A ?? ?? ?? 97",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaL_register",
+      "string": null,
+      "hex_pattern": "FD 7B ?? A9 ?? ?? ?? A9 ?? ?? ?? A9 FD 03 00 91 F4 03 02 AA F3 03 00 AA ?? ?? ?? B4 88 02 40 F9 F5 03 01 AA ?? ?? ?? B4 F6 03 1F 2A 88 42 00 91",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaL_checkinteger",
+      "string": null,
+      "hex_pattern": "FF 03 01 D1 FD 7B 01 A9 F5 13 00 F9 F4 4F 03 A9 FD 43 00 91 ?? ?? ?? F0 E2 13 00 91 F3 03 01 2A ?? ?? ?? F9 F4 03 00 AA",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaL_sandboxthread",
+      "string": null,
+      "hex_pattern": "FF C3 01 D1 FD 7B 02 A9 F9 1B 00 F9 F8 5F 04 A9 F6 57 05 A9 F4 4F 06 A9 FD 83 00 91 ?? ?? ?? ?? F5 03 03 AA F6 03 02 AA ?? ?? ?? ?? F3 03 01 AA F4 03 00 AA",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaL_checktable",
+      "string": null,
+      "hex_pattern": "fd 7b be a9 f4 4f 01 a9 fd 03 00 91 f3 03 01 2a f4 03 00 aa ?? ?? ?? 97 80 00 00 b4 f4 4f 41 a9 fd 7b c2 a8 c0 03 5f d6 e0 03 14 aa e1 03 13 2a a2 00 80 52",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaL_optinteger",
+      "string": null,
+      "hex_pattern": "FD 7B BD A9 F5 0B 00 F9 F4 4F 02 A9 FD 03 00 91 F4 03 02 2A F3 03 01 2A F5 03 00 AA ?? ?? ?? 97 1F 04 00 71",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaL_checkudata",
+      "string": null,
+      "hex_pattern": "fd 7b be a9 f4 4f 01 a9 fd 03 00 91 f3 03 01 2a f4 03 00 aa ?? ?? ?? 97 1f 10 00 71 e1 00 00 54",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaL_typeerrorarg",
+      "string": "invalid argument #%d (%s expected, got %s)",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaL_argerror",
+      "string": "invalid argument #%d to '%s' (%s)",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaL_tostring",
+      "string": "'__tostring' must return a string",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaL_getfuncname",
+      "string": "__namecall",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaL_getmetafield",
+      "string": null,
+      "hex_pattern": "FD 7B BE A9 F4 4F 01 A9 FD 03 00 91 F4 03 02 AA F3 03 00 AA ?? ?? ?? ?? ?? ?? ?? ?? E0 03 13 AA E1 03 14 AA ?? ?? ?? ?? E0 03 13 AA 21 00 80 12 ?? ?? ?? ?? E0 03 13 AA 01 00 80 12 ?? ?? ?? ?? ?? ?? ?? ?? E0 03 13 AA 21 00 80 12 ?? ?? ?? ?? 20 00 80 52 ?? ?? ?? ?? E0 03 13 AA 41 00 80 12 ?? ?? ?? ?? E0 03 1F 2A F4 4F 41 A9 FD 7B C2 A8 C0 03 5F D6",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaL_openlibscore",
+      "string": "ipairs",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaM_realloc",
+      "string": null,
+      "hex_pattern": "FD 7B BB A9 F9 0B 00 F9 F8 5F 02 A9 F6 57 03 A9 F4 4F 04 A9 FD 03 00 91 ?? 04 00 D1 ?? ?? 40 F9 F3 03 01 AA F4 03 00 AA 1F FD 0F F1",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaM_new",
+      "string": null,
+      "hex_pattern": "fd 7b bc a9 f7 0b 00 f9 f6 57 02 a9 f4 4f 03 a9 fd 03 00 91 28 04 00 d1 ?? ?? ?? ?? f3 03 01 aa f4 03 00 aa 1f fd 0f f1 f5 03 02 2a ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 08 01 13 8b 01 81 c2 39",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaM_toobig",
+      "string": "memory allocation error: block too big",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaM_newbuffer",
+      "string": null,
+      "hex_pattern": "FD 7B BE A9 F4 4F 01 A9 FD 03 00 91 ?? 00 80 52 F4 03 00 AA ?? ?? A8 72 3F 00 08 EB ?? ?? ?? 54 ?? ?? 40 39 F3 03 01 AA ?? ?? 00 91 E0 03 14 AA ?? ?? ?? 97 ?? 00 80 52",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaB_getfenv",
+      "string": "no function environment for tail call at level %d",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaB_assert",
+      "string": "assertion failed!",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaB_setmetatable",
+      "string": "cannot change a protected metatable",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaB_getmetatable",
+      "string": null,
+      "hex_pattern": "FD 7B ?? A9 ?? ?? ?? F9 FD 03 00 91 21 00 80 52 F3 03 00 AA ?? ?? ?? 97 E0 03 13 AA 21 00 80 52 ?? ?? ?? 97 ?? ?? ?? 34 ?? ?? ?? ?? ?? ?? ?? 91 E0 03 13 AA 21 00 80 52 ?? ?? ?? 97 ?? ?? ?? 14 E0 03 13 AA ?? ?? ?? 97 20 00 80 52 ?? ?? ?? F9 FD 7B ?? A8 C0 03 5F D6",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaB_pairs",
+      "string": null,
+      "hex_pattern": "FD 7B BE A9 F3 0B 00 F9 FD 03 00 91 21 00 80 52 E2 00 80 52 F3 03 00 AA ?? ?? ?? 97 E0 03 13 AA 41 E2 84 12 ?? ?? ?? 97 E0 03 13 AA 21 00 80 52 ?? ?? ?? 97 E0 03 13 AA E1 03 1F 2A ?? ?? ?? 97 60 00 80 52",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaB_ipairs",
+      "string": null,
+      "hex_pattern": "FD 7B BE A9 F3 0B 00 F9 FD 03 00 91 21 00 80 52 E2 00 80 52 F3 03 00 AA ?? ?? ?? 97 E0 03 13 AA 41 E2 84 12 ?? ?? ?? 97 E0 03 13 AA 21 00 80 52 ?? ?? ?? 97 E0 03 13 AA ?? ?? ?? 97 60 00 80 52",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaB_select",
+      "string": null,
+      "hex_pattern": "FD 7B BE A9 F3 0B 00 F9 FD 03 00 91 21 00 80 52 F3 03 00 AA ?? ?? ?? 97 E0 03 13 AA ?? ?? ?? 97 E8 03 00 2A E0 03 13 AA 02 00 80 12 01 05 00 51 E3 03 1F 2A F3 0B 40 F9 FD 7B C2 A8",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaC_threadbarrier",
+      "string": null,
+      "hex_pattern": "?? ?? ?? 12 ?? ?? ?? 39 ?? ?? ?? F9 ?? 00 00 F9 ?? ?? ?? F9 C0 03 5F D6",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaC_freeobj",
+      "string": null,
+      "hex_pattern": "28 00 40 39 1F 25 00 71 ?? ?? ?? 54 1F 31 00 71 ?? ?? ?? 54 1F 29 00 71 ?? ?? ?? 54 1F 2D 00 71",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaV_gettable",
+      "string": null,
+      "hex_pattern": "fd 7b ba a9 fb 0b 00 f9 fa 67 02 a9 f8 5f 03 a9 f6 57 04 a9 f4 4f 05 a9 fd 03 00 91 28 0c 40 b9 f3 03 03 aa f4 03 02 aa f6 03 01 aa f5 03 00 aa 99 0c 80 52 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 1f 1d 00 71 ?? ?? ?? ?? d8 02 40 f9 e1 03 14 aa e0 03 18 aa ?? ?? ?? ??",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaV_settable",
+      "string": null,
+      "hex_pattern": "?? ?? ?? D1 FD 7B ?? A9 ?? ?? ?? F9 ?? ?? ?? A9 ?? ?? ?? A9 ?? ?? ?? A9 ?? ?? ?? A9 FD ?? 00 91 ?? ?? ?? ?? ?? ?? ?? AA ?? ?? ?? AA ?? ?? ?? F9 ?? ?? ?? AA ?? ?? ?? AA ?? 0C 80 52",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaV_objlen",
+      "string": "'__len' must return a number",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaV_concat",
+      "string": "string length overflow",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaT_getobjname",
+      "string": null,
+      "hex_pattern": "FD 7B BE A9 F3 0B 00 F9 FD 03 00 91 29 0C 40 B9 3F 09 00 71 ?? ?? ?? 54 3F 25 00 71",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaT_gettmbyobj",
+      "string": null,
+      "hex_pattern": "28 0c 40 b9 1f 2d 00 71 ?? ?? ?? ?? 1f 1d 00 71 ?? ?? ?? ?? 1f 25 00 71 ?? ?? ?? ?? 28 00 40 f9 08 21 00 91 ?? ?? ?? ?? 1f 31 00 71 ?? ?? ?? ?? 1f 35 00 71",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaT_objtypename",
+      "string": null,
+      "hex_pattern": "FD 7B BF A9 FD 03 00 91 ?? ?? ?? 97 00 60 00 91 FD 7B C1 A8 C0 03 5F D6",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaO_pushvfstring",
+      "string": null,
+      "hex_pattern": "FF 83 01 D1 FD 7B 03 A9 F6 57 04 A9 F4 4F 05 A9 FD C3 00 91 ?? ?? ?? ?? F4 03 02 AA F3 03 00 AA ?? ?? ?? ?? F5 03 01 AA C8 02 40 F9 A8 83 1F F8",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaO_rawequalobj",
+      "string": null,
+      "hex_pattern": "08 0c 40 b9 29 0c 40 b9 08 0d 00 12 1f 01 09 6b 61 05 00 54 1f 09 00 71 ac 01 00 54 48 03 00 34 1f 05 00 71 00 05 00 54 1f 09 00 71 41 02 00 54 08 00 40 f9 29 00 40 f9 1f 01 09 eb 01 04 00 54",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaS_init",
+      "string": null,
+      "hex_pattern": "FD 7B BD A9 F6 57 01 A9 F4 4F 02 A9 FD 03 00 91 F3 03 00 AA ?? ?? 80 52 ?? ?? ?? 90 ?? ?? ?? 91 ?? ?? 15 8B ?? ?? ?? D1 14 01 40 F9 E0 03 14 AA ?? ?? ?? 94 E2 03 00 AA E0 03 13 AA E1 03 14 AA ?? ?? ?? 94",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaS_resize",
+      "string": null,
+      "hex_pattern": "FD 7B BC A9 F7 0B 00 F9 F6 57 02 A9 F4 4F 03 A9 FD 03 00 91 F4 03 00 AA ?? ?? F8 37 F3 03 01 2A E0 03 14 AA E2 03 1F 2A 76 7E 7D D3 E1 03 16 AA ?? ?? ?? 97",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaS_hash",
+      "string": null,
+      "hex_pattern": "00 00 00 0B 00 00 C1 28 00 00 00 0B 00 39 88 13 00 00 00 0B 00 00 00 4A 00 00 00 4B 00 2D 8A 13 00 00 00 4A 00 00 00 4B 00 65 89 13 00 00 00 4A 00 00 00 4B",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "pseudo2addr",
+      "string": null,
+      "hex_pattern": "?? E2 84 12 ?? ?? ?? 6B ?? ?? ?? 54 ?? E2 84 12 ?? ?? ?? 6B ?? ?? ?? 54 ?? E1 84 12 ?? ?? ?? 6B ?? ?? ?? 54",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "lua_getfield",
+      "string": null,
+      "hex_pattern": "fd 7b bc a9 f7 0b 00 f9 f6 57 02 a9 f4 4f 03 a9 fd 03 00 91 f4 03 02 aa 3f 04 00 71 f3 03 00 aa 2b 01 00 54 69 a2 43 a9 08 51 21 8b 08 41 00 d1",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "lua_setfield",
+      "string": null,
+      "hex_pattern": "fd 7b bc a9 f7 0b 00 f9 f6 57 02 a9 f4 4f 03 a9 fd 03 00 91 f4 03 03 2a f5 03 02 aa 3f 04 00 71 f3 03 00 aa 2b 01 00 54 69 a2 43 a9 08 51 21 8b 08 41 00 d1",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "internalstringhash",
+      "string": null,
+      "hex_pattern": "FD 7B BE A9 F3 0B 00 F9 FD 03 00 91 E0 03 01 AA F3 03 01 AA ?? ?? ?? ?? A0 01 00 B4 29 37 8F 52",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "namecallhandler",
+      "string": "__namecall",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "stackoverflow",
+      "string": "stack overflow (%s)",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "rbx_reportbytecode",
+      "string": null,
+      "hex_pattern": "fd 7b ba a9 fc 6f 01 a9 fa 67 02 a9 f8 5f 03 a9 f6 57 04 a9 f4 4f 05 a9 fd 03 00 91 ff 83 13 d1 ?? ?? ?? ?? f3 03 04 2a f5 03 03 2a ?? ?? ?? f9 f4 03 02 aa f7 03 01 aa 68 03 40 f9 a8 83 1f f8",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "rbx_getbytecode",
+      "string": "Unexpected type in script compilation cache.",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "loadstring",
+      "string": "loadstring() is not available",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "eventsinit",
+      "string": "ServerToClientMessageReplicateSignal",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "connectiondisconnect",
+      "string": "Function Connection.Disconnect is not safe to call in parallel",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "validateandsetupcaps",
+      "string": null,
+      "hex_pattern": "ff 83 02 d1 fd 7b 06 a9 f8 5f 07 a9 f6 57 08 a9 f4 4f 09 a9",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "requiremodule",
+      "string": "require() should not be called on a destroyed ModuleScript, this will become an error in the future",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "rbxspawn",
+      "string": "Spawn function requires 1 argument",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "ktable",
+      "string": "Trying to call method on object of type:",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "newproxy",
+      "string": null,
+      "hex_pattern": "fd 7b be a9 f3 0b 00 f9 fd 03 00 91 21 00 80 52 f3 03 00 aa ?? ?? ?? ?? 08 78 1f 12 1f 19 00 71",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luastepinternaloverride",
+      "string": "LuaStepIntervalMsOverrideEnabled",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "geometryraycastprimitives",
+      "string": "RaycastPrimitives",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "validatecaller",
+      "string": "dm = {}, context = {}, this = {}",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "luaopenbase",
+      "string": "crash__",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "mouseinit",
+      "string": "class:Mouse",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "serializeinstance",
+      "string": "class:InstanceId",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "worldrootraycast",
+      "string": "class:DataModelInstances",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    },
+    {
+      "name": "opcodemap",
+      "string": "BITXOR_INT64",
+      "hex_pattern": null,
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false
+    }
+  ]
+}

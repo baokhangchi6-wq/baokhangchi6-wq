@@ -1,0 +1,18 @@
+{
+  "CSGLevelOfDetailSwitchingDistance": "0",
+  "CSGLevelOfDetailSwitchingDistanceL12": "0",
+  "CSGLevelOfDetailSwitchingDistanceL23": "0",
+  "CSGLevelOfDetailSwitchingDistanceL34": "0",
+  "DFIntDebugTextureManagerSkipMips": "10",
+  "DebugDisplayFPS": "True",
+  "DebugForceFSMCPULightCulling": "True",
+  "DebugLimitMinTextureResolutionWhenSkipMips": "9999999999999999",
+  "DebugSkyGray": "True",
+  "DebugTextureManagerSkipMips": "10",
+  "EnablePowerTraceModule": "True",
+  "IncludePowerSaverMode": "True",
+  "RenderShadowmapBias": "75",
+  "TaskSchedulerTargetFps": "9999999",
+  "TerrainArraySliceSize": "0",
+  "TextureQualityOverrideEnabled": "True"
+}

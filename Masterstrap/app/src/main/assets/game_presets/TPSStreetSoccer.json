@@ -1,0 +1,22 @@
+{
+  "FFlagDebugSuppressFrameDrops": true,
+  "FFlagGpuDynamicFrameTime2": true,
+  "FFlagDebugDisableRenderPhaseBlock": true,
+  "FIntFRMMinFrameTimeMs": 0,
+  "FIntRenderLocalLightsFrontToBackMaxLights": 0,
+  "FFlagTaskSchedulerFrameRateManager": true,
+  "FFlagFrameRateManager6": true,
+  "DFIntMaxFrameBufferSize": 1,
+  "FFlagMovePreRender": true,
+  "FIntTaskSchedulerThreadSleepTimeVisMsec": 0,
+  "DFIntTaskSchedulerSubThreadMultiplier": 8,
+  "FFlagDebugForceAllGpuOptimizations": true,
+  "FFlagEnableAggressiveMemoryCleanForPerf": true,
+  "FFlagFastGarbageCollection": true,
+  "FFlagLuauFastGc2": true,
+  "FIntGcStepMultiplier": 4000,
+  "FIntLuauInstructionBudgetMultiplier": 128,
+  "FIntLuauOptimizationLevel": 3,
+  "FFlagLuauInlineAllHotFunctions": true,
+  "FFlagLuauFullUnroll": true
+}

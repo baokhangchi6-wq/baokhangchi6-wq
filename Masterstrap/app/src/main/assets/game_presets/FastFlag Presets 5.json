@@ -1,0 +1,13 @@
+{
+  "DFFlagTextureQualityOverrideEnabled": "True",
+  "DFIntCSGLevelOfDetailSwitchingDistance": "250",
+  "DFIntCSGLevelOfDetailSwitchingDistanceL12": "500",
+  "DFIntCSGLevelOfDetailSwitchingDistanceL23": "750",
+  "DFIntCSGLevelOfDetailSwitchingDistanceL34": "1000",
+  "DFIntCanHideGuiGroupId": "32380007",
+  "DFIntDebugFRMQualityLevelOverride": "1",
+  "FFlagDebugSkyGray": "True",
+  "FIntDebugForceMSAASamples": "1",
+  "FIntTerrainArraySliceSize": "0",
+  "FLogNetwork": "7"
+}

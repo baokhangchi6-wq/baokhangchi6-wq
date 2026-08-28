@@ -1,0 +1,18 @@
+{
+  "FFlagAdServiceEnabled": false,
+  "FFlagDebugGraphicsDisablePostFxUI": true,
+  "FFlagDebugGraphicsDisableUiBlur": true,
+  "FFlagDebugGraphicsDisableUIAntiAliasing": true,
+  "FFlagCacheTextBoundsInGuiText": true,
+  "FFlagRenderNoText": true,
+  "FFlagRenderNoIcons": true,
+  "FFlagLuaAppEnableFastSignalRoute": true,
+  "DFFlagDisableDPIScale": true,
+  "FFlagUserPreloadMouseIcon": true,
+  "FFlagDisableRobloxTelemetry": true,
+  "FFlagDebugDisableTelemetryV2Counter": true,
+  "FFlagDebugDisableTelemetryV2Event": true,
+  "FFlagDebugDisableTextRendering": false,
+  "FFlagDebugGraphicsDisableTransientCache": true,
+  "FFlagLuaAppEnableFastSignalRoute2": true
+}

@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">masterstrap</string>
+    <string name="app_display_name">Masterstrap</string>
+    <string name="app_tagline">FastFlag &amp; Game Boost</string>
+    
+    <!-- 5 Bottom Navigation Tabs -->
+    <string name="nav_fastflag">FastFlag</string>
+    <string name="nav_ff_settings">FF Settings</string>
+    <string name="nav_start">Start</string>
+    <string name="nav_gamemode">Game Mode</string>
+    <string name="nav_preset">Preset</string>
+    
+    <!-- Actions -->
+    <string name="btn_save">Save</string>
+    <string name="btn_save_launch">Start (Save &amp; Launch)</string>
+    <string name="btn_back">❮ Back</string>
+    <string name="btn_apply">Apply</string>
+    <string name="btn_boost">Boost</string>
+    <string name="btn_activate">Activate</string>
+    <string name="btn_cancel">Cancel</string>
+    <string name="btn_confirm">Confirm</string>
+    <string name="btn_close">Close</string>
+    <string name="btn_claim">Claim</string>
+    <string name="dialog_claim_ad_title">Watch Ad to Unlock</string>
+    <string name="dialog_claim_ad_msg">Watch a short video to unlock this reward and continue.</string>
+    
+    <!-- FastFlag Editor -->
+    <string name="title_fastflag_editor">FastFlag Editor</string>
+    <string name="desc_fastflag_editor">Add, import or edit individual FastFlags</string>
+    <string name="search_hint">Search flags (e.g. FFlagDebug, FPS)...</string>
+    <string name="btn_add_flag">+ Add</string>
+    <string name="btn_import_json">Import JSON</string>
+    <string name="btn_export_json">Export JSON</string>
+    <string name="btn_clear_all">Clear All</string>
+    <string name="dialog_add_flag_title">Add Custom FastFlag</string>
+    <string name="hint_flag_name">Flag Name (e.g. FFlagFastLoading)</string>
+    <string name="hint_flag_value">Value (e.g. True / 120 / Low)</string>
+    <string name="col_flag_name">Flag Name</string>
+    <string name="col_flag_type">Type</string>
+    <string name="col_flag_value">Value</string>
+    <string name="col_flag_action">Action</string>
+    <string name="title_datagrid">FastFlag DataGrid</string>
+    <string name="tab_datagrid">DataGrid</string>
+    <string name="tab_toggles">Toggles</string>
+    <string name="tab_gamemode">Game Mode</string>
+
+    <!-- FastFlag Sections -->
+    <string name="section_graphics_quality">Graphics quality</string>
+    <string name="section_verified_preferences">Verified Roblox preferences</string>
+    <string name="section_mobile_performance">Mobile performance</string>
+    <string name="section_rendering_fx">Rendering and visual effects</string>
+    <string name="section_interface_camera">Interface and camera</string>
+    <string name="section_graphics_framerate">Graphics &amp; frame rate</string>
+    <string name="section_network">Network</string>
+    <string name="section_power_session">Power &amp; game session</string>
+    <string name="section_memory_assets">Memory &amp; assets</string>
+    <string name="section_performance_boost">Performance Boost</string>
+    <string name="section_game_session">Game Session</string>
+
+    <!-- FastFlag Tab Toggles & Dropdowns -->
+    <string name="ff_master_switch_title">Apply Roblox optimizations</string>
+    <string name="ff_master_switch_desc">Applies your selected optimizations whenever you save and launch. Turn this off to start Roblox with its normal configuration.</string>
+    <string name="ff_msaa_title">Anti-aliasing quality (MSAA)</string>
+    <string name="ff_msaa_desc">Overrides Roblox MSAA with an Android-compatible FastFlag.</string>
+    <string name="ff_frm_title">FRM quality override</string>
+    <string name="ff_frm_desc">Selects a fixed Roblox render-quality level from 1 to 21.</string>
+    <string name="ff_rendering_mode_title">Rendering mode</string>
+    <string name="ff_rendering_mode_desc">Prefer the map-backed OpenGL flag on Android. Automatic keeps Roblox\'s renderer selection.</string>
+    <string name="ff_dynamic_res_title">Dynamic render resolution</string>
+    <string name="ff_dynamic_res_desc">Caps the internal 16:9 render pixel budget while keeping the Android UI at native size.</string>
+    <string name="toggle_unlock_fps">Unlock FPS</string>
+    <string name="toggle_unlock_fps_desc">Bypasses the default 240 FPS limit for maximum framerate.</string>
+    <string name="ff_fps_title">Frame rate</string>
+    <string name="fps_unlocker_title">Framerate (FPS)</string>
+    <string name="ff_fps_desc">Choose an FPS level that suits the display and device performance. Higher levels can make motion feel smoother.</string>
+    <string name="ff_force_lowest_title">Force lowest Roblox graphics</string>
+    <string name="ff_force_lowest_desc">Keeps Roblox\'s native graphics quality controls at level 1. Requires root and takes effect when Roblox starts.</string>
+    <string name="ff_reduced_motion_title">Reduce in-game motion</string>
+    <string name="ff_reduced_motion_desc">Uses Roblox\'s native ReducedMotion setting to stop or reduce supported motion effects. Requires root.</string>
+    <string name="ff_haptics_title">In-game haptics</string>
+    <string name="ff_haptics_desc">Controls Roblox\'s native HapticStrength setting. Disable it to remove supported vibration feedback. Requires root.</string>
+    <string name="ff_fps_boost_title">One-tap graphics boost</string>
+    <string name="ff_fps_boost_desc">Reduces anti-aliasing, visual effects and grass while optimizing 3D model memory to prioritize FPS.</string>
+    <string name="ff_low_poly_title">Reduce 3D model detail</string>
+    <string name="ff_low_poly_desc">Uses simpler versions of distant 3D models to reduce graphics and memory load.</string>
+    <string name="ff_low_texture_title">Reduce texture load</string>
+    <string name="ff_low_texture_desc">Skips very high-resolution texture levels to reduce RAM and graphics-memory use.</string>
+    <string name="ff_android_mesh_title">Optimize 3D model memory</string>
+    <string name="ff_android_mesh_desc">Automatically balances memory used for 3D models on Android devices.</string>
+    <string name="ff_mesh_preload_title">Preload 3D models</string>
+    <string name="ff_mesh_preload_desc">Loads 3D models earlier to reduce objects appearing late during gameplay.</string>
+    <string name="ff_optimize_parts_title">Optimize 3D objects</string>
+    <string name="ff_optimize_parts_desc">Uses Roblox’s optimized handling path for games containing many objects.</string>
+    <string name="ff_disable_shadows_title">Disable shadows</string>
+    <string name="ff_disable_shadows_desc">Turns off most in-game shadows to reduce GPU load and improve performance, especially on lower-end devices.</string>
+    <string name="ff_disable_postfx_title">Reduce visual effects</string>
+    <string name="ff_disable_postfx_desc">Removes bloom, blur, depth-of-field and similar effects to reduce GPU load.</string>
+    <string name="ff_disable_grass_title">Remove grass</string>
+    <string name="ff_disable_grass_desc">Sets grass rendering distances to zero to reduce graphics work in outdoor scenes.</string>
+    <string name="ff_skygray_title">SkyGray</string>
+    <string name="ff_skygray_desc">Replaces the normal sky with a simple gray background for a cleaner, lighter scene.</string>
+    <string name="ff_display_fps_title">Display FPS</string>
+    <string name="ff_display_fps_desc">Enables Roblox\'s built-in FPS counter.</string>
+    <string name="ff_disable_gui_blur_title">Remove menu background blur</string>
+    <string name="ff_disable_gui_blur_desc">Removes the blurred background behind Roblox menus for a clearer and slightly lighter interface.</string>
+
+    <!-- FF Settings Tab Toggles -->
+    <string name="ffs_automatic_drs_title">Stabilize frame rate</string>
+    <string name="ffs_automatic_drs_desc">Automatically reduces render resolution when the GPU is overloaded to help gameplay stay smooth.</string>
+    <string name="ffs_animation_lod_title">Lighter distant animations</string>
+    <string name="ffs_animation_lod_desc">Simplifies character animations at a distance to reduce CPU load in crowded games.</string>
+    <string name="ffs_android_vsync_title">Smooth frame delivery</string>
+    <string name="ffs_android_vsync_desc">Synchronizes rendered frames with the display to reduce screen tearing and uneven motion.</string>
+    <string name="ffs_drs_basic_title">Adaptive graphics control</string>
+    <string name="ffs_drs_basic_desc">Allows Roblox to adjust render resolution according to the device’s available graphics performance.</string>
+    <string name="ffs_drs_gpu_time_title">Respond to GPU load</string>
+    <string name="ffs_drs_gpu_time_desc">Uses actual GPU frame timing to adjust graphics more accurately when performance changes.</string>
+    <string name="ffs_batch_net_title">Faster game asset loading</string>
+    <string name="ffs_batch_net_desc">Groups game asset requests to reduce repeated network work while joining and loading a game.</string>
+    <string name="ffs_desync_title">Desync</string>
+    <string name="ffs_desync_desc">Applies an experimental high-rate movement and physics network profile. Results depend on the game and connection.</string>
+    <string name="msg_desync_enabled">Desync unlocked and enabled.</string>
+    <string name="msg_game_preset_applied">%1$s preset applied (%2$d flags). Tap Start to launch Roblox.</string>
+    <string name="ffs_power_mgr_title">Reduce background battery use</string>
+    <string name="ffs_power_mgr_desc">Lets Roblox cooperate with Android power management when the game is running in the background.</string>
+    <string name="ffs_bg_session_title">Reliable game resume</string>
+    <string name="ffs_bg_session_desc">Helps Roblox restore its session correctly after returning from recent apps or the background.</string>
+    <string name="ffs_unified_mesh_title">Optimize 3D model memory</string>
+    <string name="ffs_unified_mesh_desc">Balances memory reserved for 3D models to reduce excessive RAM use on Android devices.</string>
+    <string name="ffs_anim_cache_title">Faster repeated animations</string>
+    <string name="ffs_anim_cache_desc">Keeps animation data ready in memory to avoid decoding the same animation repeatedly.</string>
+
+    <!-- Game Mode Toggles -->
+    <string name="gm_master_title">Enable Game Mode</string>
+    <string name="gm_master_desc">Activates a one-shot native performance profile only when Roblox is launched from Masterstrap.</string>
+    <string name="gm_system_perf_title">System Performance Boost</string>
+    <string name="gm_system_perf_desc">Raises scheduler utilization hints for Roblox game and render threads without root.</string>
+    <string name="gm_cpu_priority_title">CPU Performance Priority</string>
+    <string name="gm_cpu_priority_desc">Prefers the fastest available CPU cluster for critical Roblox threads when supported.</string>
+    <string name="gm_smart_ram_title">Smart RAM Cleanup</string>
+    <string name="gm_smart_ram_desc">Performs one measured native-heap trim after startup; never runs a periodic cleaner.</string>
+    <string name="gm_wifi_opt_title">Wi-Fi Latency Optimization</string>
+    <string name="gm_wifi_opt_desc">Keeps Wi-Fi in high-performance mode during gameplay to reduce radio wake-up delays.</string>
+    <string name="gm_unrestricted_power_title">Unrestricted Power</string>
+    <string name="gm_unrestricted_power_desc">Keeps the Roblox CPU awake during the session; Android thermal limits still apply.</string>
+    <string name="gm_fast_launch_title">Faster Game Launch</string>
+    <string name="gm_fast_launch_desc">Removes the launch animation and warms mapped Roblox code pages once at startup.</string>
+    <string name="gm_keep_display_title">Keep Display Active</string>
+    <string name="gm_keep_display_desc">Requests a session-scoped screen wake lock from inside Roblox.</string>
+
+    <!-- Settings & About -->
+    <string name="title_settings_about">Settings &amp; About</string>
+    <string name="title_preferences">Preferences</string>
+    <string name="label_app_theme">App Theme</string>
+    <string name="desc_app_theme">Dark or Light visual style</string>
+    <string name="label_language">Language</string>
+    <string name="desc_language">App display language</string>
+    <string name="label_preferred_roblox_app">Preferred Roblox app</string>
+    <string name="desc_preferred_roblox_app">Select which Roblox app to use and launch</string>
+    <string name="title_app_settings">Settings</string>
+    <string name="desc_app_settings">Configure launch-only display behavior for Roblox patched</string>
+    <string name="title_display_settings">Display</string>
+    <string name="title_stretch_screen">Stretch Screen</string>
+    <string name="desc_stretch_screen">Render Roblox at a narrower horizontal buffer and stretch it to fill the screen.</string>
+    <string name="note_stretch_screen">Applied only when Roblox patched is launched from Masterstrap. 100% keeps the original aspect ratio.</string>
+    <string name="value_stretch_screen_percent">%1$d%%</string>
+    <string name="title_community_links">Official Channels &amp; Links</string>
+    <string name="title_license_key">License Key</string>
+    <string name="desc_license_key">Enter your license key to unlock full features &amp; bypass ads.</string>
+    <string name="plan_free">Free Plan</string>
+    <string name="plan_active">Active</string>
+    
+    <!-- Preset Categories -->
+    <string name="section_safe_boost">Safe Boost (Stability &amp; Latency)</string>
+    <string name="section_turbo_boost">Turbo Boost</string>
+    <string name="title_tab_fastflag_settings">FastFlag Settings</string>
+    <string name="gm_safe_ram_title">3D model memory optimization</string>
+    <string name="gm_safe_ram_desc">Lets Roblox adapt its 3D model cache to the memory available on the Android device.</string>
+    <string name="gm_safe_network_title">Faster asset joining</string>
+    <string name="gm_safe_network_desc">Uses Roblox’s supported batched asset loading path to reduce repeated work while joining a game.</string>
+    <string name="gm_safe_power_title">Android power management</string>
+    <string name="gm_safe_power_desc">Lets Roblox cooperate with Android power management without overriding device thermal protection.</string>
+    <string name="gm_safe_touch_title">Touch Screen Sensitivity</string>
+    <string name="gm_safe_touch_desc">Faster touch screen response for instant character control without input lag.</string>
+    <string name="gm_safe_frame_pacing_title">Smooth Frame Stabilizer</string>
+    <string name="gm_safe_frame_pacing_desc">Balances frame delivery for silky-smooth motion without micro-stutters.</string>
+    <string name="msg_enable_master_first">Please enable Game Mode Turbo first!</string>
+    <string name="category_popular">Popular</string>
+    <string name="category_hot">Hot</string>
+    <string name="category_general_presets">General Presets</string>
+    <string name="category_game_presets">Game Presets</string>
+    <string name="category_inferium_presets">Inferium Presets</string>
+    <string name="title_community_presets">Community &amp; Game Presets</string>
+    <string name="desc_community_presets">Choose one optimized game preset. Its flags are merged with your controls when you save and launch.</string>
+
+    <!-- Messages & Dialogs -->
+    <string name="msg_saved_success">Configurations exported successfully to ClientAppSettings.json!</string>
+    <string name="msg_save_failed">Failed to save configurations. Check storage permissions.</string>
+    <string name="msg_roblox_not_found">Roblox is not installed on this device.</string>
+    <string name="msg_preset_applied">Preset applied successfully!</string>
+    <string name="msg_license_activated">License key activated! Ads bypassed.</string>
+    <string name="msg_invalid_license">Please enter a valid license key</string>
+
+    <!-- Mandatory Google Play update -->
+    <string name="dialog_update_required_title">Update required</string>
+    <string name="dialog_update_badge">Update available</string>
+    <string name="dialog_update_message">A newer version of Masterstrap is required to continue. Upgrade now to keep using the app.</string>
+    <string name="dialog_update_current_version">Current version: %1$s</string>
+    <string name="dialog_upgrade_now">Upgrade now</string>
+</resources>

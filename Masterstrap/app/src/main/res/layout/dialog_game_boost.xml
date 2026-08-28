@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#E6050811"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:padding="24dp">
+
+    <!-- Hyper-Detailed Circular Cyber Boost View -->
+    <com.masterstrap.rbx.ui.custom.BoostCircleProgressView
+        android:id="@+id/boostCircleView"
+        android:layout_width="120dp"
+        android:layout_height="120dp"
+        android:layout_marginBottom="20dp" />
+
+    <!-- Title: Boosting [Game Name] -->
+    <TextView
+        android:id="@+id/tvBoostDialogTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:letterSpacing="0.02"
+        android:paddingHorizontal="16dp"
+        android:text="Boosting Game..."
+        android:textColor="#FFFFFF"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:shadowColor="#8038BDF8"
+        android:shadowDx="0"
+        android:shadowDy="0"
+        android:shadowRadius="14" />
+
+    <!-- Live Step Indicator / Status Message (Fixed 2 lines to prevent any layout jitter) -->
+    <TextView
+        android:id="@+id/tvBoostDialogStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:gravity="center"
+        android:minLines="2"
+        android:maxLines="2"
+        android:paddingHorizontal="24dp"
+        android:text="⚡ Analyzing Engine &amp; RAM Allocation..."
+        android:textColor="#38BDF8"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+
+    <!-- Real-time Stats Badge -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="32dp"
+        android:layout_marginTop="16dp"
+        android:background="@drawable/bg_badge_green"
+        android:gravity="center"
+        android:paddingHorizontal="18dp"
+        android:paddingVertical="4dp">
+
+        <TextView
+            android:id="@+id/tvBoostDialogStat"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="INITIALIZING ENGINE"
+            android:textColor="@color/accent_green"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+</LinearLayout>

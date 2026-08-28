@@ -1,0 +1,16 @@
+﻿# Masterstrap iOS Git Ignore Rules
+output/*.ipa
+output/*.dylib
+output/*.o
+*.ipa
+*.zip
+*.hprof
+*.log
+.gradle/
+build/
+.idea/
+__pycache__/
+*.pyc
+.DS_Store
+local.properties
+roblox_input/

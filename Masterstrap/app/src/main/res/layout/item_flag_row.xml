@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.cardview.widget.CardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginHorizontal="4dp"
+    android:layout_marginVertical="3dp"
+    app:cardBackgroundColor="@color/card_white"
+    app:cardCornerRadius="10dp"
+    app:cardElevation="1dp"
+    app:strokeColor="@color/card_stroke"
+    app:strokeWidth="1dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="12dp">
+
+        <!-- Top: Flag Name -->
+        <TextView
+            android:id="@+id/tvFlagName"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="middle"
+            android:singleLine="true"
+            android:textColor="@color/text_primary"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            tools:text="FFlagDebugDisplayFPS" />
+
+        <!-- Bottom: Value Input + Delete Button (No Type Badge) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <!-- Value Input -->
+            <EditText
+                android:id="@+id/etFlagValue"
+                android:layout_width="0dp"
+                android:layout_height="36dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_edittext"
+                android:hint="Value"
+                android:paddingHorizontal="10dp"
+                android:singleLine="true"
+                android:textColor="@color/text_primary"
+                android:textSize="12sp"
+                tools:text="true" />
+
+            <!-- Delete Button -->
+            <ImageButton
+                android:id="@+id/btnDeleteFlag"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:layout_marginStart="8dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Delete flag"
+                android:src="@android:drawable/ic_menu_delete"
+                app:tint="@color/accent_red" />
+        </LinearLayout>
+    </LinearLayout>
+</androidx.cardview.widget.CardView>

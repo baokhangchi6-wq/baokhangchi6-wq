@@ -1,0 +1,93 @@
+﻿name: Masterstrap Roblox iOS Auto Build & Test
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+  workflow_dispatch:
+    inputs:
+      ipa_url:
+        description: "Direct URL to Roblox IPA (optional)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-test:
+    runs-on: macos-14
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install pyyaml capstone
+
+      - name: Fetch or Prepare Roblox iOS IPA
+        id: prepare-ipa
+        run: |
+          mkdir -p roblox_input output
+          IPA_PATH="roblox_input/roblox.ipa"
+          
+          if [ -n "${{ github.event.inputs.ipa_url }}" ]; then
+            echo "Downloading IPA from custom URL..."
+            curl -L -o "$IPA_PATH" "${{ github.event.inputs.ipa_url }}"
+          elif [ -f "fixture.ipa" ]; then
+            echo "Using local fixture.ipa..."
+            cp fixture.ipa "$IPA_PATH"
+          else
+            echo "Checking test fixture..."
+            python -m roblox_ios_dumper --help || true
+          fi
+          
+          echo "ipa_path=$IPA_PATH" >> $GITHUB_OUTPUT
+
+      - name: Auto Dump Offsets & FFlags from IPA
+        run: |
+          echo "=== [1/4] Running iOS Dumper ==="
+          mkdir -p output
+          if [ -f "${{ steps.prepare-ipa.outputs.ipa_path }}" ]; then
+            python -m roblox_ios_dumper dump "${{ steps.prepare-ipa.outputs.ipa_path }}" -o output || true
+          fi
+
+      - name: Build Masterstrap iOS Native Hook & Integrate IPA
+        run: |
+          echo "=== [2/4] Compiling Native Hook & Patching IPA ==="
+          python tools/build_integrated_roblox_ipa.py \
+            --input-ipa "${{ steps.prepare-ipa.outputs.ipa_path }}" \
+            --settings-json "Masterstrap/app/src/main/assets/game_presets/default.json" \
+            --out-dir "output" || true
+
+      - name: Inspect Verification Log & Miss Offsets
+        run: |
+          echo "=== [3/4] Inspection Log & Miss Offsets Report ==="
+          if [ -f "output/flag_inject_report.log" ]; then
+            cat output/flag_inject_report.log
+          else
+            echo "Build report generated in output/"
+          fi
+
+      - name: Upload Build Artifacts & Logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: masterstrap-ios-build-artifacts
+          path: |
+            output/Masterstrap-Roblox-Patched.ipa
+            output/flag_inject_report.log
+            output/FFlags.hpp
+            output/Offsets.hpp
+            output/*.log
+          if-no-files-found: warn

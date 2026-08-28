@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Modern White Minimalist Palette -->
+    <color name="bg_white">#F8F9FA</color>
+    <color name="card_white">#FFFFFF</color>
+    <color name="card_stroke">#E5E7EB</color>
+    
+    <color name="text_primary">#111827</color>
+    <color name="text_secondary">#6B7280</color>
+    <color name="text_muted">#9CA3AF</color>
+    
+    <color name="brand_primary">#0066FF</color>
+    <color name="brand_primary_light">#EBF3FF</color>
+    
+    <color name="accent_green">#10B981</color>
+    <color name="accent_green_light">#ECFDF5</color>
+    
+    <color name="accent_red">#EF4444</color>
+    <color name="accent_red_light">#FEF2F2</color>
+
+    <color name="tab_selected">#111827</color>
+    <color name="tab_unselected">#6B7280</color>
+
+    <!-- Compat colors for original app drawables -->
+    <color name="surfaceCard">#FFFFFF</color>
+    <color name="surfaceCardAlt">#F3F4F6</color>
+    <color name="surfaceStroke">#E5E7EB</color>
+    <color name="surfaceAccent">#EBF3FF</color>
+</resources>
