@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Masterstrap iOS IPA Builder & Live Integrator.
 Dumps offsets, compiles native iOS ARM64 hook with SetFastFlag/GetFastFlag + direct memory patching,
@@ -10,6 +10,7 @@ import io
 import json
 import os
 from pathlib import Path
+import plistlib
 import re
 import struct
 import subprocess
@@ -129,7 +130,34 @@ def resolve_flags_with_miss_report(flags: dict, table: dict):
     return sorted(verified_entries, key=lambda x: x[1]), miss_offsets
 
 
-def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_count: int) -> str:
+def fetch_or_load_offsets_map(local_hpp: Path) -> dict:
+    content = ""
+    if local_hpp and local_hpp.is_file():
+        content = local_hpp.read_text(encoding="utf-8", errors="ignore")
+    else:
+        fallback_paths = [
+            ROOT / "output" / "2.735.1135" / "Offsets.hpp",
+            ROOT / "roblox" / "output" / "2.735.1135" / "Offsets.hpp",
+            ROOT / "output" / "Offsets.hpp",
+            Path(r"C:\Users\Administrator\Desktop\Website\Data\IOS\IOS_Offsets.hpp")
+        ]
+        for fb in fallback_paths:
+            if fb.is_file():
+                content = fb.read_text(encoding="utf-8", errors="ignore")
+                break
+
+    table = {}
+    for line in content.splitlines():
+        m = re.search(r'inline\s+constexpr\s+std::uintptr_t\s+(\w+)\s*=\s*(0x[0-9A-Fa-f]+);', line)
+        if m:
+            table[m.group(1)] = int(m.group(2), 16)
+    return table
+
+
+def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_count: int, offset_entries: list = None) -> str:
+    if offset_entries is None:
+        offset_entries = []
+
     lines = [
         "typedef unsigned long uintptr_t;",
         "typedef unsigned int uint32_t;",
@@ -144,6 +172,8 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "#define PROT_READ 0x1",
         "#define PROT_WRITE 0x2",
         "#define PROT_EXEC 0x4",
+        "#define LOG_NOTICE 5",
+        "#define LOG_ERR 3",
         "",
         "extern uint32_t _dyld_image_count(void);",
         "extern const char* _dyld_get_image_name(uint32_t image_index);",
@@ -151,6 +181,9 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "extern int mprotect(void *addr, size_t len, int prot);",
         "extern int usleep(unsigned int usec);",
         "extern int getpid(void);",
+        "extern char* getenv(const char *name);",
+        "extern int snprintf(char *str, size_t size, const char *format, ...);",
+        "extern void syslog(int priority, const char *format, ...);",
         "extern void* fopen(const char *filename, const char *mode);",
         "extern int fprintf(void *stream, const char *format, ...);",
         "extern int fclose(void *stream);",
@@ -162,12 +195,27 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "typedef struct {",
         "    const char* name;",
         "    uintptr_t rva;",
+        "} OffsetEntry;",
+        "",
+        "static const OffsetEntry kVerifiedOffsets[] = {"
+    ]
+
+    for name, rva in offset_entries:
+        lines.append(f'    {{"{name}", 0x{rva:X}}},')
+
+    lines.extend([
+        "};",
+        f"static const size_t kOffsetsCount = {len(offset_entries)};",
+        "",
+        "typedef struct {",
+        "    const char* name;",
+        "    uintptr_t rva;",
         "    int kind; // 0 = bool, 1 = int32",
         "    int64_t value;",
         "} FFlagPatchEntry;",
         "",
         "static const FFlagPatchEntry kVerifiedFlags[] = {"
-    ]
+    ])
 
     for name, rva, kind, val in entries:
         lines.append(f'    {{"{name}", 0x{rva:X}, {kind}, {val}}},')
@@ -192,8 +240,12 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    uintptr_t target = base + entry->rva;",
         "    uintptr_t page_size = 16384;",
         "    uintptr_t page_start = target & ~(page_size - 1);",
-        "    size_t page_len = ((target + 8 - 1) & ~(page_size - 1)) - page_start + page_size;",
-        "    mprotect((void*)page_start, page_len, PROT_READ | PROT_WRITE);",
+        "    size_t page_len = page_size * 2;",
+        "    if (mprotect((void*)page_start, page_len, PROT_READ | PROT_WRITE) != 0) {",
+        "        page_size = 4096;",
+        "        page_start = target & ~(page_size - 1);",
+        "        mprotect((void*)page_start, page_size * 2, PROT_READ | PROT_WRITE);",
+        "    }",
         "",
         "    if (entry->kind == 0) {",
         "        volatile uint8_t* ptr = (volatile uint8_t*)target;",
@@ -206,36 +258,46 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    }",
         "}",
         "",
-        "static uintptr_t get_roblox_base(void) {",
+        "static uintptr_t get_robloxlib_base(void) {",
         "    uint32_t count = _dyld_image_count();",
+        "    // Prioritize RobloxLib framework which contains the actual engine!",
         "    for (uint32_t i = 0; i < count; i++) {",
         "        const char* name = _dyld_get_image_name(i);",
-        "        if (name && (strstr(name, \"RobloxLib\") || strstr(name, \"Roblox.app/Roblox\"))) {",
+        "        if (name && strstr(name, \"RobloxLib\")) {",
         "            return (uintptr_t)_dyld_get_image_header(i);",
         "        }",
         "    }",
-        "    if (count > 0) return (uintptr_t)_dyld_get_image_header(0);",
+        "    // Fallback only if RobloxLib is merged",
+        "    for (uint32_t i = 0; i < count; i++) {",
+        "        const char* name = _dyld_get_image_name(i);",
+        "        if (name && strstr(name, \"Roblox.app/Roblox\")) {",
+        "            return (uintptr_t)_dyld_get_image_header(i);",
+        "        }",
+        "    }",
         "    return 0;",
         "}",
         "",
         "static void* worker_thread(void* arg) {",
         "    (void)arg;",
-        "    usleep(250000); // 250ms",
+        "    uintptr_t base = 0;",
+        "    syslog(LOG_NOTICE, \"[Masterstrap-iOS] Dylib initialized in PID %d. Waiting for RobloxLib...\", getpid());",
         "",
-        "    uintptr_t base = get_roblox_base();",
-        "    const char* log_paths[] = {",
-        "        \"masterstrap_ios.log\",",
-        "        \"Documents/masterstrap_ios.log\",",
-        "        \"/tmp/masterstrap_ios.log\",",
-        "        NULL",
-        "    };",
-        "",
-        "    void* log_file = NULL;",
-        "    for (int i = 0; log_paths[i]; i++) {",
-        "        log_file = fopen(log_paths[i], \"w\");",
-        "        if (log_file) break;",
+        "    // Wait up to 15 seconds for RobloxLib framework to be loaded by dyld",
+        "    for (int wait = 0; wait < 150; wait++) {",
+        "        base = get_robloxlib_base();",
+        "        if (base != 0) break;",
+        "        usleep(100000); // 100ms",
         "    }",
         "",
+        "    char log_path[512] = {0};",
+        "    const char* home = getenv(\"HOME\");",
+        "    if (home) {",
+        "        snprintf(log_path, sizeof(log_path), \"%s/Documents/masterstrap_ios.log\", home);",
+        "    } else {",
+        "        snprintf(log_path, sizeof(log_path), \"/tmp/masterstrap_ios.log\");",
+        "    }",
+        "",
+        "    void* log_file = fopen(log_path, \"w\");",
         "    if (log_file) {",
         "        fprintf(log_file, \"==============================================\\n\");",
         "        fprintf(log_file, \"=== Masterstrap Roblox iOS Runtime Log    ===\\n\");",
@@ -244,9 +306,30 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        fprintf(log_file, \"RobloxLib Base Address: 0x%lx\\n\", (unsigned long)base);",
         "        fprintf(log_file, \"Total Flags Requested: %zu\\n\", kTotalRequested);",
         "        fprintf(log_file, \"Verified Flags Patched: %zu\\n\", kVerifiedCount);",
-        "        fprintf(log_file, \"Miss Offsets Count: %zu\\n\\n\", kMissCount);",
+        "        fprintf(log_file, \"Miss Offsets Count: %zu\\n\", kMissCount);",
+        "        fprintf(log_file, \"Verified Engine Offsets Count: %zu\\n\\n\", kOffsetsCount);",
+        "        ",
+        "        if (kOffsetsCount > 0) {",
+        "            fprintf(log_file, \"--- [Verified Engine & Luau VM Function Offsets] ---\\n\");",
+        "            for (size_t i = 0; i < kOffsetsCount; i++) {",
+        "                uintptr_t func_addr = (base != 0) ? (base + kVerifiedOffsets[i].rva) : 0;",
+        "                uint32_t prologue = 0;",
+        "                if (base != 0 && kVerifiedOffsets[i].rva != 0) {",
+        "                    prologue = *(volatile uint32_t*)func_addr;",
+        "                }",
+        "                fprintf(log_file, \"[OFFSET] %-32s @ 0x%lx (RVA 0x%lx) | Opcode: 0x%08X\\n\",",
+        "                        kVerifiedOffsets[i].name,",
+        "                        (unsigned long)func_addr,",
+        "                        (unsigned long)kVerifiedOffsets[i].rva,",
+        "                        prologue);",
+        "            }",
+        "            fprintf(log_file, \"\\n\");",
+        "        }",
+        "",
         "        fprintf(log_file, \"--- [Active FastFlags Status] ---\\n\");",
         "    }",
+        "",
+        "    syslog(LOG_NOTICE, \"[Masterstrap-iOS] RobloxLib base found at 0x%lx. Applying %zu flags...\", (unsigned long)base, kVerifiedCount);",
         "",
         "    int success_count = 0;",
         "    if (base != 0) {",
@@ -267,8 +350,9 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "                }",
         "            }",
         "        }",
-        "    } else if (log_file) {",
-        "        fprintf(log_file, \"ERROR: Could not locate RobloxLib base in memory!\\n\");",
+        "    } else {",
+        "        if (log_file) fprintf(log_file, \"ERROR: Could not locate RobloxLib base in memory!\\n\");",
+        "        syslog(LOG_ERR, \"[Masterstrap-iOS] ERROR: Could not locate RobloxLib base in memory!\");",
         "    }",
         "",
         "    if (log_file && kMissCount > 0) {",
@@ -285,8 +369,12 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        fclose(log_file);",
         "    }",
         "",
-        "    for (int loop = 0; loop < 20; loop++) {",
+        "    syslog(LOG_NOTICE, \"[Masterstrap-iOS] Patch finished: %d/%zu active. Starting persistence loop...\", success_count, kVerifiedCount);",
+        "",
+        "    // Persistence loop: re-apply flags every 500ms for 30 seconds to prevent Roblox engine from resetting them",
+        "    for (int loop = 0; loop < 60; loop++) {",
         "        usleep(500000); // 500ms",
+        "        if (base == 0) base = get_robloxlib_base();",
         "        if (base != 0) {",
         "            for (size_t i = 0; i < kVerifiedCount; i++) {",
         "                SetFastFlag(base, &kVerifiedFlags[i]);",
@@ -464,11 +552,15 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
     # Always write report log
     write_full_inspection_report(out_dir, flags, verified_entries, miss_offsets, ipa_name, out_ipa_name)
 
+    offsets_table = fetch_or_load_offsets_map(None)
+    offsets_entries = sorted(offsets_table.items(), key=lambda x: x[0])
+    print(f"Loaded Engine Offsets: {len(offsets_entries)} functions")
+
     if input_ipa and input_ipa.is_file():
         with tempfile.TemporaryDirectory() as td:
             tpath = Path(td)
             dylib_path = tpath / "libmasterstrap.dylib"
-            c_src = generate_native_hook_source(verified_entries, miss_offsets, len(flags))
+            c_src = generate_native_hook_source(verified_entries, miss_offsets, len(flags), offsets_entries)
             compile_dylib(c_src, dylib_path)
             dylib_bytes = dylib_path.read_bytes()
 
@@ -486,6 +578,15 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                             data = insert_load_dylib(data, "@executable_path/Frameworks/libmasterstrap.dylib")
                         elif name == "Payload/Roblox.app/Frameworks/RobloxLib.framework/RobloxLib":
                             data = insert_load_dylib(data, "@rpath/libmasterstrap.dylib")
+                        elif name.endswith("Roblox.app/Info.plist"):
+                            try:
+                                pl = plistlib.loads(data)
+                                pl["UIFileSharingEnabled"] = True
+                                pl["LSSupportsOpeningDocumentsInPlace"] = True
+                                data = plistlib.dumps(pl)
+                                print("Enabled UIFileSharingEnabled in Info.plist (accessible via Files app)")
+                            except Exception as e:
+                                print(f"Warning: Failed to update Info.plist: {e}")
 
                         zout.writestr(item, data)
                         seen_entries.add(name)
