@@ -15,6 +15,13 @@ object SettingsPersistence {
     private const val KEY_APP_THEME = "key_app_theme"
     private const val KEY_APP_LANGUAGE = "key_app_language"
     private const val KEY_STRETCH_SCREEN_PERCENT = "key_stretch_screen_percent"
+    private const val KEY_SHADER_PACKAGE = "key_shader_package"
+    private const val KEY_SHADER_WET_FLOOR = "key_shader_wet_floor"
+
+    private fun normalizeStretchScreenPercent(percent: Int): Int {
+        val clamped = percent.coerceIn(10, 200)
+        return ((clamped + 5) / 10) * 10
+    }
 
     private fun getPrefs(context: Context): SharedPreferences {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -129,13 +136,31 @@ object SettingsPersistence {
 
     fun saveStretchScreenPercent(context: Context, percent: Int) {
         getPrefs(context).edit()
-            .putInt(KEY_STRETCH_SCREEN_PERCENT, percent.coerceIn(25, 100))
+            .putInt(KEY_STRETCH_SCREEN_PERCENT, normalizeStretchScreenPercent(percent))
             .apply()
     }
 
     fun loadStretchScreenPercent(context: Context, defaultPercent: Int = 100): Int {
         return getPrefs(context)
             .getInt(KEY_STRETCH_SCREEN_PERCENT, defaultPercent)
-            .coerceIn(25, 100)
+            .let(::normalizeStretchScreenPercent)
     }
+
+    fun saveShaderPackage(context: Context, shaderPackage: ShaderPackage) {
+        getPrefs(context).edit()
+            .putString(KEY_SHADER_PACKAGE, shaderPackage.stableKey)
+            .apply()
+    }
+
+    fun loadShaderPackage(context: Context): ShaderPackage =
+        ShaderPackage.fromStableKey(
+            getPrefs(context).getString(KEY_SHADER_PACKAGE, ShaderPackage.DEFAULT.stableKey)
+        )
+
+    fun saveShaderWetFloor(context: Context, enabled: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_SHADER_WET_FLOOR, enabled).apply()
+    }
+
+    fun loadShaderWetFloor(context: Context): Boolean =
+        getPrefs(context).getBoolean(KEY_SHADER_WET_FLOOR, false)
 }

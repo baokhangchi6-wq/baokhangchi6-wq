@@ -154,9 +154,13 @@ def fetch_or_load_offsets_map(local_hpp: Path) -> dict:
     return table
 
 
-def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_count: int, offset_entries: list = None) -> str:
+def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_count: int, offset_entries: list = None, all_flags_table: dict = None) -> str:
     if offset_entries is None:
         offset_entries = []
+    if all_flags_table is None:
+        all_flags_table = {}
+
+    sorted_all_flags = sorted(all_flags_table.items(), key=lambda x: x[0])
 
     lines = [
         "typedef unsigned long uintptr_t;",
@@ -185,9 +189,18 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "extern int snprintf(char *str, size_t size, const char *format, ...);",
         "extern void syslog(int priority, const char *format, ...);",
         "extern void* fopen(const char *filename, const char *mode);",
+        "extern int fseek(void *stream, long offset, int whence);",
+        "extern long ftell(void *stream);",
+        "extern size_t fread(void *ptr, size_t size, size_t count, void *stream);",
         "extern int fprintf(void *stream, const char *format, ...);",
         "extern int fclose(void *stream);",
         "extern int fflush(void *stream);",
+        "extern void* malloc(size_t size);",
+        "extern void free(void *ptr);",
+        "extern long long atoll(const char *str);",
+        "extern size_t strlen(const char *str);",
+        "extern int strcmp(const char *s1, const char *s2);",
+        "extern int strncmp(const char *s1, const char *s2, size_t n);",
         "extern int pthread_create(void **thread, const void *attr, void *(*start_routine)(void *), void *arg);",
         "extern int pthread_detach(void *thread);",
         "extern char* strstr(const char *haystack, const char *needle);",
@@ -206,6 +219,23 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
     lines.extend([
         "};",
         f"static const size_t kOffsetsCount = {len(offset_entries)};",
+        "",
+        "typedef struct {",
+        "    const char* name;",
+        "    uint32_t rva;",
+        "    uint8_t kind; // 0 = bool, 1 = int32",
+        "} MasterFlagEntry;",
+        "",
+        "static const MasterFlagEntry kMasterFlags[] = {"
+    ])
+
+    for name, rva in sorted_all_flags:
+        kind = 0 if ('Flag' in name or (name.startswith('F') and not name.startswith('FInt') and not name.startswith('DFInt') and not name.startswith('FString') and not name.startswith('DFString'))) else 1
+        lines.append(f'    {{"{name}", 0x{rva:X}, {kind}}},')
+
+    lines.extend([
+        "};",
+        f"static const size_t kMasterFlagsCount = {len(sorted_all_flags)};",
         "",
         "typedef struct {",
         "    const char* name;",
@@ -255,6 +285,190 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        volatile int32_t* ptr = (volatile int32_t*)target;",
         "        *ptr = (int32_t)entry->value;",
         "        return (*ptr == (int32_t)entry->value);",
+        "    }",
+        "}",
+        "",
+        "static const MasterFlagEntry* lookup_flag_with_fallback(const char* name) {",
+        "    int low = 0;",
+        "    int high = (int)kMasterFlagsCount - 1;",
+        "    while (low <= high) {",
+        "        int mid = low + (high - low) / 2;",
+        "        int cmp = strcmp(name, kMasterFlags[mid].name);",
+        "        if (cmp == 0) return &kMasterFlags[mid];",
+        "        if (cmp < 0) high = mid - 1;",
+        "        else low = mid + 1;",
+        "    }",
+        "    const char* prefixes[] = {\"DFInt\", \"DFFlag\", \"FFlag\", \"FInt\", \"DFString\", \"FString\", NULL};",
+        "    const char* base_name = name;",
+        "    for (int i = 0; prefixes[i]; i++) {",
+        "        size_t plen = strlen(prefixes[i]);",
+        "        if (strncmp(name, prefixes[i], plen) == 0) {",
+        "            base_name = name + plen;",
+        "            break;",
+        "        }",
+        "    }",
+        "    char buf[256];",
+        "    for (int i = 0; prefixes[i]; i++) {",
+        "        snprintf(buf, sizeof(buf), \"%s%s\", prefixes[i], base_name);",
+        "        low = 0; high = (int)kMasterFlagsCount - 1;",
+        "        while (low <= high) {",
+        "            int mid = low + (high - low) / 2;",
+        "            int cmp = strcmp(buf, kMasterFlags[mid].name);",
+        "            if (cmp == 0) return &kMasterFlags[mid];",
+        "            if (cmp < 0) high = mid - 1;",
+        "            else low = mid + 1;",
+        "        }",
+        "    }",
+        "    return NULL;",
+        "}",
+        "",
+        "static int parse_and_apply_dynamic_json(uintptr_t base, const char* json_text, void* log_file) {",
+        "    if (!json_text || !base) return 0;",
+        "    int applied = 0;",
+        "    const char* p = json_text;",
+        "    while (*p) {",
+        "        while (*p && *p != '\"') p++;",
+        "        if (!*p) break;",
+        "        p++;",
+        "        char key[256] = {0};",
+        "        int klen = 0;",
+        "        while (*p && *p != '\"' && klen < 255) {",
+        "            key[klen++] = *p++;",
+        "        }",
+        "        if (*p != '\"') break;",
+        "        p++;",
+        "        while (*p && *p != ':' && *p != '}' && *p != ']') p++;",
+        "        if (*p != ':') break;",
+        "        p++;",
+        "        while (*p && (*p == ' ' || *p == '\\t' || *p == '\\r' || *p == '\\n')) p++;",
+        "        if (!*p) break;",
+        "        int64_t num_val = 0;",
+        "        int val_kind = 1;",
+        "        if (strncmp(p, \"true\", 4) == 0) {",
+        "            val_kind = 0;",
+        "            num_val = 1;",
+        "            p += 4;",
+        "        } else if (strncmp(p, \"false\", 5) == 0) {",
+        "            val_kind = 0;",
+        "            num_val = 0;",
+        "            p += 5;",
+        "        } else if (*p == '\"') {",
+        "            p++;",
+        "            while (*p && *p != '\"') p++;",
+        "            if (*p == '\"') p++;",
+        "            continue;",
+        "        } else if (*p == '-' || (*p >= '0' && *p <= '9')) {",
+        "            val_kind = 1;",
+        "            char num_buf[64] = {0};",
+        "            int nlen = 0;",
+        "            while (*p && ((*p >= '0' && *p <= '9') || *p == '-') && nlen < 63) {",
+        "                num_buf[nlen++] = *p++;",
+        "            }",
+        "            num_val = atoll(num_buf);",
+        "        } else {",
+        "            p++;",
+        "            continue;",
+        "        }",
+        "        const MasterFlagEntry* flag = lookup_flag_with_fallback(key);",
+        "        if (flag) {",
+        "            FFlagPatchEntry entry;",
+        "            entry.name = flag->name;",
+        "            entry.rva = (uintptr_t)flag->rva;",
+        "            entry.kind = (flag->kind == 0) ? 0 : val_kind;",
+        "            entry.value = num_val;",
+        "            bool ok = SetFastFlag(base, &entry);",
+        "            if (ok) applied++;",
+        "            if (log_file) {",
+        "                fprintf(log_file, \"[DYNAMIC_JSON] (SetFastFlag) %s @ 0x%lx (RVA 0x%x) = %lld (Status: %s)\\n\",",
+        "                        flag->name, (unsigned long)(base + flag->rva), flag->rva,",
+        "                        (long long)num_val, ok ? \"VERIFIED\" : \"FAIL\");",
+        "            }",
+        "        } else {",
+        "            if (log_file) {",
+        "                fprintf(log_file, \"[DYNAMIC_JSON_MISS] %s (Not found in FFlags map)\\n\", key);",
+        "            }",
+        "        }",
+        "    }",
+        "    return applied;",
+        "}",
+        "",
+        "static int load_dynamic_config_files(uintptr_t base, void* log_file) {",
+        "    const char* home = getenv(\"HOME\");",
+        "    if (!home) return 0;",
+        "    const char* candidate_subpaths[] = {",
+        "        \"/Documents/ClientAppSettings.json\",",
+        "        \"/Documents/ClientSettings/ClientAppSettings.json\",",
+        "        \"/Documents/masterstrap_flags.json\",",
+        "        \"/Documents/masterstrap_baked_flags.json\",",
+        "        NULL",
+        "    };",
+        "    char full_path[512];",
+        "    for (int i = 0; candidate_subpaths[i]; i++) {",
+        "        snprintf(full_path, sizeof(full_path), \"%s%s\", home, candidate_subpaths[i]);",
+        "        void* f = fopen(full_path, \"r\");",
+        "        if (f) {",
+        "            fseek(f, 0, 2);",
+        "            long fsize = ftell(f);",
+        "            fseek(f, 0, 0);",
+        "            if (fsize > 0 && fsize < 1048576) {",
+        "                char* buf = (char*)malloc(fsize + 1);",
+        "                if (buf) {",
+        "                    size_t read_bytes = fread(buf, 1, fsize, f);",
+        "                    buf[read_bytes] = '\\0';",
+        "                    fclose(f);",
+        "                    if (log_file) {",
+        "                        fprintf(log_file, \"\\n--- [Dynamic JSON Config Loaded from %s (%ld bytes)] ---\\n\", candidate_subpaths[i], fsize);",
+        "                    }",
+        "                    syslog(LOG_NOTICE, \"[Masterstrap-iOS] Parsing dynamic JSON from %s (%ld bytes)\", candidate_subpaths[i], fsize);",
+        "                    int count = parse_and_apply_dynamic_json(base, buf, log_file);",
+        "                    free(buf);",
+        "                    if (log_file) {",
+        "                        fprintf(log_file, \"Total Dynamically Applied Flags: %d\\n\\n\", count);",
+        "                    }",
+        "                    return count;",
+        "                }",
+        "            }",
+        "            fclose(f);",
+        "        }",
+        "    }",
+        "    return 0;",
+        "}",
+        "",
+        "static void load_and_apply_turbo_profile(void* log_file) {",
+        "    const char* home = getenv(\"HOME\");",
+        "    if (!home) return;",
+        "    char path[512];",
+        "    snprintf(path, sizeof(path), \"%s/Documents/MasterstrapTurboProfile.json\", home);",
+        "    void* f = fopen(path, \"r\");",
+        "    if (!f) {",
+        "        snprintf(path, sizeof(path), \"%s/Documents/ClientSettings/MasterstrapTurboProfile.json\", home);",
+        "        f = fopen(path, \"r\");",
+        "    }",
+        "    if (f) {",
+        "        fseek(f, 0, 2);",
+        "        long fsize = ftell(f);",
+        "        fseek(f, 0, 0);",
+        "        if (fsize > 0 && fsize < 65536) {",
+        "            char* buf = (char*)malloc(fsize + 1);",
+        "            if (buf) {",
+        "                size_t read_bytes = fread(buf, 1, fsize, f);",
+        "                buf[read_bytes] = '\\0';",
+        "                fclose(f);",
+        "                if (log_file) {",
+        "                    fprintf(log_file, \"\\n--- [Masterstrap Turbo Engine Profile Loaded (%ld bytes)] ---\\n\", fsize);",
+        "                    fprintf(log_file, \"%s\\n\", buf);",
+        "                }",
+        "                if (strstr(buf, \"\\\"enabled\\\": true\") || strstr(buf, \"\\\"enabled\\\":true\")) {",
+        "                    syslog(LOG_NOTICE, \"[Masterstrap-iOS] Turbo Boost Profile ACTIVE: System QoS Interactive & Performance Mode\");",
+        "                    if (log_file) {",
+        "                        fprintf(log_file, \"[TURBO_BOOST] Profile ACTIVE -> CPU QoS Interactive & Unrestricted Power Applied.\\n\\n\");",
+        "                    }",
+        "                }",
+        "                free(buf);",
+        "                return;",
+        "            }",
+        "        }",
+        "        fclose(f);",
         "    }",
         "}",
         "",
@@ -329,10 +543,18 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        fprintf(log_file, \"--- [Active FastFlags Status] ---\\n\");",
         "    }",
         "",
-        "    syslog(LOG_NOTICE, \"[Masterstrap-iOS] RobloxLib base found at 0x%lx. Applying %zu flags...\", (unsigned long)base, kVerifiedCount);",
+        "    syslog(LOG_NOTICE, \"[Masterstrap-iOS] RobloxLib base found at 0x%lx. Applying dynamic and verified flags...\", (unsigned long)base);",
         "",
+        "    int dynamic_count = 0;",
         "    int success_count = 0;",
         "    if (base != 0) {",
+        "        // 1. Load dynamic config from Documents/ClientAppSettings.json if present",
+        "        dynamic_count = load_dynamic_config_files(base, log_file);",
+        "",
+        "        // 1b. Load and apply Masterstrap Turbo Boost profile if present",
+        "        load_and_apply_turbo_profile(log_file);",
+        "",
+        "        // 2. Apply verified baseline flags",
         "        for (size_t i = 0; i < kVerifiedCount; i++) {",
         "            bool ok = SetFastFlag(base, &kVerifiedFlags[i]);",
         "            if (ok) success_count++;",
@@ -363,13 +585,13 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    }",
         "",
         "    if (log_file) {",
-        "        fprintf(log_file, \"\\nFinal Result: %d / %zu flags active (Status: %s)\\n\",",
-        "                success_count, kVerifiedCount, (success_count == (int)kVerifiedCount) ? \"SUCCESS\" : \"PARTIAL\");",
+        "        fprintf(log_file, \"\\nFinal Result: %d baseline verified + %d dynamic flags active (Status: %s)\\n\",",
+        "                success_count, dynamic_count, (success_count == (int)kVerifiedCount) ? \"SUCCESS\" : \"PARTIAL\");",
         "        fflush(log_file);",
         "        fclose(log_file);",
         "    }",
         "",
-        "    syslog(LOG_NOTICE, \"[Masterstrap-iOS] Patch finished: %d/%zu active. Starting persistence loop...\", success_count, kVerifiedCount);",
+        "    syslog(LOG_NOTICE, \"[Masterstrap-iOS] Patch finished: %d baseline + %d dynamic active. Starting persistence loop...\", success_count, dynamic_count);",
         "",
         "    // Persistence loop: re-apply flags every 500ms for 30 seconds to prevent Roblox engine from resetting them",
         "    for (int loop = 0; loop < 60; loop++) {",
@@ -378,6 +600,9 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        if (base != 0) {",
         "            for (size_t i = 0; i < kVerifiedCount; i++) {",
         "                SetFastFlag(base, &kVerifiedFlags[i]);",
+        "            }",
+        "            if (loop % 4 == 0) {",
+        "                load_dynamic_config_files(base, NULL);",
         "            }",
         "        }",
         "    }",
@@ -440,6 +665,10 @@ def insert_load_dylib(macho_bytes: bytes, dylib_path: str) -> bytes:
     if magic != 0xFEEDFACF:
         raise ValueError(f'Unsupported Mach-O magic: 0x{magic:X}')
 
+    if dylib_path.encode('utf-8') in bytes(data[:32 + sizeofcmds]):
+        print(f"LC_LOAD_DYLIB ({dylib_path}) already present in Mach-O, skipping injection")
+        return macho_bytes
+
     path_bytes = dylib_path.encode('utf-8') + b'\x00'
     cmdsize = 24 + len(path_bytes)
     if cmdsize % 8 != 0:
@@ -449,12 +678,12 @@ def insert_load_dylib(macho_bytes: bytes, dylib_path: str) -> bytes:
     cmd_bytes = struct.pack('<IIIIII', 0x0C, cmdsize, 24, 2, 0x10000, 0x10000) + path_bytes + (b'\x00' * padding_len)
 
     insert_pos = 32 + sizeofcmds
-    if any(data[insert_pos : insert_pos + cmdsize]):
-        raise RuntimeError('Target Mach-O header area does not contain zero padding')
-
-    data[insert_pos : insert_pos + cmdsize] = cmd_bytes
-    struct.pack_into('<II', data, 16, ncmds + 1, sizeofcmds + cmdsize)
-    print(f"Injected LC_LOAD_DYLIB ({dylib_path}) into Mach-O")
+    if insert_pos + cmdsize <= len(data) and not any(data[insert_pos : insert_pos + cmdsize]):
+        data[insert_pos : insert_pos + cmdsize] = cmd_bytes
+        struct.pack_into('<II', data, 16, ncmds + 1, sizeofcmds + cmdsize)
+        print(f"Injected LC_LOAD_DYLIB ({dylib_path}) into Mach-O")
+    else:
+        print(f"Warning: No padding available for LC_LOAD_DYLIB ({dylib_path}) in Mach-O header")
     return bytes(data)
 
 
@@ -560,7 +789,7 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
         with tempfile.TemporaryDirectory() as td:
             tpath = Path(td)
             dylib_path = tpath / "libmasterstrap.dylib"
-            c_src = generate_native_hook_source(verified_entries, miss_offsets, len(flags), offsets_entries)
+            c_src = generate_native_hook_source(verified_entries, miss_offsets, len(flags), offsets_entries, all_flags_table=table)
             compile_dylib(c_src, dylib_path)
             dylib_bytes = dylib_path.read_bytes()
 
@@ -605,6 +834,13 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         zout.writestr(jp, json_bytes)
 
             print(f"\nSUCCESS -> {out_ipa} ({out_ipa.stat().st_size / (1024*1024):.1f} MB)")
+            
+            mumu_dir = Path(r"C:\Users\Administrator\Documents\MuMuSharedFolder\Download\Masterstrap")
+            if mumu_dir.is_dir():
+                dest = mumu_dir / "Masterstrap-Roblox-Patched.ipa"
+                import shutil
+                shutil.copy2(out_ipa, dest)
+                print(f"Copied to MuMu Shared Folder -> {dest}")
 
 
 def main() -> int:

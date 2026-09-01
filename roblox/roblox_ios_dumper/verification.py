@@ -81,6 +81,23 @@ def _header_values(path: Path) -> dict[str, int]:
     }
 
 
+def _map_values(path: Path) -> tuple[dict[str, int], list[str]]:
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        raise MachOError(f"Unable to read generated map {path}: {exc}") from exc
+    values: dict[str, int] = {}
+    duplicates: list[str] = []
+    for name, value in re.findall(
+        r'\{\s*"([A-Za-z_][A-Za-z0-9_]*)"\s*,\s*0x([0-9A-Fa-f]+)\s*,' ,
+        text,
+    ):
+        if name in values:
+            duplicates.append(name)
+        values[name] = int(value, 16)
+    return values, duplicates
+
+
 def _cpp_identifier(value: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9_]", "_", value)
     if not cleaned or cleaned[0].isdigit():
@@ -103,8 +120,10 @@ def verify_dump(
         "offsets": output / "offsets.json",
         "fflags": output / "fflags.json",
         "flag_scan": output / "flag_scan.json",
+        "offset_candidates": output / "offset_candidates.json",
         "offset_header": output / "Offsets.hpp",
         "fflag_header": output / "FFlags.hpp",
+        "fflag_map": output / "fflags_map.hpp",
     }
     missing = [str(path) for path in required_files.values() if not path.is_file()]
     if missing:
@@ -115,10 +134,16 @@ def verify_dump(
     offsets = _read_json(required_files["offsets"])
     flags = _read_json(required_files["fflags"])
     flag_scan = _read_json(required_files["flag_scan"])
+    candidates = _read_json(required_files["offset_candidates"])
     if not isinstance(manifest, dict):
         result.errors.append("manifest:not-object")
         return result
-    if not isinstance(offsets, list) or not isinstance(flags, list) or not isinstance(flag_scan, dict):
+    if (
+        not isinstance(offsets, list)
+        or not isinstance(flags, list)
+        or not isinstance(flag_scan, dict)
+        or not isinstance(candidates, list)
+    ):
         result.errors.append("reports:invalid-json-shape")
         return result
 
@@ -184,6 +209,31 @@ def verify_dump(
             ))
             result.errors.extend(f"offset:{name}:required-missing" for name in unresolved)
 
+    for item in candidates:
+        if not isinstance(item, dict):
+            result.errors.append("offset-candidate:invalid-entry")
+            continue
+        name = item.get("name")
+        rva = item.get("rva")
+        address = item.get("address")
+        score = item.get("score")
+        if not isinstance(name, str) or not isinstance(rva, int) or rva < 0:
+            result.errors.append("offset-candidate:invalid-name-or-rva")
+            continue
+        if not isinstance(address, int) or address != image_base + rva:
+            result.errors.append(f"offset-candidate:{name}:address-rva-mismatch")
+        segment = _segment_for_rva(typed_segments, image_base, rva)
+        protection = segment.get("initial_protection", 0) if segment else 0
+        if segment is None or not isinstance(protection, int) or not protection & 4:
+            result.errors.append(f"offset-candidate:{name}:rva-not-executable")
+        if not isinstance(score, (int, float)) or not 0.0 <= float(score) <= 1.0:
+            result.errors.append(f"offset-candidate:{name}:invalid-score")
+        if bool(item.get("promoted")):
+            result.errors.append(f"offset-candidate:{name}:unexpectedly-promoted")
+        evidence = item.get("evidence")
+        if not isinstance(evidence, list) or not evidence:
+            result.errors.append(f"offset-candidate:{name}:missing-evidence")
+
     flag_names: set[str] = set()
     flag_addresses: dict[int, str] = {}
     for item in flags:
@@ -235,6 +285,7 @@ def verify_dump(
 
     offset_header = _header_values(required_files["offset_header"])
     flag_header = _header_values(required_files["fflag_header"])
+    flag_map, flag_map_duplicates = _map_values(required_files["fflag_map"])
     expected_offsets = {
         _cpp_identifier(str(item["name"])): int(item["rva"])
         for item in offsets
@@ -249,6 +300,18 @@ def verify_dump(
         result.errors.append("Offsets.hpp:does-not-match-offsets.json")
     if flag_header != expected_flags:
         result.errors.append("FFlags.hpp:does-not-match-fflags.json")
+    if flag_map_duplicates:
+        result.errors.extend(
+            f"fflags_map.hpp:duplicate-name:{name}" for name in sorted(set(flag_map_duplicates))
+        )
+    if flag_map != {
+        str(item["name"]): int(item["rva"])
+        for item in flags
+        if isinstance(item, dict)
+        and isinstance(item.get("name"), str)
+        and isinstance(item.get("rva"), int)
+    }:
+        result.errors.append("fflags_map.hpp:does-not-match-fflags.json")
 
     if input_path is not None:
         manifest_member = input_identity.get("binary_path")
@@ -272,10 +335,12 @@ def verify_dump(
         {
             "offsets_resolved": resolved_offsets,
             "offsets_total": len(offsets),
+            "offset_candidates": len(candidates),
             "fflags_decoded": len(flags),
             "registration_calls": registration_calls,
             "flag_coverage": round(coverage, 6),
             "minimum_flag_coverage": minimum_flag_coverage,
+            "fflags_map_entries": len(flag_map),
             "uuid": macho.get("uuid"),
             "sha256": input_identity.get("sha256"),
         }

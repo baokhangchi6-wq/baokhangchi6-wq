@@ -1,11 +1,12 @@
 package com.masterstrap.rbx.ui
 
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
-import androidx.core.widget.doAfterTextChanged
 import androidx.recyclerview.widget.RecyclerView
 import com.masterstrap.rbx.R
 import com.masterstrap.rbx.data.PresetDropdown
@@ -171,19 +172,37 @@ class PresetUIAdapter(
 
     inner class FpsSliderViewHolder(private val binding: ItemPresetFpsSliderBinding) :
         RecyclerView.ViewHolder(binding.root) {
+        private var watcher: TextWatcher? = null
+
         fun bind(item: PresetItemUI.FpsSlider) {
             binding.tvFpsTitle.text = item.title
             binding.tvFpsDesc.text = item.description
-
-            val initialFps = if (currentFps > 0) currentFps else 60
-            binding.etFpsInput.setText(initialFps.toString())
-
-            binding.etFpsInput.doAfterTextChanged { text ->
-                val str = text?.toString()?.trim() ?: ""
-                val enteredFps = str.toIntOrNull()
-                if (enteredFps != null && enteredFps > 0) {
-                    currentFps = enteredFps
-                    onFpsChanged(enteredFps)
+            binding.etFpsInput.visibility = View.VISIBLE
+            watcher?.let(binding.etFpsInput::removeTextChangedListener)
+            val normalized = currentFps.coerceIn(30, 9999)
+            if (binding.etFpsInput.text?.toString() != normalized.toString()) {
+                binding.etFpsInput.setText(normalized.toString())
+                binding.etFpsInput.setSelection(binding.etFpsInput.text?.length ?: 0)
+            }
+            watcher = object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+                override fun afterTextChanged(s: Editable?) {
+                    val value = s?.toString()?.toIntOrNull() ?: return
+                    if (value !in 30..9999 || value == currentFps) return
+                    currentFps = value
+                    onFpsChanged(value)
+                }
+            }
+            binding.etFpsInput.addTextChangedListener(watcher)
+            binding.etFpsInput.setOnFocusChangeListener { _, hasFocus ->
+                if (hasFocus) return@setOnFocusChangeListener
+                val value = binding.etFpsInput.text?.toString()?.toIntOrNull()
+                    ?.coerceIn(30, 9999) ?: currentFps.coerceIn(30, 9999)
+                currentFps = value
+                onFpsChanged(value)
+                if (binding.etFpsInput.text?.toString() != value.toString()) {
+                    binding.etFpsInput.setText(value.toString())
                 }
             }
         }

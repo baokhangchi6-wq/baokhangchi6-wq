@@ -66,16 +66,18 @@
     <string name="ff_frm_title">FRM quality override</string>
     <string name="ff_frm_desc">Selects a fixed Roblox render-quality level from 1 to 21.</string>
     <string name="ff_rendering_mode_title">Rendering mode</string>
-    <string name="ff_rendering_mode_desc">Prefer the map-backed OpenGL flag on Android. Automatic keeps Roblox\'s renderer selection.</string>
+    <string name="ff_rendering_mode_desc">Choose graphics for your next launch. Vulkan and OpenGL preferences cannot be on together. Unsupported drivers may fall back safely.</string>
     <string name="ff_dynamic_res_title">Dynamic render resolution</string>
     <string name="ff_dynamic_res_desc">Caps the internal 16:9 render pixel budget while keeping the Android UI at native size.</string>
     <string name="toggle_unlock_fps">Unlock FPS</string>
     <string name="toggle_unlock_fps_desc">Bypasses the default 240 FPS limit for maximum framerate.</string>
-    <string name="ff_fps_title">Frame rate</string>
+    <string name="ff_fps_title">Target frame rate (Global)</string>
     <string name="fps_unlocker_title">Framerate (FPS)</string>
-    <string name="ff_fps_desc">Choose an FPS level that suits the display and device performance. Higher levels can make motion feel smoother.</string>
+    <string name="ff_fps_desc">Enter the FPS target Masterstrap should request on the next launch (30–9999). Actual FPS still depends on the game, GPU and display driver.</string>
+    <string name="ffs_hide_player_names_title">Hide player names</string>
+    <string name="ffs_hide_player_names_desc">Hide default names above characters on the next Roblox launch. Does not hide chat, the player list or custom name tags made by a game.</string>
     <string name="ff_force_lowest_title">Force lowest Roblox graphics</string>
-    <string name="ff_force_lowest_desc">Keeps Roblox\'s native graphics quality controls at level 1. Requires root and takes effect when Roblox starts.</string>
+    <string name="ff_force_lowest_desc">Forces graphics to level 1 when you launch patched Roblox through Masterstrap. Turn off to choose the quality in Roblox; low quality may reduce shader effects. No root needed.</string>
     <string name="ff_reduced_motion_title">Reduce in-game motion</string>
     <string name="ff_reduced_motion_desc">Uses Roblox\'s native ReducedMotion setting to stop or reduce supported motion effects. Requires root.</string>
     <string name="ff_haptics_title">In-game haptics</string>
@@ -128,14 +130,16 @@
     <string name="ffs_bg_session_desc">Helps Roblox restore its session correctly after returning from recent apps or the background.</string>
     <string name="ffs_unified_mesh_title">Optimize 3D model memory</string>
     <string name="ffs_unified_mesh_desc">Balances memory reserved for 3D models to reduce excessive RAM use on Android devices.</string>
+    <string name="ffs_no_texture_title">No Texture</string>
+    <string name="ffs_no_texture_desc">Removes terrain material textures for a simpler look and may reduce graphics load. Some games may look flat or unusual.</string>
     <string name="ffs_anim_cache_title">Faster repeated animations</string>
     <string name="ffs_anim_cache_desc">Keeps animation data ready in memory to avoid decoding the same animation repeatedly.</string>
 
     <!-- Game Mode Toggles -->
     <string name="gm_master_title">Enable Game Mode</string>
     <string name="gm_master_desc">Activates a one-shot native performance profile only when Roblox is launched from Masterstrap.</string>
-    <string name="gm_system_perf_title">System Performance Boost</string>
-    <string name="gm_system_perf_desc">Raises scheduler utilization hints for Roblox game and render threads without root.</string>
+    <string name="gm_system_perf_title">Android Adaptive Performance</string>
+    <string name="gm_system_perf_desc">Lets Roblox report loading, gameplay and measured CPU work to Android so the scheduler can allocate performance without root.</string>
     <string name="gm_cpu_priority_title">CPU Performance Priority</string>
     <string name="gm_cpu_priority_desc">Prefers the fastest available CPU cluster for critical Roblox threads when supported.</string>
     <string name="gm_smart_ram_title">Smart RAM Cleanup</string>
@@ -148,6 +152,14 @@
     <string name="gm_fast_launch_desc">Removes the launch animation and warms mapped Roblox code pages once at startup.</string>
     <string name="gm_keep_display_title">Keep Display Active</string>
     <string name="gm_keep_display_desc">Requests a session-scoped screen wake lock from inside Roblox.</string>
+    <string name="gm_turbo_wifi_title">Full-session Low-latency Wi-Fi</string>
+    <string name="gm_turbo_wifi_desc">Requests Android low-latency Wi-Fi from the foreground Roblox process and automatically becomes inactive when Roblox leaves the foreground.</string>
+    <string name="gm_turbo_thermal_title">Sustained Performance Guard</string>
+    <string name="gm_turbo_thermal_desc">Monitors Android thermal status during startup and reduces performance hints before heat causes severe throttling.</string>
+    <string name="gm_turbo_refresh_title">Adaptive Display Refresh</string>
+    <string name="gm_turbo_refresh_desc">Requests the closest seamless display refresh rate directly from the active Roblox surface. This complements the Roblox FPS target without forcing an unsupported Hz mode.</string>
+    <string name="gm_turbo_sustained_title">Long-session Stability</string>
+    <string name="gm_turbo_sustained_desc">Uses Android Sustained Performance Mode on supported devices to trade a small amount of peak speed for steadier performance during long sessions.</string>
 
     <!-- Settings & About -->
     <string name="title_settings_about">Settings &amp; About</string>
@@ -161,11 +173,32 @@
     <string name="title_app_settings">Settings</string>
     <string name="desc_app_settings">Configure launch-only display behavior for Roblox patched</string>
     <string name="title_display_settings">Display</string>
+    <string name="title_shader_effects_group">Shader &amp; reflections</string>
+    <string name="title_shader_package">Shader Package</string>
+    <string name="desc_shader_package">Choose a lighting and color style for the next Masterstrap launch</string>
+    <string name="shader_package_default">Original (Recommended)</string>
+    <string name="shader_package_daytime">Daytime 4K</string>
+    <string name="shader_package_rtx_ultra">RTX Ultra 5</string>
+    <string name="shader_package_sunset">Sunset Golden</string>
+    <string name="shader_package_night">Galaxy Night</string>
+    <string name="shader_package_cloudy">Cloudy Overcast</string>
+    <string name="shader_package_desert">Desert Mirage</string>
+    <string name="shader_package_arctic">Arctic Aurora</string>
+    <string name="shader_package_blood_moon">Blood Moon Eclipse</string>
+    <string name="shader_package_cyberpunk">Cyberpunk 2077</string>
+    <string name="shader_package_cherry_blossom">Cherry Blossom Pastel</string>
+    <string name="shader_package_ghibli_anime">Ghibli Anime</string>
+    <string name="shader_package_synthwave">80s Retro Synthwave</string>
+    <string name="shader_package_noir">Noir Black &amp; White</string>
+    <string name="title_shader_wet_floor">Reflective Wet Floor</string>
+    <string name="desc_shader_wet_floor">Add glossy, reflective surfaces to your selected Shader Package. Applies once to compatible surfaces near you.</string>
     <string name="title_stretch_screen">Stretch Screen</string>
-    <string name="desc_stretch_screen">Render Roblox at a narrower horizontal buffer and stretch it to fill the screen.</string>
-    <string name="note_stretch_screen">Applied only when Roblox patched is launched from Masterstrap. 100% keeps the original aspect ratio.</string>
+    <string name="desc_stretch_screen" formatted="false">Below 100% widens the picture. Above 100% makes the picture narrower. 100% keeps the original shape.</string>
+    <string name="note_stretch_screen" formatted="false">Applied once in landscape only when Roblox patched is launched from Masterstrap. The 101–200% range uses a wider render buffer and can increase GPU memory use.</string>
     <string name="value_stretch_screen_percent">%1$d%%</string>
+    <string name="label_stretch_original" formatted="false">100% (Original)</string>
     <string name="title_community_links">Official Channels &amp; Links</string>
+    <string name="link_app_guide_title">App User Guide →</string>
     <string name="title_license_key">License Key</string>
     <string name="desc_license_key">Enter your license key to unlock full features &amp; bypass ads.</string>
     <string name="plan_free">Free Plan</string>
@@ -175,12 +208,14 @@
     <string name="section_safe_boost">Safe Boost (Stability &amp; Latency)</string>
     <string name="section_turbo_boost">Turbo Boost</string>
     <string name="title_tab_fastflag_settings">FastFlag Settings</string>
-    <string name="gm_safe_ram_title">3D model memory optimization</string>
-    <string name="gm_safe_ram_desc">Lets Roblox adapt its 3D model cache to the memory available on the Android device.</string>
-    <string name="gm_safe_network_title">Faster asset joining</string>
-    <string name="gm_safe_network_desc">Uses Roblox’s supported batched asset loading path to reduce repeated work while joining a game.</string>
-    <string name="gm_safe_power_title">Android power management</string>
-    <string name="gm_safe_power_desc">Lets Roblox cooperate with Android power management without overriding device thermal protection.</string>
+    <string name="gm_safe_ram_title">Free Masterstrap memory before launch</string>
+    <string name="gm_safe_ram_desc">Asks Android to reclaim unused memory from Masterstrap before Roblox opens. It affects only Masterstrap and never closes another app.</string>
+    <string name="gm_safe_network_title">Use low-latency Wi-Fi while launching</string>
+    <string name="gm_safe_network_desc">Temporarily asks Android for low-latency Wi-Fi while Roblox opens. It works only when the device is connected through Wi-Fi.</string>
+    <string name="gm_safe_power_title">Keep the CPU awake while Roblox starts</string>
+    <string name="gm_safe_power_desc">Prevents the processor from sleeping for up to 60 seconds while Roblox starts. It does not overclock or change the CPU speed.</string>
+    <string name="gm_safe_thermal_title">Pause launch boosts when the device is too hot</string>
+    <string name="gm_safe_thermal_desc">Checks Android’s temperature status before launch. If severe heat is detected, Wi-Fi and CPU launch boosts are skipped until the device cools down.</string>
     <string name="gm_safe_touch_title">Touch Screen Sensitivity</string>
     <string name="gm_safe_touch_desc">Faster touch screen response for instant character control without input lag.</string>
     <string name="gm_safe_frame_pacing_title">Smooth Frame Stabilizer</string>

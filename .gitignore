@@ -15,4 +15,6 @@ __pycache__/
 .DS_Store
 local.properties
 roblox_input/
-
+preview/.browser_profile/
+.browser_profile/
+*.tmp

@@ -151,7 +151,32 @@
     <string name="desc_language">앱 표시 언어</string>
     <string name="label_preferred_roblox_app">선호하는 Roblox 앱</string>
     <string name="desc_preferred_roblox_app">적용 및 실행할 Roblox 클라이언트를 선택하세요</string>
+    <string name="title_app_settings">설정</string>
+    <string name="desc_app_settings">패치된 Roblox 실행 시에만 적용되는 디스플레이 동작 구성</string>
+    <string name="title_display_settings">디스플레이</string>
+    <string name="title_shader_package">셰이더 패키지</string>
+    <string name="desc_shader_package">화면 색감 및 조명 분위기를 선택합니다</string>
+    <string name="shader_package_default">기본값 (셰이더 없음)</string>
+    <string name="shader_package_daytime">데이라이트 (화사한 햇살)</string>
+    <string name="shader_package_rtx_ultra">RTX 울트라 (실감나는 그래픽)</string>
+    <string name="shader_package_sunset">일몰 (골든 아워)</string>
+    <string name="shader_package_night">밤 (깊은 밤 달빛)</string>
+    <string name="shader_package_cloudy">흐림 (은은한 구름낀 하늘)</string>
+    <string name="shader_package_desert">사막 (따뜻한 신기루)</string>
+    <string name="shader_package_arctic">북극 (시원한 서리)</string>
+    <string name="shader_package_blood_moon">블러드 문 (신비로운 붉은 달)</string>
+    <string name="shader_package_cyberpunk">사이버펑크 (화려한 네온사인)</string>
+    <string name="shader_package_cherry_blossom">벚꽃 (파스텔 핑크)</string>
+    <string name="shader_package_ghibli_anime">지브리 애니 (화사한 애니메이션 감성)</string>
+    <string name="shader_package_synthwave">신스웨이브 (레트로 80년대)</string>
+    <string name="shader_package_noir">누아르 (클래식 흑백)</string>
+    <string name="title_stretch_screen">화면 늘리기</string>
+    <string name="desc_stretch_screen" formatted="false">100% 미만은 화면을 넓히고, 100% 초과는 좁힙니다. 100%는 원본 비율을 유지합니다.</string>
+    <string name="note_stretch_screen" formatted="false">Masterstrap에서 패치된 Roblox를 가로 모드로 실행할 때 한 번 적용됩니다. 101–200% 범위는 더 넓은 렌더 버퍼를 사용하여 GPU 메모리 사용량을 늘릴 수 있습니다.</string>
+    <string name="value_stretch_screen_percent">%1$d%%</string>
+    <string name="label_stretch_original" formatted="false">100% (기본)</string>
     <string name="title_community_links">공식 채널 및 링크</string>
+    <string name="link_app_guide_title">앱 사용 설명서 →</string>
     <string name="title_license_key">라이선스 키</string>
     <string name="desc_license_key">라이선스 키를 입력하여 광고를 영구 제거하세요.</string>
     <string name="plan_free">무료 버전</string>
@@ -161,12 +186,14 @@
     <string name="section_safe_boost">안전 부스트 (안정성 및 지연 시간)</string>
     <string name="section_turbo_boost">Turbo Boost</string>
     <string name="title_tab_fastflag_settings">FastFlag 설정</string>
-    <string name="gm_safe_ram_title">RAM 메모리 정리</string>
-    <string name="gm_safe_ram_desc">캐시를 자동 정리하여 게임을 가볍게 구동하고 멈춤을 방지합니다.</string>
-    <string name="gm_safe_network_title">네트워크 및 핑 최적화</string>
-    <string name="gm_safe_network_desc">패킷 전송을 최적화하여 핑을 안정화하고 튕김을 방지합니다.</string>
-    <string name="gm_safe_power_title">발열 제어 및 FPS 안정화</string>
-    <string name="gm_safe_power_desc">CPU 클럭을 조절하여 기기 발열을 방지하고 장시간 플레이 시 FPS를 유지합니다.</string>
+    <string name="gm_safe_ram_title">실행 전에 Masterstrap 메모리 정리</string>
+    <string name="gm_safe_ram_desc">Roblox를 열기 전에 Masterstrap이 더 이상 사용하지 않는 메모리만 Android에 반환합니다. 다른 앱은 종료하지 않습니다.</string>
+    <string name="gm_safe_network_title">실행 중 저지연 Wi-Fi 사용</string>
+    <string name="gm_safe_network_desc">Roblox가 열리는 동안 Android의 저지연 Wi-Fi 모드를 일시적으로 요청합니다. Wi-Fi 연결에서만 작동합니다.</string>
+    <string name="gm_safe_power_title">Roblox 시작 중 CPU 절전 방지</string>
+    <string name="gm_safe_power_desc">시작 중 최대 60초 동안 CPU가 절전 상태로 전환되지 않게 합니다. 오버클럭하거나 CPU 속도를 변경하지 않습니다.</string>
+    <string name="gm_safe_thermal_title">기기가 너무 뜨거우면 시작 부스트 일시 중지</string>
+    <string name="gm_safe_thermal_desc">실행 전에 Android 온도 상태를 확인합니다. 심한 발열이 감지되면 기기가 식을 때까지 Wi-Fi와 CPU 부스트를 건너뜁니다.</string>
     <string name="gm_safe_touch_title">터치 반응 속도 향상</string>
     <string name="gm_safe_touch_desc">화면 터치 반응을 빠르게 하여 조작 지연을 제거합니다.</string>
     <string name="gm_safe_frame_pacing_title">화면 끊김 방지 보정</string>
@@ -186,4 +213,11 @@
     <string name="msg_preset_applied">프리셋이 적용되었습니다!</string>
     <string name="msg_license_activated">라이선스가 활성화되었습니다!</string>
     <string name="msg_invalid_license">유효한 라이선스 키를 입력하세요</string>
+
+    <!-- Mandatory Google Play update -->
+    <string name="dialog_update_required_title">업데이트 필요</string>
+    <string name="dialog_update_badge">업데이트 가능</string>
+    <string name="dialog_update_message">계속하려면 최신 버전의 Masterstrap이 필요합니다. 앱을 계속 사용하려면 지금 업그레이드하세요.</string>
+    <string name="dialog_update_current_version">현재 버전: %1$s</string>
+    <string name="dialog_upgrade_now">지금 업그레이드</string>
 </resources>

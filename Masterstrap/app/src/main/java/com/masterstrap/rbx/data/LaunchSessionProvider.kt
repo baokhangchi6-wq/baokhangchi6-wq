@@ -21,6 +21,7 @@ class LaunchSessionProvider : ContentProvider() {
         LaunchSessionStore.CLIENT_FILE -> "application/json"
         LaunchSessionStore.GLOBAL_FILE -> "text/xml"
         LaunchSessionStore.TURBO_FILE -> "application/json"
+        LaunchSessionStore.SHADER_FILE -> "application/json"
         else -> null
     }
 

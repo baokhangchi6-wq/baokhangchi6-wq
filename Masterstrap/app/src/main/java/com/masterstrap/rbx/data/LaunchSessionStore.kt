@@ -19,6 +19,7 @@ object LaunchSessionStore {
     const val CLIENT_FILE = "ClientAppSettings.json"
     const val GLOBAL_FILE = "GlobalBasicSettings_13.xml"
     const val TURBO_FILE = ConfigExporter.TURBO_PROFILE_FILE
+    const val SHADER_FILE = ConfigExporter.SHADER_PROFILE_FILE
     private const val PREFS = "masterstrap_launch_session"
     private const val SESSION_DIR = "LaunchSession"
     private const val LIFETIME_MS = 90_000L
@@ -30,7 +31,8 @@ object LaunchSessionStore {
         val expiresAtElapsed: Long,
         val jsonSha256: String,
         val xmlSha256: String,
-        val turboSha256: String
+        val turboSha256: String,
+        val shaderSha256: String
     )
 
     private fun prefs(context: Context) =
@@ -52,13 +54,15 @@ object LaunchSessionStore {
         targetUid: Int,
         json: ByteArray,
         xml: ByteArray,
-        turbo: ByteArray
+        turbo: ByteArray,
+        shader: ByteArray
     ): Session {
         clear(context)
         val dir = sessionDir(context).apply { mkdirs() }
         File(dir, CLIENT_FILE).writeBytes(json)
         File(dir, GLOBAL_FILE).writeBytes(xml)
         File(dir, TURBO_FILE).writeBytes(turbo)
+        File(dir, SHADER_FILE).writeBytes(shader)
         val session = Session(
             id = UUID.randomUUID().toString(),
             targetPackage = targetPackage,
@@ -66,7 +70,8 @@ object LaunchSessionStore {
             expiresAtElapsed = SystemClock.elapsedRealtime() + LIFETIME_MS,
             jsonSha256 = sha256(json),
             xmlSha256 = sha256(xml),
-            turboSha256 = sha256(turbo)
+            turboSha256 = sha256(turbo),
+            shaderSha256 = sha256(shader)
         )
         prefs(context).edit()
             .putString("id", session.id)
@@ -76,18 +81,20 @@ object LaunchSessionStore {
             .putString("json_sha256", session.jsonSha256)
             .putString("xml_sha256", session.xmlSha256)
             .putString("turbo_sha256", session.turboSha256)
+            .putString("shader_sha256", session.shaderSha256)
             .putInt("claimed_uid", -1)
             .putInt("claimed_pid", -1)
             .putBoolean("json_read", false)
             .putBoolean("xml_read", false)
             .putBoolean("turbo_read", false)
+            .putBoolean("shader_read", false)
             .apply()
         return session
     }
 
     @Synchronized
     fun claimFile(context: Context, fileName: String): File? {
-        if (fileName !in setOf(CLIENT_FILE, GLOBAL_FILE, TURBO_FILE)) return null
+        if (fileName !in setOf(CLIENT_FILE, GLOBAL_FILE, TURBO_FILE, SHADER_FILE)) return null
         val state = prefs(context)
         val id = state.getString("id", null) ?: return null
         if (id.isBlank() || SystemClock.elapsedRealtime() >
@@ -114,7 +121,8 @@ object LaunchSessionStore {
                 when (fileName) {
                     CLIENT_FILE -> "json_read"
                     GLOBAL_FILE -> "xml_read"
-                    else -> "turbo_read"
+                    TURBO_FILE -> "turbo_read"
+                    else -> "shader_read"
                 },
                 true
             )
@@ -129,7 +137,8 @@ object LaunchSessionStore {
             Binder.getCallingPid() != state.getInt("claimed_pid", -1) ||
             !state.getBoolean("json_read", false) ||
             !state.getBoolean("xml_read", false) ||
-            !state.getBoolean("turbo_read", false)
+            !state.getBoolean("turbo_read", false) ||
+            !state.getBoolean("shader_read", false)
         ) return false
         clear(context)
         return true
@@ -157,11 +166,16 @@ object LaunchSessionStore {
                 uri(context, TURBO_FILE),
                 Intent.FLAG_GRANT_READ_URI_PERMISSION
             )
+            context.revokeUriPermission(
+                uri(context, SHADER_FILE),
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
         }
         val dir = sessionDir(context)
         File(dir, CLIENT_FILE).delete()
         File(dir, GLOBAL_FILE).delete()
         File(dir, TURBO_FILE).delete()
+        File(dir, SHADER_FILE).delete()
         if (dir.isDirectory && dir.list().isNullOrEmpty()) dir.delete()
         prefs(context).edit().clear().apply()
     }

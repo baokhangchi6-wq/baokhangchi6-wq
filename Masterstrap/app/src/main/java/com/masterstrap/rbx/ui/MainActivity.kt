@@ -52,11 +52,14 @@ import com.masterstrap.rbx.data.FlagType
 import com.masterstrap.rbx.data.GamePresetItem
 import com.masterstrap.rbx.data.GamePresetManager
 import com.masterstrap.rbx.data.NativeBridgeServer
+import com.masterstrap.rbx.data.PatchedFlagPolicy
 import com.masterstrap.rbx.data.LaunchSessionStore
 import com.masterstrap.rbx.data.PresetItemUI
 import com.masterstrap.rbx.data.PresetToggle
 import com.masterstrap.rbx.data.PresetsRepository
+import com.masterstrap.rbx.data.SafeBoostController
 import com.masterstrap.rbx.data.SettingsPersistence
+import com.masterstrap.rbx.data.ShaderPackage
 import com.masterstrap.rbx.databinding.ActivityMainBinding
 import org.json.JSONObject
 import java.io.BufferedReader
@@ -161,6 +164,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        RewardAdManager.refreshEntitlement(this)
         if (::appUpdateManager.isInitialized) {
             // Required by Play Core: resume an interrupted immediate update and
             // re-check whenever the app returns to the foreground.
@@ -350,6 +354,27 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun getShaderPackageDisplayName(pkg: ShaderPackage): String {
+        val stringRes = when (pkg.stableKey) {
+            "default" -> R.string.shader_package_default
+            "daytime" -> R.string.shader_package_daytime
+            "rtx_ultra" -> R.string.shader_package_rtx_ultra
+            "sunset" -> R.string.shader_package_sunset
+            "night" -> R.string.shader_package_night
+            "cloudy" -> R.string.shader_package_cloudy
+            "desert" -> R.string.shader_package_desert
+            "arctic" -> R.string.shader_package_arctic
+            "blood_moon" -> R.string.shader_package_blood_moon
+            "cyberpunk" -> R.string.shader_package_cyberpunk
+            "cherry_blossom" -> R.string.shader_package_cherry_blossom
+            "ghibli_anime" -> R.string.shader_package_ghibli_anime
+            "synthwave" -> R.string.shader_package_synthwave
+            "noir" -> R.string.shader_package_noir
+            else -> R.string.shader_package_default
+        }
+        return getString(stringRes)
+    }
+
     private fun setupHeaderSettings() {
         // 1. Open Full Screen Settings & About Page
         binding.btnSettingsAbout.setOnClickListener {
@@ -366,6 +391,37 @@ class MainActivity : AppCompatActivity() {
 
         binding.btnBackFromAdvancedSettings.setOnClickListener {
             binding.layoutAdvancedSettingsPage.visibility = View.GONE
+        }
+
+        // Display Settings: Shader Package Spinner
+        val shaderPackages = ShaderPackage.ordered
+        val shaderDisplayNames = shaderPackages.map { pkg ->
+            getShaderPackageDisplayName(pkg)
+        }
+        val shaderAdapter = ArrayAdapter(this, R.layout.item_custom_spinner_item, shaderDisplayNames).apply {
+            setDropDownViewResource(R.layout.item_custom_spinner_dropdown)
+        }
+        binding.spinnerShaderPackage.adapter = shaderAdapter
+        val currentShader = SettingsPersistence.loadShaderPackage(this)
+        val currentShaderIdx = shaderPackages.indexOf(currentShader).coerceAtLeast(0)
+        binding.spinnerShaderPackage.setSelection(currentShaderIdx, false)
+
+        binding.spinnerShaderPackage.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                if (position in shaderPackages.indices) {
+                    val selectedPkg = shaderPackages[position]
+                    val currentSaved = SettingsPersistence.loadShaderPackage(this@MainActivity)
+                    if (selectedPkg != currentSaved) {
+                        SettingsPersistence.saveShaderPackage(this@MainActivity, selectedPkg)
+                    }
+                }
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        binding.switchShaderWetFloor.isChecked = SettingsPersistence.loadShaderWetFloor(this)
+        binding.switchShaderWetFloor.setOnCheckedChangeListener { _, isChecked ->
+            SettingsPersistence.saveShaderWetFloor(this, isChecked)
         }
 
         val stretchPercent = SettingsPersistence.loadStretchScreenPercent(this)
@@ -426,7 +482,18 @@ class MainActivity : AppCompatActivity() {
         }
 
         // 3. Preferences: Language Spinner
-        val languageOptions = listOf("English", "Tiếng Việt", "中文 (简体)", "한국어", "日本語", "Português (Brasil)", "Русский")
+        val languageOptions = listOf(
+            "English",
+            "Tiếng Việt",
+            "中文 (简体)",
+            "한국어",
+            "日本語",
+            "Português (Brasil)",
+            "Русский",
+            "Español",
+            "Bahasa Indonesia",
+            "ไทย"
+        )
         val savedLang = SettingsPersistence.loadAppLanguage(this)
         val langAdapter = ArrayAdapter(this, R.layout.item_custom_spinner_item, languageOptions).apply {
             setDropDownViewResource(R.layout.item_custom_spinner_dropdown)
@@ -544,6 +611,7 @@ class MainActivity : AppCompatActivity() {
                 if (result.isValid) {
                     SettingsPersistence.saveLicenseKey(this, key)
                     SettingsPersistence.saveLicensePlan(this, result.plan)
+                    RewardAdManager.refreshEntitlement(this)
                     binding.tvFullLicenseBadge.text = result.plan
                     binding.tvFullLicenseBadge.setBackgroundResource(R.drawable.bg_badge_green)
                     binding.tvFullLicenseBadge.setTextColor(ContextCompat.getColor(this, R.color.accent_green))
@@ -645,6 +713,7 @@ class MainActivity : AppCompatActivity() {
                 val obj = JSONObject(rawText)
                 var count = 0
                 for (key in obj.keys()) {
+                    if (PatchedFlagPolicy.isBlocked(key)) continue
                     val value = obj.get(key)
                     val type = when (value) {
                         is Boolean -> FlagType.BOOLEAN
@@ -669,6 +738,7 @@ class MainActivity : AppCompatActivity() {
                     val parts = trimmed.split(delimiter, limit = 2)
                     if (parts.size == 2) {
                         val key = parts[0].trim().replace("\"", "")
+                        if (PatchedFlagPolicy.isBlocked(key)) continue
                         val value = parts[1].trim().replace("\"", "")
                         val type = when {
                             value.equals("true", true) || value.equals("false", true) -> FlagType.BOOLEAN
@@ -687,6 +757,14 @@ class MainActivity : AppCompatActivity() {
             }
 
             val flagName = rawText.trim()
+            if (PatchedFlagPolicy.isBlocked(flagName)) {
+                Toast.makeText(
+                    this,
+                    "This flag is managed by Roblox and cannot be added.",
+                    Toast.LENGTH_LONG
+                ).show()
+                return
+            }
             flagAdapter.addFlag(FlagItem(flagName, FlagType.BOOLEAN, "true"))
             SettingsPersistence.saveCustomFlags(this, flagAdapter.getAllFlags())
             Toast.makeText(this, "Added $flagName", Toast.LENGTH_SHORT).show()
@@ -709,6 +787,7 @@ class MainActivity : AppCompatActivity() {
                 val obj = JSONObject(jsonString)
                 var count = 0
                 for (key in obj.keys()) {
+                    if (PatchedFlagPolicy.isBlocked(key)) continue
                     val value = obj.get(key)
                     val type = when (value) {
                         is Boolean -> FlagType.BOOLEAN
@@ -815,11 +894,24 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupDataGrid() {
         val savedFlags = SettingsPersistence.loadCustomFlags(this)
-        val initialFlags = savedFlags ?: PresetsRepository.getDefaultEditorFlags()
-        flagAdapter = FlagAdapter(initialFlags) { flagToDelete ->
-            flagAdapter.removeFlag(flagToDelete)
-            SettingsPersistence.saveCustomFlags(this, flagAdapter.getAllFlags())
+        val initialFlags = (savedFlags ?: PresetsRepository.getDefaultEditorFlags())
+            .filterNot { PatchedFlagPolicy.isBlocked(it.name) }
+            .toMutableList()
+        if (savedFlags != null && initialFlags.size != savedFlags.size) {
+            SettingsPersistence.saveCustomFlags(this, initialFlags)
         }
+        flagAdapter = FlagAdapter(
+            flags = initialFlags,
+            onDeleteClick = { flagToDelete ->
+                flagAdapter.removeFlag(flagToDelete)
+                SettingsPersistence.saveCustomFlags(this, flagAdapter.getAllFlags())
+            },
+            onValueChanged = {
+                // Persist an explicit empty FString as soon as it is edited.
+                // Empty is a valid value and must survive process recreation.
+                SettingsPersistence.saveCustomFlags(this, flagAdapter.getAllFlags())
+            }
+        )
 
         binding.rvFlagsDataGrid.apply {
             layoutManager = LinearLayoutManager(this@MainActivity)
@@ -1088,6 +1180,7 @@ class MainActivity : AppCompatActivity() {
 
         val presetFlags = GamePresetManager.loadFlags(this, preset.id)
         for ((key, value) in presetFlags) {
+            if (PatchedFlagPolicy.isBlocked(key)) continue
             val type = when (value) {
                 is Boolean -> FlagType.BOOLEAN
                 is Int, is Long, is Double -> FlagType.INTEGER
@@ -1182,6 +1275,10 @@ class MainActivity : AppCompatActivity() {
     private fun saveConfigurations(showToast: Boolean): Boolean {
         val flags = flagAdapter.getAllFlags()
 
+        // Save before exporting/launching. This is especially important for
+        // FString values whose intentional value is the empty string.
+        SettingsPersistence.saveCustomFlags(this, flags)
+
         val allToggles = mutableListOf<PresetToggle>()
         for (item in fastFlagUIItems) {
             if (item is PresetItemUI.Toggle) allToggles.add(item.toggle)
@@ -1226,6 +1323,18 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun launchRobloxApp() {
+        val gameModeStates = gameModeUIItems
+            .filterIsInstance<PresetItemUI.Toggle>()
+            .associate { it.toggle.id to it.toggle.isEnabled }
+        val safeBoostReport = SafeBoostController.prepareBeforeLaunch(
+            this,
+            SafeBoostController.Selection(
+                releaseLauncherMemory = gameModeStates["safe_ram_cleanup"] == true,
+                lowLatencyWifi = gameModeStates["safe_network_opt"] == true,
+                stableLaunchPower = gameModeStates["safe_power_opt"] == true,
+                thermalSafetyGuard = gameModeStates["safe_thermal_guard"] == true
+            )
+        )
         val preferredApp = SettingsPersistence.loadPreferredRobloxApp(this)
         val packages = if (preferredApp == "vng") {
             listOf("com.roblox.client.vnggames", "com.roblox.client")
@@ -1289,12 +1398,17 @@ class MainActivity : AppCompatActivity() {
                         filesDir,
                         "Inject/${ConfigExporter.TURBO_PROFILE_FILE}"
                     )
+                    val privateShaderProfile = File(
+                        filesDir,
+                        "Inject/${ConfigExporter.SHADER_PROFILE_FILE}"
+                    )
                     if (privateSettings.isFile && privateGlobalSettings.isFile &&
-                        privateTurboProfile.isFile
+                        privateTurboProfile.isFile && privateShaderProfile.isFile
                     ) {
                         val jsonPayload = privateSettings.readBytes()
                         val xmlPayload = privateGlobalSettings.readBytes()
                         val turboPayload = privateTurboProfile.readBytes()
+                        val shaderPayload = privateShaderProfile.readBytes()
                         val targetUid = packageManager.getApplicationInfo(pkg, 0).uid
                         val session = LaunchSessionStore.create(
                             this,
@@ -1302,14 +1416,16 @@ class MainActivity : AppCompatActivity() {
                             targetUid,
                             jsonPayload,
                             xmlPayload,
-                            turboPayload
+                            turboPayload,
+                            shaderPayload
                         )
                         val bridgeStarted = NativeBridgeServer.start(
                             this,
                             session.id,
                             jsonPayload,
                             xmlPayload,
-                            turboPayload
+                            turboPayload,
+                            shaderPayload
                         )
                         val settingsUri = LaunchSessionStore.uri(
                             this,
@@ -1323,15 +1439,21 @@ class MainActivity : AppCompatActivity() {
                             this,
                             LaunchSessionStore.TURBO_FILE
                         )
+                        val shaderProfileUri = LaunchSessionStore.uri(
+                            this,
+                            LaunchSessionStore.SHADER_FILE
+                        )
                         grantUriPermission(pkg, settingsUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         grantUriPermission(pkg, globalSettingsUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         grantUriPermission(pkg, turboProfileUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        grantUriPermission(pkg, shaderProfileUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         launchIntent.clipData = ClipData.newRawUri(
                             "Masterstrap ClientAppSettings",
                             settingsUri
                         ).apply {
                             addItem(ClipData.Item(globalSettingsUri))
                             addItem(ClipData.Item(turboProfileUri))
+                            addItem(ClipData.Item(shaderProfileUri))
                         }
                         ConfigExporter.writeAndroidLaunchDiagnostic(
                             this,
@@ -1369,12 +1491,15 @@ class MainActivity : AppCompatActivity() {
                                 appendLine("settings_bytes=${privateSettings.length()}")
                                 appendLine("global_settings_bytes=${privateGlobalSettings.length()}")
                                 appendLine("turbo_profile_bytes=${privateTurboProfile.length()}")
+                                appendLine("shader_profile_bytes=${privateShaderProfile.length()}")
                                 appendLine("settings_uri=$settingsUri")
                                 appendLine("global_settings_uri=$globalSettingsUri")
                                 appendLine("turbo_profile_uri=$turboProfileUri")
+                                appendLine("shader_profile_uri=$shaderProfileUri")
                                 appendLine("json_sha256=${session.jsonSha256}")
                                 appendLine("xml_sha256=${session.xmlSha256}")
                                 appendLine("turbo_sha256=${session.turboSha256}")
+                                appendLine("shader_sha256=${session.shaderSha256}")
                                 appendLine("grant_read_uri=true")
                                 appendLine(
                                     "grant_check_settings=" + checkUriPermission(
@@ -1394,10 +1519,17 @@ class MainActivity : AppCompatActivity() {
                                         Intent.FLAG_GRANT_READ_URI_PERMISSION
                                     )
                                 )
+                                appendLine(
+                                    "grant_check_shader=" + checkUriPermission(
+                                        shaderProfileUri, -1, targetUid,
+                                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                    )
+                                )
                                 appendLine("launch_clip_data=true")
                                 appendLine("launch_component=${launchIntent.component}")
                                 appendLine("launch_flags=0x${launchIntent.flags.toString(16)}")
                                 appendLine("loopback_bridge_started=$bridgeStarted")
+                                append(safeBoostReport.toDiagnostic())
                             }
                         )
                         Log.i("MasterstrapProvider", "Granted ClientAppSettings URI to $pkg")
@@ -1449,6 +1581,7 @@ class MainActivity : AppCompatActivity() {
             }
             Toast.makeText(this, "discord.gg/masterstrap", Toast.LENGTH_LONG).show()
         } else {
+            SafeBoostController.releaseNow("roblox_not_found")
             Toast.makeText(this, R.string.msg_roblox_not_found, Toast.LENGTH_SHORT).show()
         }
     }

@@ -151,7 +151,32 @@
     <string name="desc_language">Idioma de exibição do aplicativo</string>
     <string name="label_preferred_roblox_app">Aplicativo Roblox Preferido</string>
     <string name="desc_preferred_roblox_app">Selecione qual aplicativo Roblox usar e iniciar</string>
+    <string name="title_app_settings">Configurações</string>
+    <string name="desc_app_settings">Configurar comportamento de exibição para Roblox modificado</string>
+    <string name="title_display_settings">Tela</string>
+    <string name="title_shader_package">Pacote de Shaders</string>
+    <string name="desc_shader_package">Selecione o tom de cor e o ambiente de iluminação</string>
+    <string name="shader_package_default">Padrão (Nenhum)</string>
+    <string name="shader_package_daytime">Luz do dia (Sol vibrante)</string>
+    <string name="shader_package_rtx_ultra">RTX Ultra (Iluminação realista)</string>
+    <string name="shader_package_sunset">Pôr do sol (Hora dourada)</string>
+    <string name="shader_package_night">Noite (Meia-noite profunda)</string>
+    <string name="shader_package_cloudy">Nublado (Céu nublado suave)</string>
+    <string name="shader_package_desert">Deserto (Miragem quente)</string>
+    <string name="shader_package_arctic">Ártico (Gelo polar frio)</string>
+    <string name="shader_package_blood_moon">Lua de sangue (Carmesim místico)</string>
+    <string name="shader_package_cyberpunk">Cyberpunk (Brilho neon)</string>
+    <string name="shader_package_cherry_blossom">Flor de cerejeira (Rosa pastel)</string>
+    <string name="shader_package_ghibli_anime">Anime Ghibli (Estética vibrante)</string>
+    <string name="shader_package_synthwave">Synthwave (Retro anos 80)</string>
+    <string name="shader_package_noir">Noir (Monocromático clássico)</string>
+    <string name="title_stretch_screen">Esticar Tela</string>
+    <string name="desc_stretch_screen" formatted="false">Abaixo de 100% alarga a imagem. Acima de 100% estreita a imagem. 100% mantém a forma original.</string>
+    <string name="note_stretch_screen" formatted="false">Aplicado uma vez no modo paisagem apenas quando o Roblox modificado é iniciado pelo Masterstrap. O intervalo de 101–200% usa um buffer de renderização mais amplo e pode aumentar o uso de memória da GPU.</string>
+    <string name="value_stretch_screen_percent">%1$d%%</string>
+    <string name="label_stretch_original" formatted="false">100% (Original)</string>
     <string name="title_community_links">Canais Oficiais &amp; Links</string>
+    <string name="link_app_guide_title">Guia de uso do aplicativo →</string>
     <string name="title_license_key">Chave de Licença</string>
     <string name="desc_license_key">Insira sua chave para desbloquear tudo e remover anúncios.</string>
     <string name="plan_free">Versão Gratuita</string>
@@ -161,12 +186,14 @@
     <string name="section_safe_boost">Boost Seguro (Estabilidade &amp; Latência)</string>
     <string name="section_turbo_boost">Turbo Boost</string>
     <string name="title_tab_fastflag_settings">Configurações do FastFlag</string>
-    <string name="gm_safe_ram_title">Limpeza de Memória RAM</string>
-    <string name="gm_safe_ram_desc">Libera memória cache para o jogo rodar mais leve e sem travamentos.</string>
-    <string name="gm_safe_network_title">Otimizador de Rede e Ping</string>
-    <string name="gm_safe_network_desc">Otimiza pacotes de rede para estabilizar o Ping e evitar quedas.</string>
-    <string name="gm_safe_power_title">Anti-Aquecimento e FPS Estável</string>
-    <string name="gm_safe_power_desc">Regula a frequência da CPU para evitar superaquecimento e manter o FPS estável.</string>
+    <string name="gm_safe_ram_title">Liberar memória do Masterstrap antes de abrir</string>
+    <string name="gm_safe_ram_desc">Pede ao Android para recuperar apenas a memória não utilizada pelo Masterstrap antes de abrir o Roblox. Não fecha outros aplicativos.</string>
+    <string name="gm_safe_network_title">Usar Wi-Fi de baixa latência ao iniciar</string>
+    <string name="gm_safe_network_desc">Solicita temporariamente o modo Wi-Fi de baixa latência enquanto o Roblox abre. Funciona somente com conexão Wi-Fi.</string>
+    <string name="gm_safe_power_title">Manter a CPU ativa durante a inicialização</string>
+    <string name="gm_safe_power_desc">Impede a suspensão da CPU por até 60 segundos enquanto o Roblox inicia. Não faz overclock nem altera a velocidade da CPU.</string>
+    <string name="gm_safe_thermal_title">Pausar boosts quando o aparelho estiver muito quente</string>
+    <string name="gm_safe_thermal_desc">Verifica a temperatura do Android antes de iniciar. Com calor intenso, os boosts de Wi-Fi e CPU são ignorados até o aparelho esfriar.</string>
     <string name="gm_safe_touch_title">Sensibilidade do Toque</string>
     <string name="gm_safe_touch_desc">Resposta de toque mais rápida para controle ágil sem atrasos.</string>
     <string name="gm_safe_frame_pacing_title">Estabilizador de Quadros Suave</string>
@@ -186,4 +213,11 @@
     <string name="msg_preset_applied">Preset aplicado com sucesso!</string>
     <string name="msg_license_activated">Licença ativada! Anúncios desativados.</string>
     <string name="msg_invalid_license">Insira uma chave de licença válida</string>
+
+    <!-- Mandatory Google Play update -->
+    <string name="dialog_update_required_title">Atualização necessária</string>
+    <string name="dialog_update_badge">Atualização disponível</string>
+    <string name="dialog_update_message">Uma versão mais recente do Masterstrap é necessária para continuar. Atualize agora para continuar usando o app.</string>
+    <string name="dialog_update_current_version">Versão atual: %1$s</string>
+    <string name="dialog_upgrade_now">Atualizar agora</string>
 </resources>

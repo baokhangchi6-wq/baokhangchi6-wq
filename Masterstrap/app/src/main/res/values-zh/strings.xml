@@ -1,50 +1,229 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Masterstrap</string>
-    <string name="app_tagline">FastFlag &amp; 游戏优化器</string>
-    <string name="tab_datagrid">Flag 数据表</string>
-    <string name="tab_toggles">预设开关</string>
-    <string name="tab_gamemode">游戏模式</string>
-    <string name="btn_close">关闭</string>
-    <string name="btn_save">保存配置</string>
-    <string name="btn_save_launch">保存并启动</string>
-    <string name="title_datagrid">FastFlag 数据表格管理</string>
-    <string name="search_hint">搜索 Flag (例如 FFlagDebug, FPS)...</string>
-    <string name="btn_add_flag">+ 添加 Flag</string>
-    <string name="btn_import_json">导入</string>
-    <string name="btn_export_json">导出</string>
-    <string name="col_flag_name">Flag 名称</string>
-    <string name="col_flag_type">类型</string>
-    <string name="col_flag_value">数值</string>
-    <string name="col_flag_action">操作</string>
-    <string name="title_essential_toggles">快速开关与预设</string>
-    <string name="fps_unlocker_title">FPS 解锁器</string>
-    <string name="fps_unlocker_desc">解锁帧率上限以获得极致流畅体验</string>
-    <string name="fps_60">60 FPS</string>
-    <string name="fps_120">120 FPS</string>
-    <string name="fps_144">144 FPS</string>
-    <string name="fps_240">240 FPS</string>
-    <string name="fps_uncapped">无限制</string>
-    <string name="toggle_display_fps">显示游戏内 FPS 计数器</string>
-    <string name="toggle_display_fps_desc">在屏幕右上角显示原生 FPS 帧率</string>
-    <string name="toggle_fast_loading">快速资源加载</string>
-    <string name="toggle_fast_loading_desc">预载材质与字体以减少卡顿</string>
-    <string name="toggle_disable_shadows">关闭精细阴影</string>
-    <string name="toggle_disable_shadows_desc">大幅提升低配设备帧率</string>
-    <string name="toggle_gray_sky">极简天空盒</string>
-    <string name="toggle_gray_sky_desc">用纯色背景替代复杂天空</string>
-    <string name="title_game_mode">高性能游戏模式</string>
-    <string name="game_mode_switch">启用极限游戏模式</string>
-    <string name="game_mode_switch_desc">优化内存与渲染优先级</string>
-    <string name="game_mode_res_lock">锁定渲染分辨率</string>
-    <string name="game_mode_touch_opt">降低触控延迟</string>
-    <string name="game_mode_background_cleanup">清理后台缓存</string>
-    <string name="msg_saved_success">配置已成功导出至 ClientAppSettings.json 和 GlobalBasicSettings_13.xml！</string>
-    <string name="msg_save_failed">保存配置失败，请检查存储权限。</string>
-    <string name="msg_roblox_not_found">设备上未找到 Roblox 应用程序。</string>
-    <string name="dialog_add_flag_title">添加自定义 FastFlag</string>
-    <string name="hint_flag_name">Flag 名称</string>
-    <string name="hint_flag_value">数值</string>
+    <string name="app_name">masterstrap</string>
+    <string name="app_display_name">Masterstrap</string>
+    <string name="app_tagline">FastFlag 与游戏加速</string>
+
+    <!-- 5 Bottom Navigation Tabs -->
+    <string name="nav_fastflag">FastFlag</string>
+    <string name="nav_ff_settings">FF 设置</string>
+    <string name="nav_start">启动</string>
+    <string name="nav_gamemode">游戏模式</string>
+    <string name="nav_preset">预设</string>
+
+    <!-- Actions -->
+    <string name="btn_save">保存</string>
+    <string name="btn_save_launch">启动 (保存并运行)</string>
+    <string name="btn_back">❮ 返回</string>
+    <string name="btn_apply">应用</string>
+    <string name="btn_boost">加速</string>
+    <string name="btn_activate">激活</string>
     <string name="btn_cancel">取消</string>
     <string name="btn_confirm">确认</string>
+    <string name="btn_close">关闭</string>
+    <string name="btn_claim">获取奖励</string>
+    <string name="dialog_claim_ad_title">观看广告以解锁</string>
+    <string name="dialog_claim_ad_msg">观看简短视频以获取奖励并继续。</string>
+
+    <!-- FastFlag Editor -->
+    <string name="title_fastflag_editor">FastFlag 编辑器</string>
+    <string name="desc_fastflag_editor">添加、导入或编辑单个 FastFlag</string>
+    <string name="search_hint">搜索标志 (例如 FFlagDebug, FPS)...</string>
+    <string name="btn_add_flag">+ 添加</string>
+    <string name="btn_import_json">导入 JSON</string>
+    <string name="btn_export_json">导出 JSON</string>
+    <string name="btn_clear_all">清空全部</string>
+    <string name="dialog_add_flag_title">添加自定义 FastFlag</string>
+    <string name="hint_flag_name">标志名称 (例如 FFlagFastLoading)</string>
+    <string name="hint_flag_value">数值 (例如 True / 120 / Low)</string>
+    <string name="col_flag_name">标志名称</string>
+    <string name="col_flag_type">类型</string>
+    <string name="col_flag_value">值</string>
+    <string name="col_flag_action">操作</string>
+    <string name="title_datagrid">FastFlag 数据表格</string>
+    <string name="tab_datagrid">DataGrid</string>
+    <string name="tab_toggles">开关</string>
+    <string name="tab_gamemode">游戏模式</string>
+
+    <!-- FastFlag Sections -->
+    <string name="section_graphics_quality">图形质量</string>
+    <string name="section_verified_preferences">Roblox 验证偏好</string>
+    <string name="section_mobile_performance">移动性能优化</string>
+    <string name="section_rendering_fx">渲染与视觉特效</string>
+    <string name="section_interface_camera">界面与相机</string>
+    <string name="section_graphics_framerate">图形与帧率</string>
+    <string name="section_network">网络与传输</string>
+    <string name="section_power_session">电源与会话</string>
+    <string name="section_memory_assets">内存与资源</string>
+    <string name="section_performance_boost">性能增强</string>
+    <string name="section_game_session">游戏会话</string>
+
+    <!-- FastFlag Tab Toggles & Dropdowns -->
+    <string name="ff_master_switch_title">应用 Roblox 优化</string>
+    <string name="ff_master_switch_desc">在保存并启动时应用所选优化。</string>
+    <string name="ff_msaa_title">抗锯齿质量 (MSAA)</string>
+    <string name="ff_msaa_desc">覆盖 Roblox MSAA 设置。</string>
+    <string name="ff_frm_title">FRM 渲染质量覆盖</string>
+    <string name="ff_frm_desc">选择固定 Roblox 渲染质量等级 (1-21)。</string>
+    <string name="ff_rendering_mode_title">渲染模式</string>
+    <string name="ff_rendering_mode_desc">在 Android 上优先使用 OpenGL 标志。</string>
+    <string name="ff_dynamic_res_title">动态渲染分辨率</string>
+    <string name="ff_dynamic_res_desc">限制内部 16:9 渲染分辨率以保证流畅度。</string>
+    <string name="toggle_unlock_fps">解锁帧率限制</string>
+    <string name="toggle_unlock_fps_desc">解除默认 240 FPS 限制以获得更高帧率。</string>
+    <string name="ff_fps_title">帧率上限</string>
+    <string name="fps_unlocker_title">帧率 (FPS)</string>
+    <string name="ff_fps_desc">选择适合屏幕和设备性能的 FPS 档位。</string>
+    <string name="ff_force_lowest_title">强制最低图形质量</string>
+    <string name="ff_force_lowest_desc">启动时将原生图形质量固定为等级 1。</string>
+    <string name="ff_reduced_motion_title">减少游戏内动态效果</string>
+    <string name="ff_reduced_motion_desc">使用原生 ReducedMotion 设置减少动态效果。</string>
+    <string name="ff_haptics_title">游戏内触觉震动</string>
+    <string name="ff_haptics_desc">控制原生 HapticStrength 设置。</string>
+    <string name="ff_fps_boost_title">一键图形加速</string>
+    <string name="ff_fps_boost_desc">降低抗锯齿和特效，优先保证帧率。</string>
+    <string name="ff_low_poly_title">降低 3D 模型精细度</string>
+    <string name="ff_low_poly_desc">对远处 3D 模型使用简化版本。</string>
+    <string name="ff_low_texture_title">降低贴图负载</string>
+    <string name="ff_low_texture_desc">跳过超高分辨率贴图以节省 RAM/VRAM。</string>
+    <string name="ff_android_mesh_title">优化 3D 模型内存</string>
+    <string name="ff_android_mesh_desc">自动平衡 Android 设备的 3D 模型内存。</string>
+    <string name="ff_mesh_preload_title">预加载 3D 模型</string>
+    <string name="ff_mesh_preload_desc">提前加载 3D 模型以减少物体延迟出现。</string>
+    <string name="ff_optimize_parts_title">优化 3D 物体路径</string>
+    <string name="ff_optimize_parts_desc">针对多物体场景启用优化处理路径。</string>
+    <string name="ff_disable_shadows_title">降低阴影负载</string>
+    <string name="ff_disable_shadows_desc">调整阴影渲染以减轻 GPU 负担。</string>
+    <string name="ff_disable_postfx_title">减少后期视觉特效</string>
+    <string name="ff_disable_postfx_desc">关闭泛光、景深等特效以降低 GPU 占用。</string>
+    <string name="ff_disable_grass_title">移除地面草丛</string>
+    <string name="ff_disable_grass_desc">将草丛渲染距离设为零以提升帧率。</string>
+    <string name="ff_skygray_title">灰色天空 (SkyGray)</string>
+    <string name="ff_skygray_desc">用简约灰色背景替换普通天空。</string>
+    <string name="ff_display_fps_title">显示 FPS 计数器</string>
+    <string name="ff_display_fps_desc">启用 Roblox 内置帧率显示。</string>
+    <string name="ff_disable_gui_blur_title">移除菜单背景模糊</string>
+    <string name="ff_disable_gui_blur_desc">移除菜单背后的模糊背景以提高响应速度。</string>
+
+    <!-- FF Settings Tab Toggles -->
+    <string name="ffs_automatic_drs_title">稳定帧率</string>
+    <string name="ffs_automatic_drs_desc">GPU 过载时自动降低渲染分辨率。</string>
+    <string name="ffs_animation_lod_title">简化远处动作动画</string>
+    <string name="ffs_animation_lod_desc">简化远处角色的骨骼动画以降低 CPU 负载。</string>
+    <string name="ffs_android_vsync_title">平滑垂直同步</string>
+    <string name="ffs_android_vsync_desc">使渲染帧与屏幕刷新同步以减少画面撕裂。</string>
+    <string name="ffs_drs_basic_title">自适应图形控制</string>
+    <string name="ffs_drs_basic_desc">允许根据设备性能动态调节分辨率。</string>
+    <string name="ffs_drs_gpu_time_title">响应 GPU 负载</string>
+    <string name="ffs_drs_gpu_time_desc">根据实际 GPU 帧时间精准调控画面。</string>
+    <string name="ffs_batch_net_title">加速游戏资源加载</string>
+    <string name="ffs_batch_net_desc">合并网络资源请求以加快加载速度。</string>
+    <string name="ffs_desync_title">调整移动同步频率</string>
+    <string name="ffs_desync_desc">调节移动与物理数据的网络发送频率。</string>
+    <string name="ffs_power_mgr_title">减少后台耗电</string>
+    <string name="ffs_power_mgr_desc">在后台运行时适配 Android 电源管理。</string>
+    <string name="ffs_bg_session_title">可靠恢复游戏会话</string>
+    <string name="ffs_bg_session_desc">从后台切回时帮助正确恢复会话连接。</string>
+    <string name="ffs_unified_mesh_title">统一模型内存优化</string>
+    <string name="ffs_unified_mesh_desc">优化 3D 模型内存占用。</string>
+    <string name="ffs_anim_cache_title">动画缓存加速</string>
+    <string name="ffs_anim_cache_desc">缓存动画数据避免重复解码。</string>
+
+    <!-- Game Mode Toggles -->
+    <string name="gm_master_title">启用游戏模式</string>
+    <string name="gm_master_desc">在 Roblox 启动时激活所选加速配置。</string>
+    <string name="gm_system_perf_title">系统性能加速</string>
+    <string name="gm_system_perf_desc">请求 Android 高性能游戏模式。</string>
+    <string name="gm_cpu_priority_title">CPU 性能优先级</string>
+    <string name="gm_cpu_priority_desc">提升 Roblox 进程优先级以减少调度延迟。</string>
+    <string name="gm_smart_ram_title">智能 RAM 清理</string>
+    <string name="gm_smart_ram_desc">启动前自动回收后台缓存内存。</string>
+    <string name="gm_wifi_opt_title">Wi-Fi 延迟优化</string>
+    <string name="gm_wifi_opt_desc">保持 Wi-Fi 高性能模式降低游戏延迟。</string>
+    <string name="gm_unrestricted_power_title">无限制电源</string>
+    <string name="gm_unrestricted_power_desc">排除电池优化限制，防止进程被中断。</string>
+    <string name="gm_fast_launch_title">快速启动游戏</string>
+    <string name="gm_fast_launch_desc">移除 Android 过渡动画以加快启动感。</string>
+    <string name="gm_keep_display_title">保持屏幕常亮</string>
+    <string name="gm_keep_display_desc">游戏进行时防止屏幕休眠。</string>
+
+    <!-- Settings & About -->
+    <string name="title_settings_about">设置与关于</string>
+    <string name="title_preferences">首选项</string>
+    <string name="label_app_theme">应用主题</string>
+    <string name="desc_app_theme">暗色或明亮视觉风格</string>
+    <string name="label_language">语言</string>
+    <string name="desc_language">应用显示语言</string>
+    <string name="label_preferred_roblox_app">首选 Roblox 应用</string>
+    <string name="desc_preferred_roblox_app">选择要使用和启动的 Roblox 客户端</string>
+    <string name="title_app_settings">设置</string>
+    <string name="desc_app_settings">配置仅在启动修改版 Roblox 时生效的显示行为</string>
+    <string name="title_display_settings">显示</string>
+    <string name="title_shader_package">着色器包</string>
+    <string name="desc_shader_package">选择画面色调与环境光影氛围</string>
+    <string name="shader_package_default">默认 (无着色器)</string>
+    <string name="shader_package_daytime">日光 (明亮清爽)</string>
+    <string name="shader_package_rtx_ultra">RTX 超级 (逼真光影)</string>
+    <string name="shader_package_sunset">日落 (黄金时刻)</string>
+    <string name="shader_package_night">夜晚 (深夜魅影)</string>
+    <string name="shader_package_cloudy">多云 (柔和阴天)</string>
+    <string name="shader_package_desert">沙漠 (温暖海市蜃楼)</string>
+    <string name="shader_package_arctic">极地 (冷冽冰霜)</string>
+    <string name="shader_package_blood_moon">血月 (神秘深红)</string>
+    <string name="shader_package_cyberpunk">赛博朋克 (未来霓虹)</string>
+    <string name="shader_package_cherry_blossom">樱花 (柔美粉红)</string>
+    <string name="shader_package_ghibli_anime">吉卜力动画 (清新唯美)</string>
+    <string name="shader_package_synthwave">复古电音 (80年代怀旧)</string>
+    <string name="shader_package_noir">黑色电影 (经典黑白)</string>
+    <string name="title_stretch_screen">拉伸屏幕</string>
+    <string name="desc_stretch_screen" formatted="false">低于 100% 会加宽画面。高于 100% 会使画面变窄。100% 保持原始形状。</string>
+    <string name="note_stretch_screen" formatted="false">仅在从 Masterstrap 启动修改版 Roblox 并在横屏模式下生效一次。101–200% 范围使用更宽的渲染缓冲区，可能会增加 GPU 显存占用。</string>
+    <string name="value_stretch_screen_percent">%1$d%%</string>
+    <string name="label_stretch_original" formatted="false">100% (原始)</string>
+    <string name="title_community_links">官方频道与链接</string>
+    <string name="link_app_guide_title">应用使用指南 →</string>
+    <string name="title_license_key">许可证密钥</string>
+    <string name="desc_license_key">输入许可证密钥以解锁完整功能并永久跳过广告。</string>
+    <string name="plan_free">免费版</string>
+    <string name="plan_active">已激活</string>
+
+    <!-- Preset Categories -->
+    <string name="section_safe_boost">安全加速 (稳定性与低延迟)</string>
+    <string name="section_turbo_boost">Turbo Boost</string>
+    <string name="title_tab_fastflag_settings">FastFlag 设置</string>
+    <string name="gm_safe_ram_title">启动前释放 Masterstrap 内存</string>
+    <string name="gm_safe_ram_desc">打开 Roblox 前，仅请求 Android 回收 Masterstrap 不再使用的内存，不会关闭其他应用。</string>
+    <string name="gm_safe_network_title">启动时使用低延迟 Wi-Fi</string>
+    <string name="gm_safe_network_desc">Roblox 启动期间临时请求 Android 的低延迟 Wi-Fi 模式，仅在设备连接 Wi-Fi 时生效。</string>
+    <string name="gm_safe_power_title">Roblox 启动时保持 CPU 唤醒</string>
+    <string name="gm_safe_power_desc">Roblox 启动期间最多 60 秒内防止 CPU 休眠，不会超频或改变 CPU 速度。</string>
+    <string name="gm_safe_thermal_title">设备过热时暂停启动加速</string>
+    <string name="gm_safe_thermal_desc">启动前检查 Android 温度状态。检测到严重过热时，暂时跳过 Wi-Fi 和 CPU 加速，直到设备降温。</string>
+    <string name="gm_safe_touch_title">提升触控灵敏度</string>
+    <string name="gm_safe_touch_desc">加快屏幕触控响应速度，操作更跟手无延迟。</string>
+    <string name="gm_safe_frame_pacing_title">画面平滑抗撕裂</string>
+    <string name="gm_safe_frame_pacing_desc">均衡每一帧的生成时间，消除画面微卡顿与撕裂。</string>
+    <string name="msg_enable_master_first">请先开启 Game Mode Turbo 👑！</string>
+    <string name="category_popular">热门</string>
+    <string name="category_hot">最新热游</string>
+    <string name="category_general_presets">通用预设</string>
+    <string name="category_game_presets">游戏预设</string>
+    <string name="category_inferium_presets">Inferium 预设</string>
+    <string name="title_community_presets">社区与游戏预设</string>
+    <string name="desc_community_presets">选择优化的游戏预设。保存并启动时其配置将与您的控制合并。</string>
+
+    <!-- Messages & Dialogs -->
+    <string name="msg_saved_success">配置已成功导出至 ClientAppSettings.json！</string>
+    <string name="msg_save_failed">保存配置失败。请检查存储权限。</string>
+    <string name="msg_roblox_not_found">未在此设备上找到 Roblox 应用。</string>
+    <string name="msg_preset_applied">预设应用成功！</string>
+    <string name="msg_license_activated">许可证已激活！已免除广告。</string>
+    <string name="msg_invalid_license">请输入有效的许可证密钥</string>
+
+    <!-- Mandatory Google Play update -->
+    <string name="dialog_update_required_title">需要更新</string>
+    <string name="dialog_update_badge">有可用更新</string>
+    <string name="dialog_update_message">需要更新版本的 Masterstrap 才能继续使用。请立即升级以继续使用应用程序。</string>
+    <string name="dialog_update_current_version">当前版本：%1$s</string>
+    <string name="dialog_upgrade_now">立即升级</string>
 </resources>

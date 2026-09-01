@@ -151,7 +151,32 @@
     <string name="desc_language">アプリの表示言語</string>
     <string name="label_preferred_roblox_app">優先する Roblox アプリ</string>
     <string name="desc_preferred_roblox_app">起動および適用する Roblox アプリを選択します</string>
+    <string name="title_app_settings">設定</string>
+    <string name="desc_app_settings">パッチ適用済み Roblox の起動時表示を設定</string>
+    <string name="title_display_settings">ディスプレイ</string>
+    <string name="title_shader_package">シェーダーパッケージ</string>
+    <string name="desc_shader_package">画面のトーンや環境光の雰囲気を変更します</string>
+    <string name="shader_package_default">デフォルト (なし)</string>
+    <string name="shader_package_daytime">デイライト (鮮やかな太陽光)</string>
+    <string name="shader_package_rtx_ultra">RTX ウルトラ (リアル光影)</string>
+    <string name="shader_package_sunset">サンセット (夕焼け)</string>
+    <string name="shader_package_night">ナイト (深夜の月光)</string>
+    <string name="shader_package_cloudy">クラウディ (穏やかな曇り空)</string>
+    <string name="shader_package_desert">デザート (暖かな砂漠)</string>
+    <string name="shader_package_arctic">アークティック (冷涼な霜)</string>
+    <string name="shader_package_blood_moon">ブラッドムーン (神秘的な深紅)</string>
+    <string name="shader_package_cyberpunk">サイバーパンク (ネオン輝く未来)</string>
+    <string name="shader_package_cherry_blossom">桜 (チェリーブロッサム)</string>
+    <string name="shader_package_ghibli_anime">ジブリアニメ (鮮やかなアニメ風)</string>
+    <string name="shader_package_synthwave">シンセウェーブ (80年代レトロ)</string>
+    <string name="shader_package_noir">ノワール (クラシックモノクロ)</string>
+    <string name="title_stretch_screen">画面引き伸ばし</string>
+    <string name="desc_stretch_screen" formatted="false">100% 未満で画面を横に広げ、100% 超で狭めます。100% で元の形状を維持します。</string>
+    <string name="note_stretch_screen" formatted="false">Masterstrap からパッチ適用済み Roblox を起動した時のみ横画面で適用されます。101〜200% の範囲は広いレンダリングバッファを使用し、GPU メモリ使用量が増加する場合があります。</string>
+    <string name="value_stretch_screen_percent">%1$d%%</string>
+    <string name="label_stretch_original" formatted="false">100% (オリジナル)</string>
     <string name="title_community_links">公式チャンネルとリンク</string>
+    <string name="link_app_guide_title">アプリの使い方ガイド →</string>
     <string name="title_license_key">ライセンスキー</string>
     <string name="desc_license_key">ライセンスキーを入力して広告を非表示にします。</string>
     <string name="plan_free">無料版</string>
@@ -161,12 +186,14 @@
     <string name="section_safe_boost">セーフブースト (安定性と低遅延)</string>
     <string name="section_turbo_boost">Turbo Boost</string>
     <string name="title_tab_fastflag_settings">FastFlag 設定</string>
-    <string name="gm_safe_ram_title">RAMメモリクリーン</string>
-    <string name="gm_safe_ram_desc">キャッシュを自動解放してゲームを軽快にし、フリーズを防ぎます。</string>
-    <string name="gm_safe_network_title">ネットワーク・低Ping最適化</string>
-    <string name="gm_safe_network_desc">パケット送信を最適化し、Pingを安定させて切断を防ぎます。</string>
-    <string name="gm_safe_power_title">発熱抑制・FPS安定化</string>
-    <string name="gm_safe_power_desc">CPUクロックを調整して端末の発熱を抑え、長時間プレイでもFPSを安定させます。</string>
+    <string name="gm_safe_ram_title">起動前にMasterstrapのメモリを解放</string>
+    <string name="gm_safe_ram_desc">Robloxを開く前に、Masterstrapが使用しなくなったメモリだけをAndroidに解放させます。他のアプリは終了しません。</string>
+    <string name="gm_safe_network_title">起動中に低遅延Wi-Fiを使用</string>
+    <string name="gm_safe_network_desc">Robloxの起動中だけ、Androidの低遅延Wi-Fiモードを要求します。Wi-Fi接続時のみ動作します。</string>
+    <string name="gm_safe_power_title">Roblox起動中にCPUをスリープさせない</string>
+    <string name="gm_safe_power_desc">起動中の最大60秒間、CPUのスリープを防ぎます。オーバークロックやCPU速度の変更は行いません。</string>
+    <string name="gm_safe_thermal_title">端末が高温のとき起動ブーストを停止</string>
+    <string name="gm_safe_thermal_desc">起動前にAndroidの温度状態を確認します。高温時は端末が冷えるまでWi-FiとCPUの起動ブーストを実行しません。</string>
     <string name="gm_safe_touch_title">タッチ感度向上</string>
     <string name="gm_safe_touch_desc">画面のタッチ反応速度を向上させ、操作の遅延を解消します。</string>
     <string name="gm_safe_frame_pacing_title">フレーム安定化・スタッター防止</string>
@@ -186,4 +213,11 @@
     <string name="msg_preset_applied">プリセットが適用されました！</string>
     <string name="msg_license_activated">ライセンスキーが有効化されました！</string>
     <string name="msg_invalid_license">有効なライセンスキーを入力してください</string>
+
+    <!-- Mandatory Google Play update -->
+    <string name="dialog_update_required_title">アップデートが必要です</string>
+    <string name="dialog_update_badge">アップデートが利用可能</string>
+    <string name="dialog_update_message">続行するには新しいバージョンの Masterstrap が必要です。今すぐアップグレードしてください。</string>
+    <string name="dialog_update_current_version">現在のバージョン: %1$s</string>
+    <string name="dialog_upgrade_now">今すぐアップグレード</string>
 </resources>

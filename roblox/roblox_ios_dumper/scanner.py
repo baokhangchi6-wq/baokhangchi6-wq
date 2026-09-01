@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import collections
+import bisect
 import re
 import sys
 from array import array
@@ -94,6 +95,7 @@ class Arm64Scanner:
                 words.byteswap()
             self._section_words.append((section, words))
         self._xref_index: dict[int, list[StringXref]] = {}
+        self.offset_candidates: list[dict[str, object]] = []
 
     def _word(self, address: int) -> int | None:
         for section, words in self._section_words:
@@ -153,15 +155,30 @@ class Arm64Scanner:
             hits.extend(self.find_xrefs(address))
         return sorted(hits, key=lambda item: item.instruction_address)
 
-    def find_function_start(self, address: int, max_scan: int = 0x1000) -> int | None:
+    def resolve_function_start(
+        self, address: int, max_scan: int = 0x1000
+    ) -> tuple[int | None, str]:
+        starts = self.image.function_starts
+        if starts:
+            index = bisect.bisect_right(starts, address) - 1
+            if index >= 0:
+                candidate = starts[index]
+                # LC_FUNCTION_STARTS describes the containing function directly.
+                # Large generated functions routinely exceed the heuristic
+                # backward-prologue scan limit, so do not apply max_scan here.
+                if self._is_code(candidate):
+                    return candidate, "lc-function-starts"
         lower = max(0, address - max_scan)
         current = address & ~3
         while current >= lower:
             instruction = self._word(current)
             if instruction is not None and is_probable_function_prologue(instruction):
-                return current
+                return current, "arm64-prologue"
             current -= 4
-        return None
+        return None, "not-found"
+
+    def find_function_start(self, address: int, max_scan: int = 0x1000) -> int | None:
+        return self.resolve_function_start(address, max_scan)[0]
 
     def _compile_hex_pattern(self, pattern_str: str) -> re.Pattern:
         tokens = pattern_str.strip().split()
@@ -218,7 +235,132 @@ class Arm64Scanner:
             return matches[0], matches, evidence
         return None, [], ["hex-pattern:not-found"]
 
+    @staticmethod
+    def _pattern_bytes(pattern_str: str) -> tuple[bytes, bytes]:
+        values = bytearray()
+        masks = bytearray()
+        for token in pattern_str.strip().split():
+            if token in {"?", "??"}:
+                values.append(0)
+                masks.append(0)
+            else:
+                raw = bytes.fromhex(token)
+                if len(raw) != 1:
+                    raise ValueError(f"expected one byte token, got {token!r}")
+                values.append(raw[0])
+                masks.append(0xFF)
+        return bytes(values), bytes(masks)
+
+    def scan_relaxed_hex_candidates(
+        self,
+        name: str,
+        pattern_str: str,
+        relative_offset: int = 0,
+        *,
+        minimum_score: float = 0.65,
+        maximum_candidates: int = 5,
+    ) -> list[dict[str, object]]:
+        """Find evidence candidates without promoting fuzzy matches to offsets.
+
+        A stable fixed-byte island anchors each search. The complete wildcard
+        pattern is then scored at that location. This is deliberately
+        candidate-only: compiler changes can make a high byte score point at a
+        semantically different function.
+        """
+        try:
+            values, masks = self._pattern_bytes(pattern_str)
+        except (ValueError, TypeError):
+            return []
+        if not values:
+            return []
+
+        chunks: list[tuple[int, bytes]] = []
+        start: int | None = None
+        for index, mask in enumerate(masks + b"\0"):
+            if mask and start is None:
+                start = index
+            elif not mask and start is not None:
+                chunk = values[start:index]
+                if len(chunk) >= 8:
+                    chunks.append((start, chunk))
+                start = None
+        if not chunks:
+            return []
+        chunks.sort(key=lambda item: len(item[1]), reverse=True)
+
+        fixed_count = sum(1 for mask in masks if mask)
+        if fixed_count < 16:
+            return []
+        candidate_scores: dict[int, tuple[float, int, int]] = {}
+        for section in self._code_sections:
+            section_data = self.image.data[
+                section.file_offset : section.file_offset + section.size
+            ]
+            for chunk_offset, chunk in chunks[:3]:
+                cursor = 0
+                hits = 0
+                while hits < 64:
+                    found = section_data.find(chunk, cursor)
+                    if found < 0:
+                        break
+                    hits += 1
+                    cursor = found + 1
+                    pattern_start = found - chunk_offset
+                    if pattern_start < 0 or pattern_start + len(values) > len(section_data):
+                        continue
+                    address = section.address + pattern_start + relative_offset
+                    if address % 4 or not self._is_code(address):
+                        continue
+                    window = section_data[pattern_start : pattern_start + len(values)]
+                    matched = sum(
+                        1
+                        for expected, actual, mask in zip(values, window, masks)
+                        if mask and expected == actual
+                    )
+                    score = matched / fixed_count
+                    if score < minimum_score:
+                        continue
+                    previous = candidate_scores.get(address)
+                    if previous is None or score > previous[0]:
+                        candidate_scores[address] = (score, matched, fixed_count)
+
+        ranked = sorted(
+            candidate_scores.items(), key=lambda item: (-item[1][0], item[0])
+        )[:maximum_candidates]
+        results: list[dict[str, object]] = []
+        for rank, (address, (score, matched, total)) in enumerate(ranked, start=1):
+            section = self.image.section_for_va(address)
+            function_start, boundary_source = self.resolve_function_start(address)
+            results.append(
+                {
+                    "name": name,
+                    "address": address,
+                    "rva": self.image.to_rva(address),
+                    "method": "relaxed-hex-candidate",
+                    "score": round(score, 6),
+                    "rank": rank,
+                    "promoted": False,
+                    "containing_function_rva": (
+                        self.image.to_rva(function_start) if function_start is not None else None
+                    ),
+                    "function_delta": (
+                        address - function_start if function_start is not None else None
+                    ),
+                    "evidence": [
+                        f"fixed-bytes:{matched}/{total}",
+                        f"anchor-islands:{min(3, len(chunks))}",
+                        f"section:{section.segment_name},{section.name}"
+                        if section
+                        else "section:unknown",
+                        f"function-boundary:{boundary_source}",
+                        "candidate-only:not-emitted-to-Offsets.hpp",
+                    ],
+                }
+            )
+        return results
+
     def scan_offsets(self, patterns: list[dict[str, object]]) -> list[OffsetResult]:
+        self.offset_candidates = []
         string_addresses: dict[str, list[int]] = {}
         targets: set[int] = set()
         for pattern in patterns:
@@ -244,6 +386,10 @@ class Arm64Scanner:
                     if len(matches) == 1
                     else ("medium" if len(matches) > 1 else "missing")
                 )
+                if address is None:
+                    self.offset_candidates.extend(
+                        self.scan_relaxed_hex_candidates(name, hex_pat.strip(), offset_val)
+                    )
                 results.append(
                     OffsetResult(
                         name=name,
@@ -269,14 +415,11 @@ class Arm64Scanner:
                 ),
                 key=lambda item: item.instruction_address,
             )
-            functions = [
-                candidate
-                for candidate in (
-                    self.find_function_start(item.instruction_address, max_scan)
-                    for item in xrefs
-                )
-                if candidate is not None
+            resolved_xrefs = [
+                (item, *self.resolve_function_start(item.instruction_address, max_scan))
+                for item in xrefs
             ]
+            functions = [candidate for _item, candidate, _source in resolved_xrefs if candidate]
             unique_functions = sorted(set(functions))
             address = (
                 unique_functions[xref_index]
@@ -288,27 +431,58 @@ class Arm64Scanner:
             if address is not None:
                 matching_xrefs = [
                     item
-                    for item in xrefs
-                    if self.find_function_start(item.instruction_address, max_scan)
-                    == address
+                    for item, candidate, _source in resolved_xrefs
+                    if candidate == address
                 ]
-                confidence = "high" if len(matching_xrefs) >= 2 else "medium"
+                boundary_sources = sorted(
+                    {
+                        source
+                        for _item, candidate, source in resolved_xrefs
+                        if candidate == address
+                    }
+                )
+                confidence = (
+                    "high"
+                    if len(matching_xrefs) >= 2 or "lc-function-starts" in boundary_sources
+                    else "medium"
+                )
                 section = self.image.section_for_va(address)
                 evidence.extend(
                     [
                         f"exact-cstring:{value}",
                         f"string-xrefs:{len(xrefs)}",
                         f"candidate-functions:{len(unique_functions)}",
+                        f"function-boundary:{','.join(boundary_sources)}",
                         f"section:{section.segment_name},{section.name}" if section else "section:unknown",
                     ]
                 )
+            elif xrefs:
+                for item, _candidate, source in resolved_xrefs[:8]:
+                    self.offset_candidates.append(
+                        {
+                            "name": name,
+                            "address": item.instruction_address,
+                            "rva": self.image.to_rva(item.instruction_address),
+                            "method": "unresolved-string-xref",
+                            "score": 0.0,
+                            "rank": 0,
+                            "promoted": False,
+                            "evidence": [
+                                f"exact-cstring:{value}",
+                                f"xref:{item.instruction_address:#x}",
+                                f"reference-kind:{item.reference_kind}",
+                                f"function-boundary:{source}",
+                                "candidate-only:not-emitted-to-Offsets.hpp",
+                            ],
+                        }
+                    )
             results.append(
                 OffsetResult(
                     name=name,
                     address=address,
                     rva=self.image.to_rva(address) if address is not None else None,
                     confidence=confidence,
-                    method="cstring+xref+arm64-prologue",
+                    method="cstring+xref+function-boundary",
                     string=value,
                     xrefs=tuple(item.instruction_address for item in xrefs),
                     evidence=tuple(evidence),

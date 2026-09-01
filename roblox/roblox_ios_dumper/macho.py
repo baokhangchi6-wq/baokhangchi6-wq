@@ -16,6 +16,7 @@ LC_ENCRYPTION_INFO = 0x21
 LC_ENCRYPTION_INFO_64 = 0x2C
 LC_MAIN = 0x80000028
 LC_BUILD_VERSION = 0x32
+LC_FUNCTION_STARTS = 0x26
 
 VM_PROT_READ = 0x1
 VM_PROT_WRITE = 0x2
@@ -243,6 +244,8 @@ class MachOImage:
         self.encryption: list[EncryptionInfo] = []
         self.entry_file_offset: int | None = None
         self.segments: list[MachOSegment] = []
+        self.function_starts: list[int] = []
+        self._function_starts_blob: tuple[int, int] | None = None
         self._parse()
         if self.cpu_type != CPU_TYPE_ARM64:
             raise MachOError(
@@ -252,6 +255,7 @@ class MachOImage:
         if text is None:
             raise MachOError("Mach-O has no __TEXT segment")
         self.image_base = text.vm_address
+        self.function_starts = self._decode_function_starts()
 
     def _detect_endian(self) -> str:
         magic = self.data[:4]
@@ -318,12 +322,56 @@ class MachOImage:
                     self.entry_file_offset = struct.unpack_from(
                         self.endian + "Q", self.data, cursor + 8
                     )[0]
+            elif command == LC_FUNCTION_STARTS:
+                if command_size >= 16:
+                    data_offset, data_size = struct.unpack_from(
+                        self.endian + "II", self.data, cursor + 8
+                    )
+                    if data_offset > len(self.data) or data_size > len(self.data) - data_offset:
+                        raise MachOError("LC_FUNCTION_STARTS data extends past selected slice")
+                    self._function_starts_blob = (data_offset, data_size)
             cursor += command_size
 
         if cursor != command_end:
             raise MachOError("Mach-O load command size accounting mismatch")
         if not self.segments:
             raise MachOError("Mach-O contains no LC_SEGMENT_64 command")
+
+    def _decode_function_starts(self) -> list[int]:
+        """Decode LC_FUNCTION_STARTS ULEB128 deltas into executable VAs.
+
+        The command is optional. Entries are deltas from the previous function,
+        with the first delta based at the Mach-O __TEXT image base.
+        """
+        if self._function_starts_blob is None:
+            return []
+        data_offset, data_size = self._function_starts_blob
+        cursor = data_offset
+        end = data_offset + data_size
+        current = self.image_base
+        starts: list[int] = []
+        while cursor < end:
+            delta = 0
+            shift = 0
+            while True:
+                if cursor >= end or shift >= 64:
+                    raise MachOError("Malformed LC_FUNCTION_STARTS ULEB128 stream")
+                byte = self.data[cursor]
+                cursor += 1
+                delta |= (byte & 0x7F) << shift
+                if not byte & 0x80:
+                    break
+                shift += 7
+            if delta == 0:
+                break
+            current += delta
+            segment = self.segment_for_va(current)
+            if segment is None or not segment.is_executable:
+                raise MachOError(
+                    f"LC_FUNCTION_STARTS entry {current:#x} is outside executable segments"
+                )
+            starts.append(current)
+        return sorted(set(starts))
 
     def _parse_segment(self, cursor: int, command_size: int) -> None:
         if command_size < 72:
@@ -588,6 +636,7 @@ class MachOImage:
                 if self.build_version
                 else None
             ),
+            "function_starts": len(self.function_starts),
             "segments": [
                 {
                     "name": segment.name,

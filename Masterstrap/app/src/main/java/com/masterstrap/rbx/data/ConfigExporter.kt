@@ -18,6 +18,7 @@ object ConfigExporter {
     private const val CLIENT_SETTINGS_FILE = "ClientAppSettings.json"
     private const val GLOBAL_SETTINGS_FILE = "GlobalBasicSettings_13.xml"
     const val TURBO_PROFILE_FILE = "MasterstrapTurboProfile.json"
+    const val SHADER_PROFILE_FILE = "MasterstrapShaderProfile.json"
     private const val ANDROID_LAUNCH_LOG = "Masterstrap_Android_Launch.log.txt"
     private const val NATIVE_BRIDGE_LOG = "Masterstrap_Android_NativeBridge.log.txt"
     private const val PATCHED_CLIENT_LOG = "Masterstrap_RobloxPatched.log.txt"
@@ -27,7 +28,8 @@ object ConfigExporter {
         ANDROID_LAUNCH_LOG,
         NATIVE_BRIDGE_LOG,
         PATCHED_CLIENT_LOG,
-        TURBO_PROFILE_FILE
+        TURBO_PROFILE_FILE,
+        SHADER_PROFILE_FILE
     )
 
     private val ROBLOX_PACKAGES = listOf(
@@ -59,20 +61,22 @@ object ConfigExporter {
                 it.id == "allow_manage_preferences"
             }?.isEnabled ?: true
             val xmlContent = generateGlobalBasicSettingsXml(
-                fpsCap = fpsCap,
-                forceLowestGraphics = managePreferences && presetToggles.any {
-                    it.id == "force_lowest_graphics" && it.isEnabled
-                },
+                fpsTarget = RobloxGlobalSettingsPolicy.normalizeFpsTarget(fpsCap),
+                playerNamesEnabled = RobloxGlobalSettingsPolicy.playerNamesEnabled(presetToggles),
+                forceLowestGraphics = RobloxGraphicsPolicy.forceLowest(presetToggles),
                 reducedMotion = managePreferences && presetToggles.any {
                     it.id == "reduced_motion" && it.isEnabled
                 },
                 hapticsEnabled = !managePreferences || (presetToggles
-                    .firstOrNull { it.id == "haptics" }?.isEnabled ?: true),
-                displayFps = managePreferences && presetToggles.any {
-                    it.id == "display_fps" && it.isEnabled
-                }
+                    .firstOrNull { it.id == "haptics" }?.isEnabled ?: true)
             )
-            val turboProfileContent = generateTurboProfileJson(context, presetToggles)
+            val turboProfileContent = generateTurboProfileJson(
+                context, presetToggles,
+                RobloxGlobalSettingsPolicy.normalizeFpsTarget(fpsCap)
+            )
+            Log.i(TAG, "graphics_policy=launch_toggle force_lowest=" +
+                RobloxGraphicsPolicy.forceLowest(presetToggles))
+            val shaderProfileContent = generateShaderProfileJson(context)
 
             // 1. Primary: Save via MediaStore API into /sdcard/Download/Masterstrap/ (Standard on Android 10+ / Q to 15+)
             // MuMu exposes Download as a writable shared folder but its
@@ -85,11 +89,23 @@ object ConfigExporter {
             val xmlStoredDirect = writeCanonicalDownloadFileDirect(
                 GLOBAL_SETTINGS_FILE, xmlContent
             )
+            val turboStoredDirect = writeCanonicalDownloadFileDirect(
+                TURBO_PROFILE_FILE, turboProfileContent
+            )
+            val shaderStoredDirect = writeCanonicalDownloadFileDirect(
+                SHADER_PROFILE_FILE, shaderProfileContent
+            )
             val jsonStored = jsonStoredDirect || writeViaMediaStore(
                 context, CLIENT_SETTINGS_FILE, jsonContent, "application/json"
             )
             val xmlStored = xmlStoredDirect || writeViaMediaStore(
                 context, GLOBAL_SETTINGS_FILE, xmlContent, "text/xml"
+            )
+            val turboStored = turboStoredDirect || writeViaMediaStore(
+                context, TURBO_PROFILE_FILE, turboProfileContent, "application/json"
+            )
+            val shaderStored = shaderStoredDirect || writeViaMediaStore(
+                context, SHADER_PROFILE_FILE, shaderProfileContent, "application/json"
             )
 
             // 2. Direct File I/O for Android 9 & direct access fallback
@@ -100,7 +116,10 @@ object ConfigExporter {
                 File(
                     Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
                     MASTERSTRAP_DIR
-                ).takeUnless { Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && jsonStored && xmlStored },
+                ).takeUnless {
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+                        jsonStored && xmlStored && turboStored && shaderStored
+                },
                 File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), MASTERSTRAP_DIR),
                 File(Environment.getExternalStorageDirectory(), MASTERSTRAP_DIR)
             ).distinctBy { it.absolutePath.lowercase() }
@@ -109,6 +128,8 @@ object ConfigExporter {
                     if (!dir.exists()) dir.mkdirs()
                     File(dir, CLIENT_SETTINGS_FILE).writeText(jsonContent, Charsets.UTF_8)
                     File(dir, GLOBAL_SETTINGS_FILE).writeText(xmlContent, Charsets.UTF_8)
+                    File(dir, TURBO_PROFILE_FILE).writeText(turboProfileContent, Charsets.UTF_8)
+                    File(dir, SHADER_PROFILE_FILE).writeText(shaderProfileContent, Charsets.UTF_8)
                     Log.i(TAG, "Direct export successful to: ${dir.absolutePath}")
                 } catch (e: Exception) {
                     Log.w(TAG, "Direct export skipped for ${dir.absolutePath}: ${e.message}")
@@ -157,6 +178,8 @@ object ConfigExporter {
             File(injectStagingDir, CLIENT_SETTINGS_FILE).writeText(jsonContent, Charsets.UTF_8)
             File(injectStagingDir, TURBO_PROFILE_FILE)
                 .writeText(turboProfileContent, Charsets.UTF_8)
+            File(injectStagingDir, SHADER_PROFILE_FILE)
+                .writeText(shaderProfileContent, Charsets.UTF_8)
 
             File(context.filesDir, GLOBAL_SETTINGS_FILE).writeText(xmlContent, Charsets.UTF_8)
 
@@ -164,7 +187,8 @@ object ConfigExporter {
             Log.i(
                 TAG,
                 "All configuration exports completed successfully " +
-                    "media_json=$jsonStored media_xml=$xmlStored"
+                    "media_json=$jsonStored media_xml=$xmlStored media_turbo=$turboStored " +
+                    "media_shader=$shaderStored"
             )
             true
         } catch (e: Exception) {
@@ -475,6 +499,7 @@ object ConfigExporter {
         if (managePreferences && selectedGamePreset != GamePresetManager.NONE) {
             val gamePresetFlags = GamePresetManager.loadFlags(context, selectedGamePreset)
             for ((key, value) in gamePresetFlags) {
+                if (PatchedFlagPolicy.isBlocked(key)) continue
                 root.put(key, value)
             }
         }
@@ -483,6 +508,7 @@ object ConfigExporter {
         for (flag in editorFlags) {
             if (!managePreferences) break
             if (!flag.isEnabled) continue
+            if (PatchedFlagPolicy.isBlocked(flag.name)) continue
             when (flag.type) {
                 FlagType.BOOLEAN -> {
                     root.put(flag.name, flag.value.equals("true", ignoreCase = true))
@@ -501,28 +527,43 @@ object ConfigExporter {
         // Turbo Boost is transported as a separate, one-shot native profile.
         // Never turn its UI controls into FastFlags: the patched process owns
         // these runtime optimizations and a direct Roblox launch must stay inert.
-        val turboToggleIds = setOf(
+        val gameModeControlIds = setOf(
+            "safe_ram_cleanup",
+            "safe_network_opt",
+            "safe_power_opt",
+            "safe_thermal_guard",
             "game_mode_master",
             "system_perf_boost",
             "cpu_priority",
             "smart_ram_cleanup",
             "faster_game_launch",
             "keep_display_active",
-            "unrestricted_power"
+            "unrestricted_power",
+            "turbo_wifi_latency",
+            "turbo_thermal_guard",
+            "turbo_refresh_contract",
+            "turbo_sustained_performance"
         )
 
         // Structured controls are authoritative over stale custom-editor or
-        // game-preset copies of the same key. Remove all managed keys once,
-        // then merge every enabled toggle so overlapping bundles compose.
+        // game-preset copies of the same key. Enabled toggles are merged after
+        // the editor and therefore force their advertised values. The only
+        // deliberate exception is DFIntS2PhysicsSenderRate while Desync is ON;
+        // that one numeric value is exposed as an advanced editor tuning knob.
+        val editorOwnedKeys = editorFlags.asSequence()
+            .filter { it.isEnabled && it.name.isNotBlank() }
+            .map { it.name }
+            .toSet()
         presetToggles.asSequence()
-            .filterNot { it.id in turboToggleIds }
+            .filterNot { it.id in gameModeControlIds }
             .flatMap { it.flags.keys.asSequence() }
             .distinct()
+            .filterNot { it in editorOwnedKeys }
             .forEach { root.remove(it) }
 
         // 3. Apply Preset Toggles (Strictly overrides matching flags from Preset/DataGrid when ON)
         for (preset in presetToggles) {
-            if (preset.id in turboToggleIds) continue
+            if (preset.id in gameModeControlIds) continue
             if (preset.id == "allow_manage_preferences") continue
             if (!managePreferences) continue
             if (preset.isEnabled) {
@@ -554,9 +595,13 @@ object ConfigExporter {
                 }
             }
             .distinct()
+            .filterNot { it in editorOwnedKeys }
             .forEach { root.remove(it) }
 
         // 4. Apply Preset Dropdowns (MSAA, FRM, Rendering Mode, Dynamic Resolution)
+        // Renderer mode must never inherit a contradictory editor preference,
+        // including when Automatic is selected or managed preferences are off.
+        RendererModePolicy.ownedKeys.forEach { root.remove(it) }
         for (dropdown in dropdowns) {
             if (!managePreferences) break
             val flags = dropdown.flagMapper(dropdown.selectedOption)
@@ -577,47 +622,71 @@ object ConfigExporter {
             }
         }
 
-        // 5. Apply FPS Cap Flags (Highest priority for FPS values)
-        if (managePreferences && fpsCap > 0) {
-            root.put("DFIntTaskSchedulerTargetFps", fpsCap)
-            val explicitVsync = presetToggles.any {
-                it.id == "android_vsync" && it.isEnabled
-            }
-            if (fpsCap > 60 && !explicitVsync) {
-                root.put("FFlagEnableAndroidVsync", false)
-            }
+        // ON owns level 1 even when an FRM dropdown is processed after toggles.
+        // OFF adds/removes nothing here: retain the existing editor/dropdown policy.
+        if (RobloxGraphicsPolicy.forceLowest(presetToggles)) {
+            root.put("DFIntDebugFRMQualityLevelOverride", 1)
         }
+
+        // Desync defaults to 38760, matching v3.lua/v4.lua. If the user has an
+        // enabled, valid integer entry with this exact canonical name in the
+        // FastFlag Editor, restore that value after every structured control is
+        // merged. No other editor flag receives this privilege.
+        val desyncEnabled = presetToggles.any { it.id == "desync" && it.isEnabled }
+        val editableSenderRate = FlagPrecedencePolicy.editableS2PhysicsSenderRate(
+            editorFlags = editorFlags,
+            desyncEnabled = desyncEnabled
+        )
+        if (editableSenderRate != null) {
+            root.put(
+                FlagPrecedencePolicy.EDITABLE_S2_PHYSICS_SENDER_RATE,
+                editableSenderRate
+            )
+            Log.i(
+                TAG,
+                "Resolved DFIntS2PhysicsSenderRate=$editableSenderRate " +
+                    "source=fastflag_editor desync=true"
+            )
+        } else if (desyncEnabled) {
+            Log.i(
+                TAG,
+                "Resolved DFIntS2PhysicsSenderRate=" +
+                    root.opt(FlagPrecedencePolicy.EDITABLE_S2_PHYSICS_SENDER_RATE) +
+                    " source=desync_toggle"
+            )
+        }
+
+        // Global XML owns the user-selected FPS target. Remove competing flag
+        // overrides after EVERY input source; omitting an override is different
+        // from forcing its value to false.
+        root.keys().asSequence().toList().forEach { key ->
+            if (PatchedFlagPolicy.isBlocked(key)) root.remove(key)
+        }
+        Log.i(TAG, "fps_policy=global_xml requested=$fpsCap " +
+            "target=${RobloxGlobalSettingsPolicy.normalizeFpsTarget(fpsCap)} " +
+            "flag_overrides=excluded")
 
         return root.toString(4)
     }
 
     private fun generateGlobalBasicSettingsXml(
-        fpsCap: Int,
+        fpsTarget: Int,
+        playerNamesEnabled: Boolean,
         forceLowestGraphics: Boolean,
         reducedMotion: Boolean,
-        hapticsEnabled: Boolean,
-        displayFps: Boolean
+        hapticsEnabled: Boolean
     ): String {
-        val framerate = if (fpsCap > 0) fpsCap else 120
-        val graphicsSettings = if (forceLowestGraphics) {
-            """
-      <token name="GraphicsOptimizationMode">1</token>
-      <int name="GraphicsQualityLevel">1</int>
-      <int name="QualityResetLevel">1</int>
-      <token name="SavedQualityLevel">1</token>
-      <bool name="MaxQualityEnabled">false</bool>""".trimIndent()
-        } else {
-            ""
-        }
+        val framerate = RobloxGlobalSettingsPolicy.normalizeFpsTarget(fpsTarget)
+        val graphicsSettings = RobloxGraphicsPolicy.xmlProperties(forceLowestGraphics)
         return """
 <roblox version="4">
   <Item class="UserGameSettings" referent="RBX0">
     <Properties>
 $graphicsSettings
-      <bool name="PerformanceStatsVisible">$displayFps</bool>
       <bool name="ReducedMotion">$reducedMotion</bool>
       <float name="HapticStrength">${if (hapticsEnabled) "1.000000" else "0.000000"}</float>
       <int name="FramerateCap">$framerate</int>
+      <bool name="PlayerNamesEnabled">$playerNamesEnabled</bool>
     </Properties>
   </Item>
 </roblox>
@@ -631,12 +700,13 @@ $graphicsSettings
      */
     private fun generateTurboProfileJson(
         context: Context,
-        presetToggles: List<PresetToggle>
+        presetToggles: List<PresetToggle>,
+        fpsTarget: Int
     ): String {
         val states = presetToggles.associate { it.id to it.isEnabled }
         val master = states["game_mode_master"] == true
         return JSONObject().apply {
-            put("schema", 1)
+            put("schema", 4)
             put("enabled", master)
             put("systemPerformanceBoost", master && states["system_perf_boost"] == true)
             put("cpuPerformancePriority", master && states["cpu_priority"] == true)
@@ -644,10 +714,47 @@ $graphicsSettings
             put("fasterGameLaunch", master && states["faster_game_launch"] == true)
             put("keepDisplayActive", master && states["keep_display_active"] == true)
             put("unrestrictedPower", master && states["unrestricted_power"] == true)
+            put("wifiLowLatency", master && states["turbo_wifi_latency"] == true)
+            put("thermalGuard", master && states["turbo_thermal_guard"] == true)
+            put("displayRefreshContract", master && states["turbo_refresh_contract"] == true)
+            put(
+                "sustainedPerformance",
+                master && states["turbo_sustained_performance"] == true
+            )
+            // The native performance-hint deadline must represent a physical
+            // display workload, not an intentionally unbounded Roblox FPS cap.
+            put("targetFrameRate", fpsTarget.coerceIn(30, 480))
             // A launcher-owned native display setting, not a FastFlag. Keeping
             // it in the one-shot private profile makes direct patched launches
             // inert and avoids adding another bridge payload/file.
             put("stretchScreenPercent", SettingsPersistence.loadStretchScreenPercent(context))
+            put(
+                "stretchBufferPreallocation",
+                master && SettingsPersistence.loadStretchScreenPercent(context) != 100
+            )
+        }.toString()
+    }
+
+    /**
+     * Launcher-owned visual profile consumed once by patched Roblox. It stays
+     * separate from public FastFlags and explicitly forbids the reference Lua
+     * script's whole-workspace material scan and periodic workers.
+     */
+    private fun generateShaderProfileJson(context: Context): String {
+        val selected = SettingsPersistence.loadShaderPackage(context)
+        val wetFloor = SettingsPersistence.loadShaderWetFloor(context)
+        return JSONObject().apply {
+            put("schema", 1)
+            put("enabled", selected != ShaderPackage.DEFAULT)
+            put("package", selected.stableKey)
+            put("applyMode", "once_after_datamodel")
+            put("maxPostEffects", 5)
+            put("wetFloor", wetFloor)
+            put("wetFloorStrategy", "bounded_nearby_once")
+            put("wetFloorMaxParts", 1024)
+            put("wetFloorRadiusStuds", 384)
+            put("allowWorkspaceMaterialScan", false)
+            put("allowPeriodicWorker", false)
         }.toString()
     }
 }

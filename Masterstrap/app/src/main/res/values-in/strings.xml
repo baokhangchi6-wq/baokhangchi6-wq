@@ -1,0 +1,241 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">masterstrap</string>
+    <string name="app_display_name">Masterstrap</string>
+    <string name="app_tagline">FastFlag &amp; Game Boost</string>
+
+    <!-- 5 Bottom Navigation Tabs -->
+    <string name="nav_fastflag">FastFlag</string>
+    <string name="nav_ff_settings">Pengaturan FF</string>
+    <string name="nav_start">Mulai</string>
+    <string name="nav_gamemode">Mode Game</string>
+    <string name="nav_preset">Preset</string>
+
+    <!-- Actions -->
+    <string name="btn_save">Simpan</string>
+    <string name="btn_save_launch">Mulai (Simpan &amp; Luncurkan)</string>
+    <string name="btn_back">❮ Kembali</string>
+    <string name="btn_apply">Terapkan</string>
+    <string name="btn_boost">Boost</string>
+    <string name="btn_activate">Aktivasi</string>
+    <string name="btn_cancel">Batal</string>
+    <string name="btn_confirm">Konfirmasi</string>
+    <string name="btn_close">Tutup</string>
+    <string name="btn_claim">Klaim</string>
+    <string name="dialog_claim_ad_title">Tonton Iklan untuk Membuka</string>
+    <string name="dialog_claim_ad_msg">Tonton video singkat untuk membuka hadiah ini dan melanjutkan.</string>
+
+    <!-- FastFlag Editor -->
+    <string name="title_fastflag_editor">Editor FastFlag</string>
+    <string name="desc_fastflag_editor">Tambah, impor, atau edit FastFlag individual</string>
+    <string name="search_hint">Cari flag (misal: FFlagDebug, FPS)...</string>
+    <string name="btn_add_flag">+ Tambah</string>
+    <string name="btn_import_json">Impor JSON</string>
+    <string name="btn_export_json">Ekspor JSON</string>
+    <string name="btn_clear_all">Hapus Semua</string>
+    <string name="dialog_add_flag_title">Tambah FastFlag Kustom</string>
+    <string name="hint_flag_name">Nama Flag (misal: FFlagFastLoading)</string>
+    <string name="hint_flag_value">Nilai (misal: True / 120 / Low)</string>
+    <string name="col_flag_name">Nama Flag</string>
+    <string name="col_flag_type">Tipe</string>
+    <string name="col_flag_value">Nilai</string>
+    <string name="col_flag_action">Tindakan</string>
+    <string name="title_datagrid">Tabel Data FastFlag</string>
+    <string name="tab_datagrid">DataGrid</string>
+    <string name="tab_toggles">Opsi</string>
+    <string name="tab_gamemode">Mode Game</string>
+
+    <!-- FastFlag Sections -->
+    <string name="section_graphics_quality">Kualitas grafis</string>
+    <string name="section_verified_preferences">Preferensi Roblox terverifikasi</string>
+    <string name="section_mobile_performance">Performa perangkat mobile</string>
+    <string name="section_rendering_fx">Rendering dan efek visual</string>
+    <string name="section_interface_camera">Antarmuka dan kamera</string>
+    <string name="section_graphics_framerate">Grafis &amp; frame rate</string>
+    <string name="section_network">Jaringan</string>
+    <string name="section_power_session">Daya &amp; sesi game</string>
+    <string name="section_memory_assets">Memori &amp; aset</string>
+    <string name="section_performance_boost">Peningkatan Performa</string>
+    <string name="section_game_session">Sesi Game</string>
+
+    <!-- FastFlag Tab Toggles & Dropdowns -->
+    <string name="ff_master_switch_title">Terapkan optimasi Roblox</string>
+    <string name="ff_master_switch_desc">Menerapkan optimasi yang dipilih setiap kali menyimpan dan meluncurkan. Matikan untuk memulai Roblox dengan konfigurasi normal.</string>
+    <string name="ff_msaa_title">Kualitas anti-aliasing (MSAA)</string>
+    <string name="ff_msaa_desc">Mengganti MSAA Roblox dengan FastFlag yang kompatibel dengan Android.</string>
+    <string name="ff_frm_title">Timpa level kualitas FRM</string>
+    <string name="ff_frm_desc">Memilih tingkat kualitas render Roblox tetap dari 1 hingga 21.</string>
+    <string name="ff_rendering_mode_title">Mode rendering</string>
+    <string name="ff_rendering_mode_desc">Utamakan flag OpenGL pada Android. Otomatis mempertahankan pilihan renderer Roblox.</string>
+    <string name="ff_dynamic_res_title">Resolusi render dinamis</string>
+    <string name="ff_dynamic_res_desc">Membatasi resolusi render internal 16:9 sambil mempertahankan ketajaman antarmuka Android.</string>
+    <string name="toggle_unlock_fps">Buka Batas FPS</string>
+    <string name="toggle_unlock_fps_desc">Melewati batas bawaan 240 FPS untuk frame rate maksimum.</string>
+    <string name="ff_fps_title">Frame rate</string>
+    <string name="fps_unlocker_title">Frame rate (FPS)</string>
+    <string name="ff_fps_desc">Pilih level FPS yang sesuai dengan layar dan performa perangkat.</string>
+    <string name="ff_force_lowest_title">Paksa grafis Roblox terendah</string>
+    <string name="ff_force_lowest_desc">Mengunci kontrol kualitas grafis native Roblox pada level 1. Memerlukan root dan berlaku saat Roblox dimulai.</string>
+    <string name="ff_reduced_motion_title">Kurangi gerakan dalam game</string>
+    <string name="ff_reduced_motion_desc">Menggunakan pengaturan ReducedMotion native Roblox untuk mengurangi efek gerakan. Memerlukan root.</string>
+    <string name="ff_haptics_title">Getaran haptic dalam game</string>
+    <string name="ff_haptics_desc">Mengontrol pengaturan HapticStrength native Roblox. Matikan untuk menghapus getaran. Memerlukan root.</string>
+    <string name="ff_fps_boost_title">Boost grafis satu ketukan</string>
+    <string name="ff_fps_boost_desc">Mengurangi anti-aliasing, efek visual, dan rumput sambil mengoptimalkan memori model 3D untuk memprioritaskan FPS.</string>
+    <string name="ff_low_poly_title">Kurangi detail model 3D</string>
+    <string name="ff_low_poly_desc">Menggunakan versi model 3D kejauhan yang lebih sederhana untuk mengurangi beban grafis dan memori.</string>
+    <string name="ff_low_texture_title">Kurangi beban tekstur</string>
+    <string name="ff_low_texture_desc">Melewati level tekstur resolusi ultra-tinggi untuk menghemat RAM dan memori grafis.</string>
+    <string name="ff_android_mesh_title">Optimalkan memori model 3D</string>
+    <string name="ff_android_mesh_desc">Menyeimbangkan alokasi memori untuk model 3D secara otomatis pada perangkat Android.</string>
+    <string name="ff_mesh_preload_title">Pra-muat model 3D</string>
+    <string name="ff_mesh_preload_desc">Memuat model 3D lebih awal untuk mengurangi objek yang terlambat muncul saat bermain game.</string>
+    <string name="ff_optimize_parts_title">Optimalkan objek 3D</string>
+    <string name="ff_optimize_parts_desc">Menggunakan jalur pemrosesan teroptimasi Roblox untuk game dengan banyak objek.</string>
+    <string name="ff_disable_shadows_title">Nonaktifkan bayangan</string>
+    <string name="ff_disable_shadows_desc">Mematikan sebagian besar bayangan untuk mengurangi beban GPU dan meningkatkan performa, terutama pada perangkat spesifikasi rendah.</string>
+    <string name="ff_disable_postfx_title">Kurangi efek visual</string>
+    <string name="ff_disable_postfx_desc">Menghilangkan bloom, blur, depth-of-field, dan efek serupa untuk mengurangi beban GPU.</string>
+    <string name="ff_disable_grass_title">Hapus rumput</string>
+    <string name="ff_disable_grass_desc">Mengatur jarak render rumput ke nol untuk meringankan adegan luar ruangan.</string>
+    <string name="ff_skygray_title">Langit abu-abu (SkyGray)</string>
+    <string name="ff_skygray_desc">Mengganti langit normal dengan latar belakang abu-abu sederhana agar tampilan lebih ringan dan bersih.</string>
+    <string name="ff_display_fps_title">Tampilkan FPS</string>
+    <string name="ff_display_fps_desc">Mengaktifkan penghitung FPS bawaan Roblox.</string>
+    <string name="ff_disable_gui_blur_title">Hapus blur latar belakang menu</string>
+    <string name="ff_disable_gui_blur_desc">Menghilangkan latar belakang blur di belakang menu Roblox agar antarmuka lebih jelas dan ringan.</string>
+
+    <!-- FF Settings Tab Toggles -->
+    <string name="ffs_automatic_drs_title">Stabilkan frame rate</string>
+    <string name="ffs_automatic_drs_desc">Secara otomatis menurunkan resolusi render saat GPU kelebihan beban agar gameplay tetap mulus.</string>
+    <string name="ffs_animation_lod_title">Animasi kejauhan lebih ringan</string>
+    <string name="ffs_animation_lod_desc">Menyederhanakan animasi karakter di kejauhan untuk mengurangi beban CPU pada game yang ramai.</string>
+    <string name="ffs_android_vsync_title">Penyampaian frame yang mulus</string>
+    <string name="ffs_android_vsync_desc">Menyinkronkan frame render dengan layar untuk mengurangi tearing dan gerakan patah-patah.</string>
+    <string name="ffs_drs_basic_title">Kontrol grafis adaptif</string>
+    <string name="ffs_drs_basic_desc">Memungkinkan Roblox menyesuaikan resolusi render sesuai dengan performa grafis perangkat yang tersedia.</string>
+    <string name="ffs_drs_gpu_time_title">Merespons beban GPU</string>
+    <string name="ffs_drs_gpu_time_desc">Menggunakan waktu frame GPU sebenarnya untuk menyesuaikan grafis secara lebih akurat saat performa berubah.</string>
+    <string name="ffs_batch_net_title">Pemuatan aset game lebih cepat</string>
+    <string name="ffs_batch_net_desc">Mengelompokkan permintaan aset game untuk mengurangi kerja jaringan berulang saat bergabung dan memuat game.</string>
+    <string name="ffs_desync_title">Desync</string>
+    <string name="ffs_desync_desc">Menerapkan profil jaringan pergerakan dan fisika berfrekuensi tinggi eksperimental. Hasil tergantung pada game dan koneksi.</string>
+    <string name="msg_desync_enabled">Desync berhasil dibuka dan diaktifkan.</string>
+    <string name="msg_game_preset_applied">Preset %1$s diterapkan (%2$d flags). Ketuk Mulai untuk meluncurkan Roblox.</string>
+    <string name="ffs_power_mgr_title">Hemat baterai di latar belakang</string>
+    <string name="ffs_power_mgr_desc">Memungkinkan Roblox bekerja sama dengan manajemen daya Android saat game berjalan di latar belakang.</string>
+    <string name="ffs_bg_session_title">Pemulihan sesi game yang andal</string>
+    <string name="ffs_bg_session_desc">Membantu Roblox memulihkan sesinya dengan benar setelah kembali dari aplikasi terkini atau latar belakang.</string>
+    <string name="ffs_unified_mesh_title">Optimalkan memori model 3D</string>
+    <string name="ffs_unified_mesh_desc">Menyeimbangkan RAM yang dicadangkan untuk model 3D untuk mengurangi penggunaan RAM berlebih di Android.</string>
+    <string name="ffs_no_texture_title">Tanpa Tekstur</string>
+    <string name="ffs_no_texture_desc">Menghilangkan tekstur material medan untuk tampilan yang lebih sederhana dan mengurangi beban grafis. Beberapa game mungkin terlihat datar atau tidak biasa.</string>
+    <string name="ffs_anim_cache_title">Cache animasi lebih cepat</string>
+    <string name="ffs_anim_cache_desc">Menyimpan data animasi siap di memori untuk menghindari decoding animasi yang sama berulang kali.</string>
+
+    <!-- Game Mode Toggles -->
+    <string name="gm_master_title">Aktifkan Mode Game</string>
+    <string name="gm_master_desc">Mengaktifkan profil performa native hanya ketika Roblox diluncurkan dari Masterstrap.</string>
+    <string name="gm_system_perf_title">Performa Adaptif Android</string>
+    <string name="gm_system_perf_desc">Memungkinkan Roblox melaporkan pemuatan dan kerja CPU ke Android agar penjadwal dapat mengalokasikan performa tanpa root.</string>
+    <string name="gm_cpu_priority_title">Prioritas Performa CPU</string>
+    <string name="gm_cpu_priority_desc">Memprioritaskan kluster CPU tercepat untuk thread kritis Roblox jika didukung.</string>
+    <string name="gm_smart_ram_title">Pembersihan RAM Pintar</string>
+    <string name="gm_smart_ram_desc">Melakukan pembersihan native-heap terukur setelah startup; tidak pernah menjalankan pembersih berkala.</string>
+    <string name="gm_wifi_opt_title">Optimasi Latensi Wi-Fi</string>
+    <string name="gm_wifi_opt_desc">Menjaga Wi-Fi dalam mode performa tinggi selama gameplay untuk mengurangi latensi respons radio.</string>
+    <string name="gm_unrestricted_power_title">Daya Tanpa Batas</string>
+    <string name="gm_unrestricted_power_desc">Menjaga CPU Roblox tetap terjaga selama sesi; batas termal Android tetap berlaku.</string>
+    <string name="gm_fast_launch_title">Peluncuran Game Lebih Cepat</string>
+    <string name="gm_fast_launch_desc">Menghapus animasi peluncuran dan mempersiapkan halaman kode Roblox saat startup.</string>
+    <string name="gm_keep_display_title">Jaga Layar Tetap Aktif</string>
+    <string name="gm_keep_display_desc">Meminta wake lock layar selama sesi dari dalam Roblox.</string>
+    <string name="gm_turbo_wifi_title">Wi-Fi Latensi Rendah Sepanjang Sesi</string>
+    <string name="gm_turbo_wifi_desc">Meminta Wi-Fi latensi rendah Android dari proses latar depan Roblox dan otomatis nonaktif saat Roblox keluar dari latar depan.</string>
+    <string name="gm_turbo_thermal_title">Penjaga Performa Berkelanjutan</string>
+    <string name="gm_turbo_thermal_desc">Memantau status termal Android selama startup dan mengurangi hint performa sebelum panas menyebabkan throttling parah.</string>
+    <string name="gm_turbo_refresh_title">Refresh Layar Adaptif</string>
+    <string name="gm_turbo_refresh_desc">Meminta refresh rate layar terdekat langsung dari surface aktif Roblox untuk pergerakan mulus tanpa memaksa mode Hz yang tidak didukung.</string>
+    <string name="gm_turbo_sustained_title">Stabilitas Sesi Panjang</string>
+    <string name="gm_turbo_sustained_desc">Menggunakan Mode Performa Berkelanjutan Android pada perangkat yang didukung untuk menjaga stabilitas selama sesi panjang.</string>
+
+    <!-- Settings & About -->
+    <string name="title_settings_about">Pengaturan &amp; Tentang</string>
+    <string name="title_preferences">Preferensi</string>
+    <string name="label_app_theme">Tema Aplikasi</string>
+    <string name="desc_app_theme">Gaya visual Gelap atau Terang</string>
+    <string name="label_language">Bahasa</string>
+    <string name="desc_language">Bahasa tampilan aplikasi</string>
+    <string name="label_preferred_roblox_app">Aplikasi Roblox Pilihan</string>
+    <string name="desc_preferred_roblox_app">Pilih aplikasi Roblox yang akan digunakan dan diluncurkan</string>
+    <string name="title_app_settings">Pengaturan</string>
+    <string name="desc_app_settings">Konfigurasikan tampilan hanya saat meluncurkan Roblox patched</string>
+    <string name="title_display_settings">Tampilan</string>
+    <string name="title_shader_package">Paket Shader</string>
+    <string name="desc_shader_package">Pilih nada warna visual dan suasana pencahayaan</string>
+    <string name="shader_package_default">Default (Tanpa shader)</string>
+    <string name="shader_package_daytime">Siang Hari (Matahari Cerah)</string>
+    <string name="shader_package_rtx_ultra">RTX Ultra (Pencahayaan Realistis)</string>
+    <string name="shader_package_sunset">Matahari Terbenam (Senja Keemasan)</string>
+    <string name="shader_package_night">Malam (Tengah Malam)</string>
+    <string name="shader_package_cloudy">Berawan (Mendung Lembut)</string>
+    <string name="shader_package_desert">Gurun (Mirage Hangat)</string>
+    <string name="shader_package_arctic">Arktik (Embun Beku Dingin)</string>
+    <string name="shader_package_blood_moon">Blood Moon (Merah Mistik)</string>
+    <string name="shader_package_cyberpunk">Cyberpunk (Pendaran Neon)</string>
+    <string name="shader_package_cherry_blossom">Bunga Sakura (Merah Muda Pastel)</string>
+    <string name="shader_package_ghibli_anime">Anime Ghibli (Estetika Cerah)</string>
+    <string name="shader_package_synthwave">Synthwave (Retro 80-an)</string>
+    <string name="shader_package_noir">Noir (Monokrom Klasik)</string>
+    <string name="title_stretch_screen">Rentangkan Layar</string>
+    <string name="desc_stretch_screen" formatted="false">Di bawah 100% memperlebar gambar. Di atas 100% mempersempit gambar. 100% mempertahankan bentuk asli.</string>
+    <string name="note_stretch_screen" formatted="false">Diterapkan satu kali dalam orientasi lanskap hanya saat Roblox patched diluncurkan dari Masterstrap. Rentang 101–200% menggunakan buffer render yang lebih lebar dan dapat meningkatkan penggunaan memori GPU.</string>
+    <string name="value_stretch_screen_percent">%1$d%%</string>
+    <string name="label_stretch_original" formatted="false">100% (Asli)</string>
+    <string name="title_community_links">Saluran Resmi &amp; Tautan</string>
+    <string name="link_app_guide_title">Panduan Penggunaan Aplikasi →</string>
+    <string name="title_license_key">Kunci Lisensi</string>
+    <string name="desc_license_key">Masukkan kunci lisensi Anda untuk membuka fitur lengkap &amp; melewati iklan.</string>
+    <string name="plan_free">Paket Gratis</string>
+    <string name="plan_active">Aktif</string>
+
+    <!-- Preset Categories -->
+    <string name="section_safe_boost">Safe Boost (Stabilitas &amp; Latensi)</string>
+    <string name="section_turbo_boost">Turbo Boost</string>
+    <string name="title_tab_fastflag_settings">Pengaturan FastFlag</string>
+    <string name="gm_safe_ram_title">Bebaskan memori Masterstrap sebelum peluncuran</string>
+    <string name="gm_safe_ram_desc">Meminta Android merebut kembali memori Masterstrap yang tidak terpakai sebelum Roblox terbuka. Hanya memengaruhi Masterstrap dan tidak menutup aplikasi lain.</string>
+    <string name="gm_safe_network_title">Gunakan Wi-Fi latensi rendah saat peluncuran</string>
+    <string name="gm_safe_network_desc">Meminta Android sementara untuk Wi-Fi latensi rendah saat Roblox terbuka. Hanya berfungsi saat terhubung melalui Wi-Fi.</string>
+    <string name="gm_safe_power_title">Jaga CPU tetap aktif saat Roblox dimulai</string>
+    <string name="gm_safe_power_desc">Mencegah prosesor tertidur hingga 60 detik saat Roblox dimulai. Tidak melakukan overclock atau mengubah kecepatan CPU.</string>
+    <string name="gm_safe_thermal_title">Jeda boost peluncuran saat perangkat terlalu panas</string>
+    <string name="gm_safe_thermal_desc">Memeriksa status suhu Android sebelum peluncuran. Jika terdeteksi panas berlebih, boost Wi-Fi dan CPU dilewati hingga perangkat mendingin.</string>
+    <string name="gm_safe_touch_title">Sensitivitas Layar Sentuh</string>
+    <string name="gm_safe_touch_desc">Respons sentuhan layar lebih cepat untuk kontrol karakter instan tanpa input lag.</string>
+    <string name="gm_safe_frame_pacing_title">Penstabil Frame Halus</string>
+    <string name="gm_safe_frame_pacing_desc">Menyeimbangkan pengiriman frame untuk gerakan sehalus sutra tanpa micro-stutter.</string>
+    <string name="msg_enable_master_first">Silakan aktifkan Game Mode Turbo terlebih dahulu!</string>
+    <string name="category_popular">Populer</string>
+    <string name="category_hot">Trending (Hot)</string>
+    <string name="category_general_presets">Preset Umum</string>
+    <string name="category_game_presets">Preset Game</string>
+    <string name="category_inferium_presets">Preset Inferium</string>
+    <string name="title_community_presets">Preset Komunitas &amp; Game</string>
+    <string name="desc_community_presets">Pilih satu preset game teroptimasi. Flag akan digabungkan dengan kontrol Anda saat menyimpan dan meluncurkan.</string>
+
+    <!-- Messages & Dialogs -->
+    <string name="msg_saved_success">Konfigurasi berhasil diekspor ke ClientAppSettings.json!</string>
+    <string name="msg_save_failed">Gagal menyimpan konfigurasi. Periksa izin penyimpanan.</string>
+    <string name="msg_roblox_not_found">Roblox tidak terpasang di perangkat ini.</string>
+    <string name="msg_preset_applied">Preset berhasil diterapkan!</string>
+    <string name="msg_license_activated">Kunci lisensi aktif! Iklan dinonaktifkan.</string>
+    <string name="msg_invalid_license">Silakan masukkan kunci lisensi yang valid</string>
+
+    <!-- Mandatory Google Play update -->
+    <string name="dialog_update_required_title">Pembaruan diperlukan</string>
+    <string name="dialog_update_badge">Pembaruan tersedia</string>
+    <string name="dialog_update_message">Versi Masterstrap yang lebih baru diperlukan untuk melanjutkan. Tingkatkan sekarang untuk terus menggunakan aplikasi.</string>
+    <string name="dialog_update_current_version">Versi saat ini: %1$s</string>
+    <string name="dialog_upgrade_now">Tingkatkan sekarang</string>
+</resources>

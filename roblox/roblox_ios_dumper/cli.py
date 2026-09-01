@@ -13,6 +13,7 @@ from .macho import MachOError, MachOImage
 from .scanner import Arm64Scanner
 from .writers import (
     write_fflags_header,
+    write_fflags_map_header,
     write_json,
     write_log,
     write_offsets_header,
@@ -21,10 +22,11 @@ from .verification import verify_dump
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_PATTERNS = ROOT / "patterns.ios.json"
-DEFAULT_KNOWN_FFLAGS = ROOT.parents[1] / "tools" / "rscoop" / "fflags.hpp"
+PROJECT_ROOT = ROOT.parent
+DEFAULT_PATTERNS = PROJECT_ROOT / "patterns.ios.json"
+DEFAULT_KNOWN_FFLAGS = ROOT / "output" / "FFlags.hpp"
 DEFAULT_KNOWN_JSON_ROOT = (
-    ROOT.parents[1] / "Masterstrap" / "app" / "src" / "main" / "assets" / "game_presets"
+    PROJECT_ROOT / "Masterstrap" / "app" / "src" / "main" / "assets" / "game_presets"
 )
 
 
@@ -95,6 +97,13 @@ def _default_output(loaded_version: str | None, macho_uuid: str | None) -> Path:
     version = loaded_version or "unknown-version"
     identity = macho_uuid or "no-uuid"
     return ROOT / "output" / version / identity
+
+
+def _version_tag(version: str | None) -> str:
+    digits = re.sub(r"[^0-9A-Za-z]", "", version or "Unknown")
+    if not digits or digits[0].isdigit() is False:
+        digits = "V" + digits
+    return digits + "IOS"
 
 
 def _print_inspection(loaded, image: MachOImage) -> None:
@@ -170,6 +179,7 @@ def run_dump(args: argparse.Namespace) -> int:
         "fflags_decoded": len(flags),
         "fflags_high_confidence": sum(item.confidence == "high" for item in flags),
         "known_flag_names": len(known_names),
+        "offset_candidates": len(scanner.offset_candidates),
     }
 
     output = args.output or _default_output(loaded.short_version, image.uuid)
@@ -179,8 +189,15 @@ def run_dump(args: argparse.Namespace) -> int:
     write_json(output / "offsets.json", [item.json_dict() for item in offsets])
     write_json(output / "fflags.json", [item.json_dict() for item in flags])
     write_json(output / "flag_scan.json", flag_scan)
+    write_json(output / "offset_candidates.json", scanner.offset_candidates)
     write_offsets_header(output / "Offsets.hpp", offsets, identity)
     write_fflags_header(output / "FFlags.hpp", flags, identity)
+    write_fflags_map_header(
+        output / "fflags_map.hpp",
+        flags,
+        identity,
+        _version_tag(loaded.short_version),
+    )
     write_log(output / "dump.log", manifest, offsets, flags, flag_scan)
 
     print()
@@ -189,6 +206,7 @@ def run_dump(args: argparse.Namespace) -> int:
         f"FFlags: {len(flags)}/{flag_scan.get('registration_calls', 0)} "
         "registration calls decoded"
     )
+    print(f"offset candidates: {len(scanner.offset_candidates)} (not promoted)")
     print(f"output:  {output.resolve()}")
 
     required_missing = [

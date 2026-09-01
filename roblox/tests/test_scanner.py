@@ -41,6 +41,27 @@ class ScannerTests(unittest.TestCase):
     def test_recognizes_compact_boolean_state_store(self) -> None:
         self.assertEqual(store_kind(0x79000109), "bool16")
 
+    def test_prefers_lc_function_starts_over_prologue_guessing(self) -> None:
+        scanner = Arm64Scanner(MachOImage(build_macho(with_function_starts=True)))
+        address, source = scanner.resolve_function_start(TEXT_ADDRESS + 0x118)
+        self.assertEqual(address, TEXT_ADDRESS + 0x100)
+        self.assertEqual(source, "lc-function-starts")
+
+    def test_relaxed_hex_scan_reports_candidate_without_promoting_it(self) -> None:
+        start = TEXT_ADDRESS + 0x100
+        raw = self.image.read_virtual(start, 24)
+        self.assertIsNotNone(raw)
+        tokens = [f"{byte:02X}" for byte in raw]
+        tokens[0] = "AA" if tokens[0] != "AA" else "BB"
+        tokens[4] = "??"
+        candidates = self.scanner.scan_relaxed_hex_candidates(
+            "changed_pattern", " ".join(tokens)
+        )
+        self.assertTrue(candidates)
+        self.assertEqual(candidates[0]["address"], start)
+        self.assertFalse(candidates[0]["promoted"])
+        self.assertGreater(candidates[0]["score"], 0.90)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -45,6 +45,38 @@ object RewardAdManager {
     private var pendingCancelAction: (() -> Unit)? = null
     private var pendingActivityRef: WeakReference<Activity>? = null
     private var timeoutRunnable: Runnable? = null
+    private var startupRunnable: Runnable? = null
+    private var startupFrame: Choreographer.FrameCallback? = null
+    private var appContext: Context? = null
+
+    private fun access(context: Context) = AdEligibility.resolve(
+        SettingsPersistence.loadLicensePlan(context),
+        SettingsPersistence.loadLicenseKey(context).isNotBlank()
+    )
+
+    private fun allowAdWork(context: Context, stage: String): Boolean {
+        val state = access(context)
+        if (state == AdEligibility.Access.FREE) return true
+        startupRunnable?.let { MAIN_HANDLER.removeCallbacks(it) }
+        startupRunnable = null
+        startupFrame?.let { Choreographer.getInstance().removeFrameCallback(it) }
+        startupFrame = null
+        startupAuctionScheduled = false
+        cancelTimeout()
+        isLoading = false
+        Log.i(TAG, "ad_policy=$state stage=$stage sdk_work=blocked")
+        if (pendingAction != null) finishPending(allowed = state == AdEligibility.Access.AD_FREE)
+        return false
+    }
+
+    /** Call after activation and on resume to cancel queued work immediately. */
+    fun refreshEntitlement(activity: Activity) {
+        appContext = activity.applicationContext
+        if (allowAdWork(activity, "entitlement_refresh")) {
+            if (isInitialized) createAndPreloadRewarded(activity.applicationContext)
+            else scheduleStartupAuction(activity)
+        }
+    }
 
     /**
      * Starts the first LevelPlay auction after the Activity has rendered one
@@ -52,19 +84,30 @@ object RewardAdManager {
      * layout pass. LevelPlay still selects the highest eligible mediated bid.
      */
     fun scheduleStartupAuction(activity: Activity) {
+        appContext = activity.applicationContext
+        if (!allowAdWork(activity, "startup")) return
         if (startupAuctionScheduled || isInitialized || isInitializing) return
         startupAuctionScheduled = true
-        Choreographer.getInstance().postFrameCallback {
-            MAIN_HANDLER.postDelayed({
-                if (!activity.isFinishing && !activity.isDestroyed) {
-                    Log.i(TAG, "Starting background LevelPlay auction 200 ms after first frame")
-                    initialize(activity.application)
+        val activityRef = WeakReference(activity)
+        startupFrame = Choreographer.FrameCallback {
+            startupFrame = null
+            startupRunnable = Runnable {
+                startupRunnable = null
+                startupAuctionScheduled = false
+                val host = activityRef.get() ?: return@Runnable
+                if (!host.isFinishing && !host.isDestroyed && allowAdWork(host, "startup_200ms")) {
+                    Log.i(TAG, "ad_policy=FREE startup_delay_ms=200 sdk_init=requested")
+                    initialize(host.application)
                 }
-            }, 200L)
+            }
+            MAIN_HANDLER.postDelayed(startupRunnable!!, 200L)
         }
+        Choreographer.getInstance().postFrameCallback(startupFrame!!)
     }
 
     fun initialize(application: Application) {
+        appContext = application
+        if (!allowAdWork(application, "initialize")) return
         if (isInitialized || isInitializing) return
         isInitializing = true
 
@@ -79,11 +122,16 @@ object RewardAdManager {
             val initRequest = LevelPlayInitRequest.Builder(LEVELPLAY_APP_KEY).build()
 
             MAIN_HANDLER.post {
+                if (!allowAdWork(application, "before_sdk_init")) {
+                    isInitializing = false
+                    return@post
+                }
                 try {
                     LevelPlay.init(application, initRequest, object : LevelPlayInitListener {
                         override fun onInitSuccess(configuration: LevelPlayConfiguration) {
                             isInitializing = false
                             isInitialized = true
+                            if (!allowAdWork(application, "init_success")) return
                             Log.i(TAG, "LevelPlay init successful. Preloading live rewarded auction...")
                             createAndPreloadRewarded(application)
                         }
@@ -103,6 +151,7 @@ object RewardAdManager {
     }
 
     private fun createAndPreloadRewarded(context: Context) {
+        if (!allowAdWork(context, "create_rewarded")) return
         if (rewardedAd == null) {
             rewardedAd = LevelPlayRewardedAd(LEVELPLAY_REWARDED_ID)
             rewardedAd?.setListener(object : LevelPlayRewardedAdListener {
@@ -112,6 +161,7 @@ object RewardAdManager {
 
                 override fun onAdLoaded(adInfo: LevelPlayAdInfo) {
                     isLoading = false
+                    if (!allowAdWork(context, "ad_loaded")) return
                     Log.i(TAG, "LevelPlay live rewarded loaded: ${adInfo.adNetwork}")
                     tryShowPendingRewarded()
                 }
@@ -170,6 +220,8 @@ object RewardAdManager {
     }
 
     fun preload() {
+        val context = appContext ?: return
+        if (!allowAdWork(context, "preload")) return
         if (!isInitialized || isLoading) return
         if (rewardedAd?.isAdReady == true) return
 
@@ -186,12 +238,12 @@ object RewardAdManager {
         onRewarded: () -> Unit,
         onCanceled: () -> Unit = {}
     ) {
-        // Premium license key bypasses ads directly
-        val licenseKey = SettingsPersistence.loadLicenseKey(activity)
-        if (licenseKey.isNotEmpty()) {
+        if (access(activity) == AdEligibility.Access.AD_FREE) {
+            allowAdWork(activity, "claim_bypass")
             onRewarded()
             return
         }
+        if (access(activity) != AdEligibility.Access.FREE) { onCanceled(); return }
 
         val title = adPurposeTitle ?: activity.getString(R.string.dialog_claim_ad_title)
         Log.d(TAG, "Direct rewarded request: $title (${adPurposeMsg.orEmpty()})")
@@ -209,12 +261,13 @@ object RewardAdManager {
         onRewarded: () -> Unit,
         onCanceled: () -> Unit = {}
     ) {
-        // Premium license key bypasses ads directly
-        val licenseKey = SettingsPersistence.loadLicenseKey(activity)
-        if (licenseKey.isNotEmpty()) {
+        appContext = activity.applicationContext
+        if (access(activity) == AdEligibility.Access.AD_FREE) {
+            allowAdWork(activity, "show_bypass")
             onRewarded()
             return
         }
+        if (access(activity) != AdEligibility.Access.FREE) { onCanceled(); return }
 
         if (isShowing) {
             onCanceled()
@@ -231,6 +284,8 @@ object RewardAdManager {
         if (!isInitialized) {
             Log.i(TAG, "Lazy LevelPlay initialization requested by rewarded action: $adPurposeTitle")
             initialize(activity.application)
+        } else if (rewardedAd == null) {
+            createAndPreloadRewarded(activity.applicationContext)
         }
 
         if (tryShowPendingRewarded()) return
@@ -241,6 +296,7 @@ object RewardAdManager {
 
     private fun tryShowPendingRewarded(): Boolean {
         val activity = pendingActivityRef?.get() ?: return false
+        if (!allowAdWork(activity, "before_show")) return true
         if (pendingAction == null || isShowing || activity.isFinishing || activity.isDestroyed) {
             return false
         }
@@ -257,6 +313,7 @@ object RewardAdManager {
     }
 
     private fun scheduleTimeout(activity: Activity) {
+        if (!allowAdWork(activity, "schedule_timeout")) return
         cancelTimeout()
         timeoutRunnable = Runnable {
             if (tryShowPendingRewarded()) return@Runnable

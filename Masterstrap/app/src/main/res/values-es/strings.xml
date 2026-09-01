@@ -1,50 +1,241 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Masterstrap</string>
-    <string name="app_tagline">Gestor de FastFlags y Optimizador</string>
-    <string name="tab_datagrid">DataGrid de Flags</string>
-    <string name="tab_toggles">Ajustes Rápidos</string>
-    <string name="tab_gamemode">Modo Juego</string>
-    <string name="btn_close">Cerrar</string>
+    <string name="app_name">masterstrap</string>
+    <string name="app_display_name">Masterstrap</string>
+    <string name="app_tagline">FastFlag y Optimización de Juegos</string>
+
+    <!-- 5 Bottom Navigation Tabs -->
+    <string name="nav_fastflag">FastFlag</string>
+    <string name="nav_ff_settings">Ajustes FF</string>
+    <string name="nav_start">Iniciar</string>
+    <string name="nav_gamemode">Modo Juego</string>
+    <string name="nav_preset">Preajustes</string>
+
+    <!-- Actions -->
     <string name="btn_save">Guardar</string>
-    <string name="btn_save_launch">Guardar y Ejecutar</string>
-    <string name="title_datagrid">Gestión de FastFlags</string>
+    <string name="btn_save_launch">Iniciar (Guardar y Ejecutar)</string>
+    <string name="btn_back">❮ Volver</string>
+    <string name="btn_apply">Aplicar</string>
+    <string name="btn_boost">Acelerar</string>
+    <string name="btn_activate">Activar</string>
+    <string name="btn_cancel">Cancelar</string>
+    <string name="btn_confirm">Confirmar</string>
+    <string name="btn_close">Cerrar</string>
+    <string name="btn_claim">Reclamar</string>
+    <string name="dialog_claim_ad_title">Ver anuncio para desbloquear</string>
+    <string name="dialog_claim_ad_msg">Mira un video corto para desbloquear esta recompensa y continuar.</string>
+
+    <!-- FastFlag Editor -->
+    <string name="title_fastflag_editor">Editor de FastFlags</string>
+    <string name="desc_fastflag_editor">Añade, importa o edita FastFlags individuales</string>
     <string name="search_hint">Buscar flags (ej. FFlagDebug, FPS)...</string>
-    <string name="btn_add_flag">+ Añadir Flag</string>
-    <string name="btn_import_json">Importar</string>
-    <string name="btn_export_json">Exportar</string>
+    <string name="btn_add_flag">+ Añadir</string>
+    <string name="btn_import_json">Importar JSON</string>
+    <string name="btn_export_json">Exportar JSON</string>
+    <string name="btn_clear_all">Borrar todo</string>
+    <string name="dialog_add_flag_title">Añadir FastFlag personalizada</string>
+    <string name="hint_flag_name">Nombre de Flag (ej. FFlagFastLoading)</string>
+    <string name="hint_flag_value">Valor (ej. True / 120 / Low)</string>
     <string name="col_flag_name">Nombre de Flag</string>
     <string name="col_flag_type">Tipo</string>
     <string name="col_flag_value">Valor</string>
     <string name="col_flag_action">Acción</string>
-    <string name="title_essential_toggles">Ajustes Esenciales</string>
-    <string name="fps_unlocker_title">Desbloqueador de FPS</string>
-    <string name="fps_unlocker_desc">Elimina el límite de FPS para máxima fluidez</string>
-    <string name="fps_60">60 FPS</string>
-    <string name="fps_120">120 FPS</string>
-    <string name="fps_144">144 FPS</string>
-    <string name="fps_240">240 FPS</string>
-    <string name="fps_uncapped">Ilimitado</string>
-    <string name="toggle_display_fps">Mostrar Contador de FPS</string>
-    <string name="toggle_display_fps_desc">Muestra FPS nativos en pantalla</string>
-    <string name="toggle_fast_loading">Carga Rápida de Recursos</string>
-    <string name="toggle_fast_loading_desc">Precarga texturas para evitar tirones</string>
-    <string name="toggle_disable_shadows">Desactivar Sombras Detalladas</string>
-    <string name="toggle_disable_shadows_desc">Aumenta FPS en dispositivos lentos</string>
-    <string name="toggle_gray_sky">Cielo Simplificado</string>
-    <string name="toggle_gray_sky_desc">Reemplaza el cielo con fondo plano</string>
-    <string name="title_game_mode">Modo de Alto Rendimiento</string>
-    <string name="game_mode_switch">Activar Ultra Modo Juego</string>
-    <string name="game_mode_switch_desc">Prioriza RAM y procesamiento gráfico</string>
-    <string name="game_mode_res_lock">Bloquear Resolución</string>
-    <string name="game_mode_touch_opt">Reducción de Latencia Táctil</string>
-    <string name="game_mode_background_cleanup">Limpiar Caché de Fondo</string>
-    <string name="msg_saved_success">¡Configuración guardada en ClientAppSettings.json y GlobalBasicSettings_13.xml!</string>
-    <string name="msg_save_failed">Error al guardar configuración. Compruebe los permisos.</string>
+    <string name="title_datagrid">Tabla de datos FastFlag</string>
+    <string name="tab_datagrid">DataGrid</string>
+    <string name="tab_toggles">Ajustes</string>
+    <string name="tab_gamemode">Modo Juego</string>
+
+    <!-- FastFlag Sections -->
+    <string name="section_graphics_quality">Calidad gráfica</string>
+    <string name="section_verified_preferences">Preferencias verificadas de Roblox</string>
+    <string name="section_mobile_performance">Rendimiento móvil</string>
+    <string name="section_rendering_fx">Renderizado y efectos visuales</string>
+    <string name="section_interface_camera">Interfaz y cámara</string>
+    <string name="section_graphics_framerate">Gráficos y tasa de cuadros</string>
+    <string name="section_network">Red</string>
+    <string name="section_power_session">Energía y sesión de juego</string>
+    <string name="section_memory_assets">Memoria y recursos</string>
+    <string name="section_performance_boost">Mejora de rendimiento</string>
+    <string name="section_game_session">Sesión de juego</string>
+
+    <!-- FastFlag Tab Toggles & Dropdowns -->
+    <string name="ff_master_switch_title">Aplicar optimizaciones de Roblox</string>
+    <string name="ff_master_switch_desc">Aplica las optimizaciones seleccionadas cada vez que guardes y ejecutes. Desactívalo para iniciar Roblox con su configuración normal.</string>
+    <string name="ff_msaa_title">Calidad de suavizado de bordes (MSAA)</string>
+    <string name="ff_msaa_desc">Sobrescribe el MSAA de Roblox con una FastFlag compatible con Android.</string>
+    <string name="ff_frm_title">Sobrescribir calidad FRM</string>
+    <string name="ff_frm_desc">Selecciona un nivel fijo de calidad de renderizado de Roblox de 1 a 21.</string>
+    <string name="ff_rendering_mode_title">Modo de renderizado</string>
+    <string name="ff_rendering_mode_desc">Prioriza la flag de OpenGL en Android. Automático mantiene la selección de Roblox.</string>
+    <string name="ff_dynamic_res_title">Resolución dinámica de renderizado</string>
+    <string name="ff_dynamic_res_desc">Limita el presupuesto de renderizado 16:9 interno mientras mantiene la interfaz nítida.</string>
+    <string name="toggle_unlock_fps">Desbloquear FPS</string>
+    <string name="toggle_unlock_fps_desc">Elimina el límite predeterminado de 240 FPS para máxima fluidez.</string>
+    <string name="ff_fps_title">Tasa de cuadros</string>
+    <string name="fps_unlocker_title">Tasa de cuadros (FPS)</string>
+    <string name="ff_fps_desc">Elige un nivel de FPS adecuado para tu pantalla y dispositivo.</string>
+    <string name="ff_force_lowest_title">Forzar gráficos mínimos de Roblox</string>
+    <string name="ff_force_lowest_desc">Mantiene los gráficos nativos de Roblox en el nivel 1. Requiere root y se aplica al iniciar Roblox.</string>
+    <string name="ff_reduced_motion_title">Reducir movimiento en el juego</string>
+    <string name="ff_reduced_motion_desc">Usa el ajuste nativo ReducedMotion de Roblox para reducir efectos de movimiento. Requiere root.</string>
+    <string name="ff_haptics_title">Vibración háptica en el juego</string>
+    <string name="ff_haptics_desc">Controla el ajuste HapticStrength nativo de Roblox. Desactívalo para quitar la vibración. Requiere root.</string>
+    <string name="ff_fps_boost_title">Mejora gráfica en un toque</string>
+    <string name="ff_fps_boost_desc">Reduce el antialiasing, efectos visuales y pasto optimizando la memoria 3D para priorizar FPS.</string>
+    <string name="ff_low_poly_title">Reducir detalle de modelos 3D</string>
+    <string name="ff_low_poly_desc">Usa versiones más simples de modelos 3D lejanos para reducir la carga gráfica y de memoria.</string>
+    <string name="ff_low_texture_title">Reducir carga de texturas</string>
+    <string name="ff_low_texture_desc">Omite niveles de textura de ultra alta resolución para ahorrar RAM y memoria gráfica.</string>
+    <string name="ff_android_mesh_title">Optimizar memoria de modelos 3D</string>
+    <string name="ff_android_mesh_desc">Equilibra automáticamente la memoria usada para modelos 3D en dispositivos Android.</string>
+    <string name="ff_mesh_preload_title">Precargar modelos 3D</string>
+    <string name="ff_mesh_preload_desc">Carga modelos 3D con anticipación para reducir la aparición tardía de objetos durante el juego.</string>
+    <string name="ff_optimize_parts_title">Optimizar objetos 3D</string>
+    <string name="ff_optimize_parts_desc">Usa la ruta de procesamiento optimizada de Roblox para juegos con muchos objetos.</string>
+    <string name="ff_disable_shadows_title">Desactivar sombras</string>
+    <string name="ff_disable_shadows_desc">Desactiva la mayoría de las sombras para reducir la carga de GPU y mejorar el rendimiento, especialmente en dispositivos de gama baja.</string>
+    <string name="ff_disable_postfx_title">Reducir efectos visuales</string>
+    <string name="ff_disable_postfx_desc">Elimina brillo, desenfoque y profundidad de campo para reducir la carga de GPU.</string>
+    <string name="ff_disable_grass_title">Eliminar pasto</string>
+    <string name="ff_disable_grass_desc">Establece la distancia de renderizado del pasto en cero para aligerar escenas al aire libre.</string>
+    <string name="ff_skygray_title">Cielo gris (SkyGray)</string>
+    <string name="ff_skygray_desc">Reemplaza el cielo por un fondo gris simple para una escena más limpia y ligera.</string>
+    <string name="ff_display_fps_title">Mostrar FPS</string>
+    <string name="ff_display_fps_desc">Habilita el contador de FPS integrado de Roblox.</string>
+    <string name="ff_disable_gui_blur_title">Quitar desenfoque de fondo del menú</string>
+    <string name="ff_disable_gui_blur_desc">Elimina el fondo borroso detrás de los menús de Roblox para una interfaz más clara y rápida.</string>
+
+    <!-- FF Settings Tab Toggles -->
+    <string name="ffs_automatic_drs_title">Estabilizar tasa de cuadros</string>
+    <string name="ffs_automatic_drs_desc">Reduce automáticamente la resolución de renderizado cuando la GPU está sobrecargada para mantener fluidez.</string>
+    <string name="ffs_animation_lod_title">Animaciones lejanas más ligeras</string>
+    <string name="ffs_animation_lod_desc">Simplifica las animaciones de personajes lejanos para reducir la carga de CPU en juegos concurridos.</string>
+    <string name="ffs_android_vsync_title">Entrega fluida de cuadros</string>
+    <string name="ffs_android_vsync_desc">Sincroniza los cuadros con la pantalla para evitar cortes y movimientos irregulares.</string>
+    <string name="ffs_drs_basic_title">Control gráfico adaptativo</string>
+    <string name="ffs_drs_basic_desc">Permite a Roblox ajustar la resolución de renderizado según el rendimiento disponible del dispositivo.</string>
+    <string name="ffs_drs_gpu_time_title">Responder a la carga de GPU</string>
+    <string name="ffs_drs_gpu_time_desc">Usa los tiempos de cuadro reales de la GPU para ajustar los gráficos con precisión cuando cambia el rendimiento.</string>
+    <string name="ffs_batch_net_title">Carga más rápida de recursos</string>
+    <string name="ffs_batch_net_desc">Agrupa solicitudes de recursos para reducir el trabajo de red repetitivo al unirse al juego.</string>
+    <string name="ffs_desync_title">Desync</string>
+    <string name="ffs_desync_desc">Aplica un perfil de red experimental de alta frecuencia para movimiento y física. Los resultados dependen del juego y conexión.</string>
+    <string name="msg_desync_enabled">Desync desbloqueado y activado.</string>
+    <string name="msg_game_preset_applied">Preajuste %1$s aplicado (%2$d flags). Toca Iniciar para abrir Roblox.</string>
+    <string name="ffs_power_mgr_title">Reducir uso de batería en segundo plano</string>
+    <string name="ffs_power_mgr_desc">Permite a Roblox cooperar con la gestión de energía de Android cuando el juego está en segundo plano.</string>
+    <string name="ffs_bg_session_title">Reanudación fiable del juego</string>
+    <string name="ffs_bg_session_desc">Ayuda a Roblox a restaurar su sesión correctamente tras volver de las apps recientes o de segundo plano.</string>
+    <string name="ffs_unified_mesh_title">Optimizar memoria de modelos 3D</string>
+    <string name="ffs_unified_mesh_desc">Equilibra la memoria reservada para modelos 3D para evitar un uso excesivo de RAM en Android.</string>
+    <string name="ffs_no_texture_title">Sin texturas</string>
+    <string name="ffs_no_texture_desc">Elimina texturas de materiales de terreno para una apariencia más simple y menor carga gráfica.</string>
+    <string name="ffs_anim_cache_title">Animaciones repetidas más rápidas</string>
+    <string name="ffs_anim_cache_desc">Mantiene los datos de animación listos en memoria para evitar decodificarlas repetidamente.</string>
+
+    <!-- Game Mode Toggles -->
+    <string name="gm_master_title">Activar Modo Juego</string>
+    <string name="gm_master_desc">Activa un perfil de alto rendimiento nativo cuando Roblox se inicia desde Masterstrap.</string>
+    <string name="gm_system_perf_title">Rendimiento Adaptativo de Android</string>
+    <string name="gm_system_perf_desc">Permite a Roblox reportar carga a Android para que el sistema asigne rendimiento sin root.</string>
+    <string name="gm_cpu_priority_title">Prioridad de rendimiento de CPU</string>
+    <string name="gm_cpu_priority_desc">Prioriza los núcleos de CPU más rápidos para los hilos críticos de Roblox cuando es compatible.</string>
+    <string name="gm_smart_ram_title">Limpieza inteligente de RAM</string>
+    <string name="gm_smart_ram_desc">Realiza un ajuste de memoria nativa tras el inicio; nunca ejecuta un limpiador periódico.</string>
+    <string name="gm_wifi_opt_title">Optimización de latencia Wi-Fi</string>
+    <string name="gm_wifi_opt_desc">Mantiene el Wi-Fi en modo de alto rendimiento durante el juego para reducir el retraso de reactivación.</string>
+    <string name="gm_unrestricted_power_title">Energía sin restricciones</string>
+    <string name="gm_unrestricted_power_desc">Mantiene la CPU de Roblox activa durante la sesión; los límites térmicos de Android aún aplican.</string>
+    <string name="gm_fast_launch_title">Inicio rápido del juego</string>
+    <string name="gm_fast_launch_desc">Elimina la animación de inicio y prepara las páginas de código de Roblox al arrancar.</string>
+    <string name="gm_keep_display_title">Mantener pantalla encendida</string>
+    <string name="gm_keep_display_desc">Solicita un bloqueo de pantalla activa durante la sesión de juego en Roblox.</string>
+    <string name="gm_turbo_wifi_title">Wi-Fi de baja latencia en toda la sesión</string>
+    <string name="gm_turbo_wifi_desc">Solicita Wi-Fi de baja latencia de Android desde el proceso de Roblox en primer plano.</string>
+    <string name="gm_turbo_thermal_title">Protección de rendimiento sostenido</string>
+    <string name="gm_turbo_thermal_desc">Monitorea el estado térmico de Android antes de que el sobrecalentamiento cause bajadas de rendimiento.</string>
+    <string name="gm_turbo_refresh_title">Frecuencia de actualización adaptativa</string>
+    <string name="gm_turbo_refresh_desc">Solicita la tasa de refresco más adecuada directamente a la pantalla de Roblox para evitar tirones.</string>
+    <string name="gm_turbo_sustained_title">Estabilidad en sesiones largas</string>
+    <string name="gm_turbo_sustained_desc">Usa el Modo de Rendimiento Sostenido de Android en dispositivos compatibles para mantener estabilidad en sesiones prolongadas.</string>
+
+    <!-- Settings & About -->
+    <string name="title_settings_about">Ajustes y Acerca de</string>
+    <string name="title_preferences">Preferencias</string>
+    <string name="label_app_theme">Tema de la aplicación</string>
+    <string name="desc_app_theme">Estilo visual Oscuro o Claro</string>
+    <string name="label_language">Idioma</string>
+    <string name="desc_language">Idioma de la aplicación</string>
+    <string name="label_preferred_roblox_app">Aplicación de Roblox preferida</string>
+    <string name="desc_preferred_roblox_app">Selecciona qué aplicación de Roblox usar y ejecutar</string>
+    <string name="title_app_settings">Ajustes</string>
+    <string name="desc_app_settings">Configura el comportamiento de pantalla para Roblox parcheado</string>
+    <string name="title_display_settings">Pantalla</string>
+    <string name="title_shader_package">Paquete de shaders</string>
+    <string name="desc_shader_package">Selecciona el tono de color y la iluminación ambiental</string>
+    <string name="shader_package_default">Predeterminado (Ninguno)</string>
+    <string name="shader_package_daytime">Luz de día (Sol brillante)</string>
+    <string name="shader_package_rtx_ultra">RTX Ultra (Iluminación realista)</string>
+    <string name="shader_package_sunset">Atardecer (Hora dorada)</string>
+    <string name="shader_package_night">Noche (Medianoche profunda)</string>
+    <string name="shader_package_cloudy">Nublado (Nublado suave)</string>
+    <string name="shader_package_desert">Desierto (Espejismo cálido)</string>
+    <string name="shader_package_arctic">Ártico (Escarcha fría)</string>
+    <string name="shader_package_blood_moon">Luna de sangre (Carmesí místico)</string>
+    <string name="shader_package_cyberpunk">Cyberpunk (Brillo de neón)</string>
+    <string name="shader_package_cherry_blossom">Flor de cerezo (Rosa pastel)</string>
+    <string name="shader_package_ghibli_anime">Ghibli Anime (Estética vívida)</string>
+    <string name="shader_package_synthwave">Synthwave (Retro de los 80)</string>
+    <string name="shader_package_noir">Cine negro (Monocromo clásico)</string>
+    <string name="title_stretch_screen">Estirar pantalla</string>
+    <string name="desc_stretch_screen" formatted="false">Menos de 100% ensancha la imagen. Más de 100% la estrecha. 100% mantiene la forma original.</string>
+    <string name="note_stretch_screen" formatted="false">Se aplica en modo horizontal al iniciar Roblox parcheado desde Masterstrap. El rango 101–200% usa un búfer más amplio y puede aumentar el uso de memoria GPU.</string>
+    <string name="value_stretch_screen_percent">%1$d%%</string>
+    <string name="label_stretch_original" formatted="false">100% (Original)</string>
+    <string name="title_community_links">Canales oficiales y enlaces</string>
+    <string name="link_app_guide_title">Guía de uso de la aplicación →</string>
+    <string name="title_license_key">Clave de licencia</string>
+    <string name="desc_license_key">Introduce tu clave para desbloquear todas las funciones y quitar anuncios.</string>
+    <string name="plan_free">Plan Gratuito</string>
+    <string name="plan_active">Activado</string>
+
+    <!-- Preset Categories -->
+    <string name="section_safe_boost">Safe Boost (Estabilidad y Latencia)</string>
+    <string name="section_turbo_boost">Turbo Boost</string>
+    <string name="title_tab_fastflag_settings">Ajustes de FastFlag</string>
+    <string name="gm_safe_ram_title">Liberar memoria de Masterstrap antes de iniciar</string>
+    <string name="gm_safe_ram_desc">Pide a Android recuperar memoria sin uso de Masterstrap antes de abrir Roblox. No cierra otras aplicaciones.</string>
+    <string name="gm_safe_network_title">Usar Wi-Fi de baja latencia al iniciar</string>
+    <string name="gm_safe_network_desc">Pide temporalmente a Android Wi-Fi de baja latencia mientras Roblox abre. Funciona solo con conexión Wi-Fi.</string>
+    <string name="gm_safe_power_title">Mantener la CPU activa mientras Roblox inicia</string>
+    <string name="gm_safe_power_desc">Evita que el procesador entre en reposo hasta 60 segundos mientras Roblox inicia. No hace overclock ni altera la frecuencia de CPU.</string>
+    <string name="gm_safe_thermal_title">Pausar aceleración si el dispositivo está muy caliente</string>
+    <string name="gm_safe_thermal_desc">Verifica la temperatura de Android antes de iniciar. Con calor intenso, se omiten aceleraciones de Wi-Fi y CPU hasta que el dispositivo se enfríe.</string>
+    <string name="gm_safe_touch_title">Sensibilidad de pantalla táctil</string>
+    <string name="gm_safe_touch_desc">Respuesta táctil más rápida para un control instantáneo sin retraso de entrada.</string>
+    <string name="gm_safe_frame_pacing_title">Estabilizador de cuadros suave</string>
+    <string name="gm_safe_frame_pacing_desc">Equilibra la entrega de cuadros para un movimiento ultrasuave sin microtirones.</string>
+    <string name="msg_enable_master_first">¡Por favor, activa primero Game Mode Turbo!</string>
+    <string name="category_popular">Popular</string>
+    <string name="category_hot">Destacados</string>
+    <string name="category_general_presets">Preajustes generales</string>
+    <string name="category_game_presets">Preajustes de juegos</string>
+    <string name="category_inferium_presets">Preajustes Inferium</string>
+    <string name="title_community_presets">Preajustes de la comunidad y juegos</string>
+    <string name="desc_community_presets">Elige un preajuste de juego optimizado. Sus flags se fusionarán con tus ajustes al guardar y ejecutar.</string>
+
+    <!-- Messages & Dialogs -->
+    <string name="msg_saved_success">¡Configuraciones exportadas exitosamente a ClientAppSettings.json!</string>
+    <string name="msg_save_failed">Error al guardar configuraciones. Verifica los permisos de almacenamiento.</string>
     <string name="msg_roblox_not_found">Roblox no está instalado en este dispositivo.</string>
-    <string name="dialog_add_flag_title">Añadir FastFlag</string>
-    <string name="hint_flag_name">Nombre de Flag</string>
-    <string name="hint_flag_value">Valor</string>
-    <string name="btn_cancel">Cancelar</string>
-    <string name="btn_confirm">Confirmar</string>
+    <string name="msg_preset_applied">¡Preajuste aplicado con éxito!</string>
+    <string name="msg_license_activated">¡Clave de licencia activada! Anuncios eliminados.</string>
+    <string name="msg_invalid_license">Por favor ingresa una clave de licencia válida</string>
+
+    <!-- Mandatory Google Play update -->
+    <string name="dialog_update_required_title">Actualización requerida</string>
+    <string name="dialog_update_badge">Actualización disponible</string>
+    <string name="dialog_update_message">Se requiere una versión más reciente de Masterstrap para continuar. Actualiza ahora para seguir usando la app.</string>
+    <string name="dialog_update_current_version">Versión actual: %1$s</string>
+    <string name="dialog_upgrade_now">Actualizar ahora</string>
 </resources>

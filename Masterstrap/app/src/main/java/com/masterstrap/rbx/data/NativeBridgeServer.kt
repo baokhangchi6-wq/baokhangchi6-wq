@@ -21,13 +21,14 @@ import java.util.concurrent.TimeUnit
 object NativeBridgeServer {
     private const val TAG = "MasterstrapBridge"
     private const val PORT = 39671
-    private const val REQUEST_SESSION = "MASTERSTRAP_GET_SESSION_V3"
+    private const val REQUEST_SESSION = "MASTERSTRAP_GET_SESSION_V4"
     private const val PROBE_SESSION = "MASTERSTRAP_PROBE_SESSION_V1"
     private const val SESSION_AVAILABLE = "MASTERSTRAP_SESSION_AVAILABLE_V1"
-    private const val CONSUME_SESSION = "MASTERSTRAP_CONSUME_SESSION_V3 "
+    private const val CONSUME_SESSION = "MASTERSTRAP_CONSUME_SESSION_V4 "
     private const val MAX_JSON_BYTES = 60 * 1024
     private const val MAX_XML_BYTES = 16 * 1024
     private const val MAX_TURBO_BYTES = 8 * 1024
+    private const val MAX_SHADER_BYTES = 8 * 1024
     private const val LIFETIME_MS = 90_000L
     // A freshly installed Roblox APK can create a short-lived bootstrap
     // process and restart itself once native extraction/profile setup finishes.
@@ -43,17 +44,20 @@ object NativeBridgeServer {
         sessionId: String,
         jsonPayload: ByteArray,
         xmlPayload: ByteArray,
-        turboPayload: ByteArray
+        turboPayload: ByteArray,
+        shaderPayload: ByteArray
     ): Boolean {
         if (sessionId.isBlank() || jsonPayload.isEmpty() ||
             jsonPayload.size > MAX_JSON_BYTES || xmlPayload.isEmpty() ||
             xmlPayload.size > MAX_XML_BYTES || turboPayload.isEmpty() ||
-            turboPayload.size > MAX_TURBO_BYTES
+            turboPayload.size > MAX_TURBO_BYTES || shaderPayload.isEmpty() ||
+            shaderPayload.size > MAX_SHADER_BYTES
         ) {
             ConfigExporter.writeNativeBridgeDiagnostic(
                 context,
                 "bridge_start_error=invalid_payload json_bytes=${jsonPayload.size} " +
-                    "xml_bytes=${xmlPayload.size} turbo_bytes=${turboPayload.size}\n"
+                    "xml_bytes=${xmlPayload.size} turbo_bytes=${turboPayload.size} " +
+                    "shader_bytes=${shaderPayload.size}\n"
             )
             return false
         }
@@ -81,13 +85,16 @@ object NativeBridgeServer {
         activeSocket = socket
 
         val header = buildString {
-            appendLine("MASTERSTRAP_SESSION_V3")
+            appendLine("MASTERSTRAP_SESSION_V4")
             appendLine(sessionId)
             appendLine(jsonPayload.size)
             appendLine(xmlPayload.size)
             appendLine(turboPayload.size)
+            appendLine(shaderPayload.size)
         }.toByteArray(Charsets.UTF_8)
-        val sessionPayload = header + jsonPayload + xmlPayload + turboPayload
+        val sessionPayload = header + jsonPayload + xmlPayload + turboPayload + shaderPayload
+        val turboOwnsWifi = turboPayload.toString(Charsets.UTF_8)
+            .contains("\"wifiLowLatency\":true")
         if (sessionPayload.size > 64 * 1024 - 512) {
             socket.close()
             activeSocket = null
@@ -113,6 +120,7 @@ object NativeBridgeServer {
                 appendLine("json_bytes=${jsonPayload.size}")
                 appendLine("xml_bytes=${xmlPayload.size}")
                 appendLine("turbo_bytes=${turboPayload.size}")
+                appendLine("shader_bytes=${shaderPayload.size}")
                 events.forEach { appendLine(it) }
                 append(inspection.get())
             }
@@ -181,6 +189,13 @@ object NativeBridgeServer {
                 var replayReplyCount = 0
                 var replayConsumeCount = 0
                 var receiveCount = 0
+                var safeHandoffReleased = false
+                fun completeSafeHandoff(reason: String) {
+                    if (safeHandoffReleased) return
+                    safeHandoffReleased = true
+                    SafeBoostController.releaseNow(reason)
+                    record("safe_handoff_release=true reason=$reason")
+                }
                 val receiveBuffer = ByteArray(64 * 1024)
                 while (generation.get() == runId && System.currentTimeMillis() < deadline) {
                     val packet = DatagramPacket(receiveBuffer, receiveBuffer.size)
@@ -240,9 +255,9 @@ object NativeBridgeServer {
                         val replayConsume = consumed && now <= replayUntil && requestedId == sessionId
                         val consumeAccepted = firstConsume || replayConsume
                         val reply = if (consumeAccepted) {
-                            "MASTERSTRAP_SESSION_CONSUMED_V3"
+                            "MASTERSTRAP_SESSION_CONSUMED_V4"
                         } else {
-                            "MASTERSTRAP_SESSION_REJECTED_V3"
+                            "MASTERSTRAP_SESSION_REJECTED_V4"
                         }.toByteArray(Charsets.UTF_8)
                         socket.send(DatagramPacket(reply, reply.size, packet.address, packet.port))
                         if (firstConsume) {
@@ -268,6 +283,14 @@ object NativeBridgeServer {
                                 "replay_active=${consumed && now <= replayUntil}"
                         )
                     } else if (request.startsWith("MASTERSTRAP_")) {
+                        val pipelineReady = request.contains("stage=pipeline-ready")
+                        val turboWifiReady = request.contains("turbo_wifi=applied") &&
+                            request.contains("held=1")
+                        if (turboWifiReady) {
+                            completeSafeHandoff("turbo_wifi_ready")
+                        } else if (pipelineReady && !turboOwnsWifi) {
+                            completeSafeHandoff("roblox_pipeline_ready")
+                        }
                         record(request)
                     } else {
                         record("unknown_message bytes=${packet.length}")

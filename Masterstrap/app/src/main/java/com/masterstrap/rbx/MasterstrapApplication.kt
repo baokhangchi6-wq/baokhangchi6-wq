@@ -27,10 +27,8 @@ class MasterstrapApplication : Application() {
             isDaemon = true
             start()
         }
-        // LevelPlay is deliberately initialized only after the user requests
-        // a rewarded action. Starting it here forces Android WebView/Chromium
-        // to initialize while the first activity (and possibly the mandatory
-        // update dialog) is drawing. On storage-constrained devices that can
-        // block the main thread long enough to trigger an input ANR.
+        // No SDK init here. The Activity restores the saved entitlement first;
+        // only Free schedules LevelPlay 200 ms after the first frame. Paid or
+        // unresolved tiers do not initialize/preload/show advertising.
     }
 }

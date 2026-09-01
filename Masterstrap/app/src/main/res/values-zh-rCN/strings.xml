@@ -156,7 +156,32 @@
     <string name="desc_language">应用显示语言</string>
     <string name="label_preferred_roblox_app">首选 Roblox 应用</string>
     <string name="desc_preferred_roblox_app">选择要使用和启动的 Roblox 客户端</string>
+    <string name="title_app_settings">设置</string>
+    <string name="desc_app_settings">配置仅在启动修改版 Roblox 时生效的显示行为</string>
+    <string name="title_display_settings">显示</string>
+    <string name="title_shader_package">着色器包</string>
+    <string name="desc_shader_package">选择画面色调与环境光影氛围</string>
+    <string name="shader_package_default">默认 (无着色器)</string>
+    <string name="shader_package_daytime">日光 (明亮清爽)</string>
+    <string name="shader_package_rtx_ultra">RTX 超级 (逼真光影)</string>
+    <string name="shader_package_sunset">日落 (黄金时刻)</string>
+    <string name="shader_package_night">夜晚 (深夜魅影)</string>
+    <string name="shader_package_cloudy">多云 (柔和阴天)</string>
+    <string name="shader_package_desert">沙漠 (温暖海市蜃楼)</string>
+    <string name="shader_package_arctic">极地 (冷冽冰霜)</string>
+    <string name="shader_package_blood_moon">血月 (神秘深红)</string>
+    <string name="shader_package_cyberpunk">赛博朋克 (未来霓虹)</string>
+    <string name="shader_package_cherry_blossom">樱花 (柔美粉红)</string>
+    <string name="shader_package_ghibli_anime">吉卜力动画 (清新唯美)</string>
+    <string name="shader_package_synthwave">复古电音 (80年代怀旧)</string>
+    <string name="shader_package_noir">黑色电影 (经典黑白)</string>
+    <string name="title_stretch_screen">拉伸屏幕</string>
+    <string name="desc_stretch_screen" formatted="false">低于 100% 会加宽画面。高于 100% 会使画面变窄。100% 保持原始形状。</string>
+    <string name="note_stretch_screen" formatted="false">仅在从 Masterstrap 启动修改版 Roblox 并在横屏模式下生效一次。101–200% 范围使用更宽的渲染缓冲区，可能会增加 GPU 显存占用。</string>
+    <string name="value_stretch_screen_percent">%1$d%%</string>
+    <string name="label_stretch_original" formatted="false">100% (原始)</string>
     <string name="title_community_links">官方频道与链接</string>
+    <string name="link_app_guide_title">应用使用指南 →</string>
     <string name="title_license_key">许可证密钥</string>
     <string name="desc_license_key">输入许可证密钥以解锁完整功能并永久跳过广告。</string>
     <string name="plan_free">免费版</string>
@@ -166,12 +191,14 @@
     <string name="section_safe_boost">安全加速 (稳定性与低延迟)</string>
     <string name="section_turbo_boost">Turbo Boost</string>
     <string name="title_tab_fastflag_settings">FastFlag 设置</string>
-    <string name="gm_safe_ram_title">清理运行内存</string>
-    <string name="gm_safe_ram_desc">自动释放无用缓存，使游戏运行更流畅，防止卡死。</string>
-    <string name="gm_safe_network_title">网络与低延迟优化</string>
-    <string name="gm_safe_network_desc">优化数据包路由以稳定延迟和 Ping 值，减少掉线。</string>
-    <string name="gm_safe_power_title">防过热与稳定帧率</string>
-    <string name="gm_safe_power_desc">调节 CPU 频率以防止手机发烫，并在长时间游戏中保持满帧。</string>
+    <string name="gm_safe_ram_title">启动前释放 Masterstrap 内存</string>
+    <string name="gm_safe_ram_desc">打开 Roblox 前，仅请求 Android 回收 Masterstrap 不再使用的内存，不会关闭其他应用。</string>
+    <string name="gm_safe_network_title">启动时使用低延迟 Wi-Fi</string>
+    <string name="gm_safe_network_desc">Roblox 启动期间临时请求 Android 的低延迟 Wi-Fi 模式，仅在设备连接 Wi-Fi 时生效。</string>
+    <string name="gm_safe_power_title">Roblox 启动时保持 CPU 唤醒</string>
+    <string name="gm_safe_power_desc">Roblox 启动期间最多 60 秒内防止 CPU 休眠，不会超频或改变 CPU 速度。</string>
+    <string name="gm_safe_thermal_title">设备过热时暂停启动加速</string>
+    <string name="gm_safe_thermal_desc">启动前检查 Android 温度状态。检测到严重过热时，暂时跳过 Wi-Fi 和 CPU 加速，直到设备降温。</string>
     <string name="gm_safe_touch_title">提升触控灵敏度</string>
     <string name="gm_safe_touch_desc">加快屏幕触控响应速度，操作更跟手无延迟。</string>
     <string name="gm_safe_frame_pacing_title">画面平滑抗撕裂</string>
@@ -192,4 +219,11 @@
     <string name="msg_preset_applied">预设应用成功！</string>
     <string name="msg_license_activated">许可证已激活！已免除广告。</string>
     <string name="msg_invalid_license">请输入有效的许可证密钥</string>
+
+    <!-- Mandatory Google Play update -->
+    <string name="dialog_update_required_title">需要更新</string>
+    <string name="dialog_update_badge">有可用更新</string>
+    <string name="dialog_update_message">需要更新版本的 Masterstrap 才能继续使用。请立即升级以继续使用应用程序。</string>
+    <string name="dialog_update_current_version">当前版本：%1$s</string>
+    <string name="dialog_upgrade_now">立即升级</string>
 </resources>

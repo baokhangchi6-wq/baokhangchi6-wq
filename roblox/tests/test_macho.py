@@ -24,6 +24,13 @@ class MachOTests(unittest.TestCase):
     def test_detects_encryption(self) -> None:
         self.assertTrue(MachOImage(build_macho(encrypted=True)).is_encrypted)
 
+    def test_decodes_lc_function_starts(self) -> None:
+        image = MachOImage(build_macho(with_function_starts=True))
+        self.assertEqual(
+            image.function_starts,
+            [BASE + 0x400, BASE + 0x480, BASE + 0x500, BASE + 0x580],
+        )
+
     def test_loads_ipa_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "Roblox.ipa"

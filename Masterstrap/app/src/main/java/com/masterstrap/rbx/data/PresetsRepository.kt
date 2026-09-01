@@ -81,17 +81,11 @@ object PresetsRepository {
     val renderingModeDropdown = PresetDropdown(
         id = "rendering_mode",
         title = "Rendering mode",
-        description = "Prefer the map-backed OpenGL flag on Android. Automatic keeps Roblox's renderer selection.",
+        description = "Choose the renderer for your next launch. The other preference is disabled; unsupported drivers may fall back safely.",
         options = listOf("Automatic", "OpenGL", "Vulkan"),
         selectedOption = "Automatic",
         category = "Graphics quality",
-        flagMapper = { mode ->
-            when (mode) {
-                "OpenGL" -> mapOf("FFlagDebugGraphicsPreferOpenGL" to "True")
-                "Vulkan" -> mapOf("FFlagDebugGraphicsPreferOpenGL" to "False")
-                else -> emptyMap()
-            }
-        }
+        flagMapper = RendererModePolicy::flags
     )
 
     val dynamicResolutionDropdown = PresetDropdown(
@@ -195,9 +189,7 @@ object PresetsRepository {
                 title = context.getString(R.string.ff_fps_title),
                 description = context.getString(R.string.ff_fps_desc)
             ),
-            // FPS unlocking is owned by the FPS input and the native, verified
-            // Max-FPS bundle. The old TaskSchedulerLimitTargetFpsTo2402 entry was
-            // untyped and therefore always rejected by the native parser.
+            // FPS is automatic via GlobalBasicSettings, not a FastFlag bundle.
             PresetItemUI.Toggle(
                 PresetToggle(
                     "fps_boost",
@@ -294,7 +286,12 @@ object PresetsRepository {
                     context.getString(R.string.ff_disable_grass_desc),
                     false,
                     context.getString(R.string.section_rendering_fx),
-                    mapOf("FIntFRMMaxGrassDistance" to 0, "FIntFRMMinGrassDistance" to 0)
+                    mapOf(
+                        "FIntFRMMinGrassDistance" to 0,
+                        "FIntFRMMaxGrassDistance" to 0,
+                        "FIntRenderGrassDetailStrands" to 0,
+                        "FIntRenderGrassHeightScaler" to 0
+                    )
                 )
             ),
             PresetItemUI.Toggle(
@@ -327,7 +324,10 @@ object PresetsRepository {
                     context.getString(R.string.ff_disable_gui_blur_desc),
                     true,
                     context.getString(R.string.section_interface_camera),
-                    mapOf("FIntRobloxGuiBlurIntensity" to 0)
+                    mapOf(
+                        "FIntRobloxGuiBlurIntensity" to 0,
+                        "FFlagDisablePostFx" to true
+                    )
                 )
             )
         )
@@ -356,16 +356,6 @@ object PresetsRepository {
                     true,
                     context.getString(R.string.section_graphics_framerate),
                     mapOf("FFlagAnimationLodBoneEnabled" to true)
-                )
-            ),
-            PresetItemUI.Toggle(
-                PresetToggle(
-                    "android_vsync",
-                    context.getString(R.string.ffs_android_vsync_title),
-                    context.getString(R.string.ffs_android_vsync_desc),
-                    true,
-                    context.getString(R.string.section_graphics_framerate),
-                    mapOf("FFlagEnableAndroidVsync" to true)
                 )
             ),
             PresetItemUI.Toggle(
@@ -447,12 +437,43 @@ object PresetsRepository {
             ),
             PresetItemUI.Toggle(
                 PresetToggle(
+                    "no_texture",
+                    context.getString(R.string.ffs_no_texture_title),
+                    context.getString(R.string.ffs_no_texture_desc),
+                    false,
+                    context.getString(R.string.section_memory_assets),
+                    // The empty string is the requested value. It must remain a
+                    // present JSON entry instead of being treated as missing.
+                    mapOf(
+                        "FStringTerrainMaterialTable2022" to "",
+                        "FStringTerrainMaterialTablePre2022" to "",
+                        "FStringPartTexturePackTable2022" to "",
+                        "FStringPartTexturePackTablePre2022" to "",
+                        "FFlagDebugDisableTelemetryV2Counter" to true,
+                        "FFlagDebugDisableTelemetryV2Event" to true
+                    )
+                )
+            ),
+            PresetItemUI.Toggle(
+                PresetToggle(
                     "animation_clip_cache",
                     context.getString(R.string.ffs_anim_cache_title),
                     context.getString(R.string.ffs_anim_cache_desc),
                     true,
                     context.getString(R.string.section_memory_assets),
                     mapOf("FFlagAnimationClipMemCacheEnabled" to true)
+                )
+            ),
+            PresetItemUI.Header(context.getString(R.string.section_interface_camera)),
+            PresetItemUI.Toggle(
+                PresetToggle(
+                    "hide_player_names",
+                    context.getString(R.string.ffs_hide_player_names_title),
+                    context.getString(R.string.ffs_hide_player_names_desc),
+                    false,
+                    context.getString(R.string.section_interface_camera),
+                    // A UserGameSettings XML preference, not a fabricated FFlag.
+                    emptyMap()
                 )
             )
         )
@@ -470,7 +491,7 @@ object PresetsRepository {
                     context.getString(R.string.gm_safe_ram_desc),
                     true,
                     context.getString(R.string.section_safe_boost),
-                    mapOf("FFlagAdaptiveMeshCacheSizeForAndroid" to true)
+                    emptyMap()
                 )
             ),
             PresetItemUI.Toggle(
@@ -480,7 +501,7 @@ object PresetsRepository {
                     context.getString(R.string.gm_safe_network_desc),
                     true,
                     context.getString(R.string.section_safe_boost),
-                    mapOf("FFlagBatchNetAssetJoinBlobEnable" to true)
+                    emptyMap()
                 )
             ),
             PresetItemUI.Toggle(
@@ -490,7 +511,17 @@ object PresetsRepository {
                     context.getString(R.string.gm_safe_power_desc),
                     true,
                     context.getString(R.string.section_safe_boost),
-                    mapOf("FFlagEnableAndroidPowerManager" to true)
+                    emptyMap()
+                )
+            ),
+            PresetItemUI.Toggle(
+                PresetToggle(
+                    "safe_thermal_guard",
+                    context.getString(R.string.gm_safe_thermal_title),
+                    context.getString(R.string.gm_safe_thermal_desc),
+                    true,
+                    context.getString(R.string.section_safe_boost),
+                    emptyMap()
                 )
             ),
 
@@ -568,6 +599,50 @@ object PresetsRepository {
                     context.getString(R.string.gm_unrestricted_power_title),
                     context.getString(R.string.gm_unrestricted_power_desc),
                     true,
+                    context.getString(R.string.section_turbo_boost),
+                    emptyMap(),
+                    hasCrown = true
+                )
+            ),
+            PresetItemUI.Toggle(
+                PresetToggle(
+                    "turbo_wifi_latency",
+                    context.getString(R.string.gm_turbo_wifi_title),
+                    context.getString(R.string.gm_turbo_wifi_desc),
+                    true,
+                    context.getString(R.string.section_turbo_boost),
+                    emptyMap(),
+                    hasCrown = true
+                )
+            ),
+            PresetItemUI.Toggle(
+                PresetToggle(
+                    "turbo_thermal_guard",
+                    context.getString(R.string.gm_turbo_thermal_title),
+                    context.getString(R.string.gm_turbo_thermal_desc),
+                    true,
+                    context.getString(R.string.section_turbo_boost),
+                    emptyMap(),
+                    hasCrown = true
+                )
+            ),
+            PresetItemUI.Toggle(
+                PresetToggle(
+                    "turbo_refresh_contract",
+                    context.getString(R.string.gm_turbo_refresh_title),
+                    context.getString(R.string.gm_turbo_refresh_desc),
+                    true,
+                    context.getString(R.string.section_turbo_boost),
+                    emptyMap(),
+                    hasCrown = true
+                )
+            ),
+            PresetItemUI.Toggle(
+                PresetToggle(
+                    "turbo_sustained_performance",
+                    context.getString(R.string.gm_turbo_sustained_title),
+                    context.getString(R.string.gm_turbo_sustained_desc),
+                    false,
                     context.getString(R.string.section_turbo_boost),
                     emptyMap(),
                     hasCrown = true

@@ -66,16 +66,18 @@
     <string name="ff_frm_title">Ghi đè mức chất lượng FRM</string>
     <string name="ff_frm_desc">Chọn mức chất lượng kết xuất cố định của Roblox từ 1 đến 21.</string>
     <string name="ff_rendering_mode_title">Chế độ kết xuất đồ họa</string>
-    <string name="ff_rendering_mode_desc">Ưu tiên cờ OpenGL trên Android hoặc để Tự động theo hệ thống.</string>
+    <string name="ff_rendering_mode_desc">Chọn cách xử lý đồ họa cho lần mở game tiếp theo. Chỉ bật ưu tiên Vulkan hoặc OpenGL, không bật cả hai. Nếu driver không hỗ trợ, Roblox có thể dùng chế độ dự phòng.</string>
     <string name="ff_dynamic_res_title">Độ phân giải kết xuất động</string>
     <string name="ff_dynamic_res_desc">Giới hạn số điểm ảnh kết xuất 3D nội bộ trong khi giữ nguyên UI sắc nét.</string>
     <string name="toggle_unlock_fps">Mở khóa giới hạn FPS</string>
     <string name="toggle_unlock_fps_desc">Gỡ bỏ giới hạn trần 240 FPS mặc định để chơi mượt mà tối đa.</string>
-    <string name="ff_fps_title">Tốc độ khung hình (FPS)</string>
+    <string name="ff_fps_title">FPS mục tiêu (Global)</string>
     <string name="fps_unlocker_title">Khung hình (FPS)</string>
-    <string name="ff_fps_desc">Chọn mức FPS phù hợp với màn hình và hiệu năng thiết bị để chuyển động mượt mà.</string>
+    <string name="ff_fps_desc">Nhập FPS Masterstrap sẽ yêu cầu ở lần mở tiếp theo (30–9999). FPS thực tế vẫn phụ thuộc game, GPU và driver màn hình.</string>
+    <string name="ffs_hide_player_names_title">Ẩn tên người chơi</string>
+    <string name="ffs_hide_player_names_desc">Ẩn tên mặc định phía trên nhân vật ở lần mở Roblox tiếp theo. Không ẩn chat, bảng người chơi hoặc tên riêng do trò chơi tạo.</string>
     <string name="ff_force_lowest_title">Ép đồ họa Roblox mức thấp nhất</string>
-    <string name="ff_force_lowest_desc">Khóa mức đồ họa gốc của Roblox ở mức 1 khi khởi động. Cần quyền root.</string>
+    <string name="ff_force_lowest_desc">Ép đồ họa mức 1 khi mở Roblox patched qua Masterstrap. Tắt để tự chọn chất lượng trong Roblox; mức thấp có thể giảm hiệu ứng shader. Không cần root.</string>
     <string name="ff_reduced_motion_title">Giảm hiệu ứng chuyển động</string>
     <string name="ff_reduced_motion_desc">Sử dụng tính năng ReducedMotion gốc của Roblox để giảm tải chuyển động.</string>
     <string name="ff_haptics_title">Rung phản hồi trong game</string>
@@ -128,14 +130,16 @@
     <string name="ffs_bg_session_desc">Giúp Roblox khôi phục phiên kết nối chuẩn xác sau khi mở lại từ nền.</string>
     <string name="ffs_unified_mesh_title">Tối ưu bộ nhớ mô hình 3D</string>
     <string name="ffs_unified_mesh_desc">Cân bằng RAM dành cho mô hình 3D trên Android.</string>
+    <string name="ffs_no_texture_title">Tắt họa tiết địa hình</string>
+    <string name="ffs_no_texture_desc">Ẩn họa tiết vật liệu địa hình để hình ảnh đơn giản hơn và có thể giảm tải đồ họa. Một số game có thể trông phẳng hoặc khác thường.</string>
     <string name="ffs_anim_cache_title">Bộ nhớ đệm hoạt ảnh lặp lại</string>
     <string name="ffs_anim_cache_desc">Lưu trữ sẵn dữ liệu hoạt ảnh để tránh phải giải mã lặp đi lặp lại.</string>
 
     <!-- Game Mode Toggles -->
     <string name="gm_master_title">Bật Game Mode</string>
     <string name="gm_master_desc">Kích hoạt cấu hình tối ưu khi Roblox khởi động.</string>
-    <string name="gm_system_perf_title">Tăng Tốc Hiệu Năng Hệ Thống</string>
-    <string name="gm_system_perf_desc">Yêu cầu chế độ Game Mode của Android để tối ưu luồng hiển thị.</string>
+    <string name="gm_system_perf_title">Hiệu Năng Thích Ứng Android</string>
+    <string name="gm_system_perf_desc">Cho Roblox báo trạng thái tải game, chơi game và tải CPU thực tế để Android phân bổ hiệu năng mà không cần root.</string>
     <string name="gm_cpu_priority_title">Ưu Tiên Hiệu Năng CPU</string>
     <string name="gm_cpu_priority_desc">Tăng mức ưu tiên tiến trình Roblox để giảm độ trễ điều phối CPU.</string>
     <string name="gm_smart_ram_title">Dọn Dẹp RAM Thông Minh</string>
@@ -148,6 +152,14 @@
     <string name="gm_fast_launch_desc">Tắt hiệu ứng chuyển cảnh của Android khi mở Roblox để khởi động nhanh hơn.</string>
     <string name="gm_keep_display_title">Giữ Màn Hình Luôn Sáng</string>
     <string name="gm_keep_display_desc">Ngăn màn hình tắt trong khi đang ở trong phiên chơi game.</string>
+    <string name="gm_turbo_wifi_title">Wi-Fi Độ Trễ Thấp Toàn Phiên</string>
+    <string name="gm_turbo_wifi_desc">Yêu cầu chế độ Wi-Fi độ trễ thấp từ chính tiến trình Roblox đang ở foreground và tự mất hiệu lực khi Roblox ra nền.</string>
+    <string name="gm_turbo_thermal_title">Giữ Hiệu Năng Ổn Định Theo Nhiệt</string>
+    <string name="gm_turbo_thermal_desc">Theo dõi trạng thái nhiệt khi khởi động và giảm performance hint trước khi thiết bị throttle nghiêm trọng.</string>
+    <string name="gm_turbo_refresh_title">Tần Số Quét Thích Ứng</string>
+    <string name="gm_turbo_refresh_desc">Yêu cầu tần số quét liền mạch gần nhất trực tiếp từ surface Roblox đang hoạt động. Tính năng bổ trợ FPS Roblox nhưng không ép chế độ Hz mà màn hình không hỗ trợ.</string>
+    <string name="gm_turbo_sustained_title">Ổn Định Phiên Chơi Dài</string>
+    <string name="gm_turbo_sustained_desc">Dùng Sustained Performance Mode trên thiết bị có hỗ trợ, đổi một phần nhỏ hiệu năng đỉnh để giữ hiệu năng ổn định hơn trong phiên chơi dài.</string>
 
     <!-- Settings & About -->
     <string name="title_settings_about">Cài đặt &amp; Giới thiệu</string>
@@ -159,6 +171,7 @@
     <string name="label_preferred_roblox_app">Phiên bản Roblox ưu tiên</string>
     <string name="desc_preferred_roblox_app">Chọn phiên bản Roblox để áp dụng cấu hình và mở game</string>
     <string name="title_community_links">Kênh chính thức &amp; Liên kết</string>
+    <string name="link_app_guide_title">Hướng dẫn sử dụng ứng dụng →</string>
     <string name="title_license_key">Mã Bản Quyền (License Key)</string>
     <string name="desc_license_key">Nhập mã bản quyền để mở khóa đầy đủ tính năng &amp; bỏ qua quảng cáo.</string>
     <string name="plan_free">Bản Miễn Phí</string>
@@ -168,12 +181,14 @@
     <string name="section_safe_boost">Boost An Toàn (Ổn định &amp; Độ trễ)</string>
     <string name="section_turbo_boost">Turbo Boost</string>
     <string name="title_tab_fastflag_settings">Cài đặt FastFlag</string>
-    <string name="gm_safe_ram_title">Tối ưu bộ nhớ mô hình 3D</string>
-    <string name="gm_safe_ram_desc">Cho phép Roblox tự cân bằng bộ nhớ đệm mô hình 3D theo dung lượng khả dụng của thiết bị Android.</string>
-    <string name="gm_safe_network_title">Tải tài nguyên khi vào game nhanh hơn</string>
-    <string name="gm_safe_network_desc">Dùng cơ chế gộp tải tài nguyên được Roblox hỗ trợ để giảm thao tác mạng lặp lại khi vào game.</string>
-    <string name="gm_safe_power_title">Quản lý nguồn điện Android</string>
-    <string name="gm_safe_power_desc">Cho phép Roblox phối hợp với hệ thống quản lý nguồn Android mà không can thiệp giới hạn nhiệt của thiết bị.</string>
+    <string name="gm_safe_ram_title">Dọn bộ nhớ Masterstrap trước khi mở game</string>
+    <string name="gm_safe_ram_desc">Yêu cầu Android thu hồi bộ nhớ không còn dùng của chính Masterstrap trước khi mở Roblox. Không đóng hoặc dọn ứng dụng khác.</string>
+    <string name="gm_safe_network_title">Bật Wi-Fi độ trễ thấp khi mở game</string>
+    <string name="gm_safe_network_desc">Tạm thời yêu cầu Android ưu tiên độ trễ Wi-Fi thấp trong lúc Roblox khởi động. Chỉ hoạt động khi thiết bị đang dùng Wi-Fi.</string>
+    <string name="gm_safe_power_title">Giữ CPU thức khi Roblox khởi động</string>
+    <string name="gm_safe_power_desc">Ngăn CPU ngủ trong tối đa 60 giây khi Roblox đang mở. Không ép xung hoặc thay đổi tốc độ CPU.</string>
+    <string name="gm_safe_thermal_title">Tạm dừng boost khi thiết bị quá nóng</string>
+    <string name="gm_safe_thermal_desc">Kiểm tra trạng thái nhiệt của Android trước khi mở game. Nếu máy quá nóng, boost Wi-Fi và CPU sẽ tạm bỏ qua cho đến khi máy nguội.</string>
     <string name="gm_safe_touch_title">Tăng độ nhạy cảm ứng</string>
     <string name="gm_safe_touch_desc">Phản hồi thao tác vuốt chạm nhanh hơn, loại bỏ cảm giác trễ khi điều khiển nhân vật.</string>
     <string name="gm_safe_frame_pacing_title">Khử giật xé hình</string>
@@ -197,8 +212,35 @@
     <string name="title_app_settings">Cài đặt</string>
     <string name="desc_app_settings">Thiết lập hiển thị chỉ áp dụng khi mở Roblox patched</string>
     <string name="title_display_settings">Hiển thị</string>
+    <string name="title_shader_effects_group">Shader &amp; phản chiếu</string>
+    <string name="title_shader_package">Gói Shader</string>
+    <string name="desc_shader_package">Chọn phong cách ánh sáng và màu sắc cho lần mở Roblox tiếp theo</string>
+    <string name="shader_package_default">Hình ảnh gốc (Khuyên dùng)</string>
+    <string name="shader_package_daytime">Daytime 4K — Ban ngày trong trẻo</string>
+    <string name="shader_package_rtx_ultra">RTX Ultra 5 — Ánh sáng chân thực</string>
+    <string name="shader_package_sunset">Sunset Golden — Hoàng hôn vàng</string>
+    <string name="shader_package_night">Galaxy Night — Đêm ngân hà</string>
+    <string name="shader_package_cloudy">Cloudy Overcast — Trời nhiều mây</string>
+    <string name="shader_package_desert">Desert Mirage — Sa mạc ấm</string>
+    <string name="shader_package_arctic">Arctic Aurora — Cực quang lạnh</string>
+    <string name="shader_package_blood_moon">Blood Moon Eclipse — Nguyệt thực đỏ</string>
+    <string name="shader_package_cyberpunk">Cyberpunk 2077 — Ánh sáng neon</string>
+    <string name="shader_package_cherry_blossom">Cherry Blossom Pastel — Hoa anh đào</string>
+    <string name="shader_package_ghibli_anime">Ghibli Anime — Màu hoạt hình</string>
+    <string name="shader_package_synthwave">80s Retro Synthwave — Neon cổ điển</string>
+    <string name="shader_package_noir">Noir Black &amp; White — Đen trắng điện ảnh</string>
+    <string name="title_shader_wet_floor">Sàn ướt phản chiếu</string>
+    <string name="desc_shader_wet_floor">Thêm bề mặt bóng và phản chiếu cho gói Shader đã chọn. Áp dụng một lần lên các bề mặt phù hợp ở gần bạn.</string>
     <string name="title_stretch_screen">Kéo giãn màn hình</string>
-    <string name="desc_stretch_screen">Kết xuất Roblox bằng bộ đệm hẹp hơn theo chiều ngang rồi kéo giãn để phủ đầy màn hình.</string>
-    <string name="note_stretch_screen">Chỉ áp dụng khi mở Roblox patched từ Masterstrap. 100% giữ nguyên tỷ lệ gốc.</string>
+    <string name="desc_stretch_screen" formatted="false">Dưới 100% làm hình rộng hơn. Trên 100% làm hình hẹp hơn. 100% giữ nguyên hình ảnh.</string>
+    <string name="note_stretch_screen" formatted="false">Chỉ áp dụng một lần ở màn hình ngang khi mở Roblox patched từ Masterstrap. Khoảng 101–200% dùng bộ đệm rộng hơn và có thể tăng bộ nhớ GPU.</string>
     <string name="value_stretch_screen_percent">%1$d%%</string>
+    <string name="label_stretch_original" formatted="false">100% (Gốc)</string>
+
+    <!-- Mandatory Google Play update -->
+    <string name="dialog_update_required_title">Yêu cầu cập nhật</string>
+    <string name="dialog_update_badge">Có bản cập nhật mới</string>
+    <string name="dialog_update_message">Phiên bản Masterstrap mới hơn là bắt buộc để tiếp tục. Hãy nâng cấp ngay để tiếp tục sử dụng ứng dụng.</string>
+    <string name="dialog_update_current_version">Phiên bản hiện tại: %1$s</string>
+    <string name="dialog_upgrade_now">Nâng cấp ngay</string>
 </resources>

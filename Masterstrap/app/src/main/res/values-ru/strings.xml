@@ -151,7 +151,32 @@
     <string name="desc_language">Язык интерфейса приложения</string>
     <string name="label_preferred_roblox_app">Предпочитаемый клиент Roblox</string>
     <string name="desc_preferred_roblox_app">Выберите клиент Roblox для применения настроек и запуска</string>
+    <string name="title_app_settings">Настройки</string>
+    <string name="desc_app_settings">Настройка отображения только для запуска модифицированного Roblox</string>
+    <string name="title_display_settings">Экран</string>
+    <string name="title_shader_package">Пакет шейдеров</string>
+    <string name="desc_shader_package">Выберите цветовой тон и освещение окружения</string>
+    <string name="shader_package_default">По умолчанию (Без шейдеров)</string>
+    <string name="shader_package_daytime">Дневной свет (Яркое солнце)</string>
+    <string name="shader_package_rtx_ultra">RTX Ultra (Реалистичное освещение)</string>
+    <string name="shader_package_sunset">Закат (Золотой час)</string>
+    <string name="shader_package_night">Ночь (Глубокая полночь)</string>
+    <string name="shader_package_cloudy">Пасмурно (Мягкая облачность)</string>
+    <string name="shader_package_desert">Пустыня (Теплый мираж)</string>
+    <string name="shader_package_arctic">Арктика (Морозная свежесть)</string>
+    <string name="shader_package_blood_moon">Кровавая луна (Мистический багровый)</string>
+    <string name="shader_package_cyberpunk">Киберпанк (Неоновое свечение)</string>
+    <string name="shader_package_cherry_blossom">Сакура (Пастельно-розовый)</string>
+    <string name="shader_package_ghibli_anime">Аниме Гибли (Красочный стиль)</string>
+    <string name="shader_package_synthwave">Синтвейв (Ретро 80-х)</string>
+    <string name="shader_package_noir">Нуар (Классический черно-белый)</string>
+    <string name="title_stretch_screen">Растянуть экран</string>
+    <string name="desc_stretch_screen" formatted="false">Менее 100% расширяет изображение. Более 100% сужает. 100% сохраняет исходный вид.</string>
+    <string name="note_stretch_screen" formatted="false">Применяется один раз в альбомной ориентации только при запуске модифицированного Roblox из Masterstrap. Диапазон 101–200% использует более широкий буфер рендера и может увеличить использование видеопамяти.</string>
+    <string name="value_stretch_screen_percent">%1$d%%</string>
+    <string name="label_stretch_original" formatted="false">100% (Исходный)</string>
     <string name="title_community_links">Официальные каналы и ссылки</string>
+    <string name="link_app_guide_title">Руководство пользователя →</string>
     <string name="title_license_key">Лицензионный ключ</string>
     <string name="desc_license_key">Введите ключ для снятия ограничений и отключения рекламы.</string>
     <string name="plan_free">Бесплатная версия</string>
@@ -161,12 +186,14 @@
     <string name="section_safe_boost">Безопасный буст (Стабильность &amp; Пинг)</string>
     <string name="section_turbo_boost">Turbo Boost</string>
     <string name="title_tab_fastflag_settings">Настройки FastFlag</string>
-    <string name="gm_safe_ram_title">Очистка оперативной памяти (RAM)</string>
-    <string name="gm_safe_ram_desc">Освобождает кэш, делая игру плавнее и предотвращая зависания.</string>
-    <string name="gm_safe_network_title">Оптимизация сети и пинга</string>
-    <string name="gm_safe_network_desc">Стабилизирует передачу пакетов, снижая пинг и лаги.</string>
-    <string name="gm_safe_power_title">Защита от перегрева и просадок FPS</string>
-    <string name="gm_safe_power_desc">Регулирует частоту процессора, защищая от нагрева и удерживая стабильный FPS.</string>
+    <string name="gm_safe_ram_title">Освободить память Masterstrap перед запуском</string>
+    <string name="gm_safe_ram_desc">Просит Android освободить только неиспользуемую память Masterstrap перед запуском Roblox. Другие приложения не закрываются.</string>
+    <string name="gm_safe_network_title">Использовать Wi-Fi с низкой задержкой при запуске</string>
+    <string name="gm_safe_network_desc">Временно запрашивает режим Wi-Fi с низкой задержкой, пока запускается Roblox. Работает только при подключении по Wi-Fi.</string>
+    <string name="gm_safe_power_title">Не давать CPU заснуть при запуске Roblox</string>
+    <string name="gm_safe_power_desc">Не позволяет процессору переходить в сон до 60 секунд во время запуска. Не разгоняет и не меняет частоту CPU.</string>
+    <string name="gm_safe_thermal_title">Остановить ускорение при сильном нагреве</string>
+    <string name="gm_safe_thermal_desc">Проверяет температуру Android перед запуском. При сильном нагреве ускорение Wi-Fi и CPU пропускается, пока устройство не остынет.</string>
     <string name="gm_safe_touch_title">Повышенная чувствительность сенсора</string>
     <string name="gm_safe_touch_desc">Ускоряет реакцию на касания, устраняя задержку управления.</string>
     <string name="gm_safe_frame_pacing_title">Сглаживание кадров (без фризов)</string>
@@ -180,10 +207,18 @@
     <string name="title_community_presets">Пресеты сообщества и игр</string>
     <string name="desc_community_presets">Выберите оптимизированный пресет для вашей игры.</string>
 
+    <!-- Messages & Dialogs -->
     <string name="msg_saved_success">Экспортировано в ClientAppSettings.json!</string>
     <string name="msg_save_failed">Не удалось сохранить настройки.</string>
     <string name="msg_roblox_not_found">Roblox не установлен на устройстве.</string>
     <string name="msg_preset_applied">Пресет успешно применен!</string>
     <string name="msg_license_activated">Лицензия активирована! Реклама отключена.</string>
     <string name="msg_invalid_license">Введите действительный ключ лицензии</string>
+
+    <!-- Mandatory Google Play update -->
+    <string name="dialog_update_required_title">Требуется обновление</string>
+    <string name="dialog_update_badge">Доступно обновление</string>
+    <string name="dialog_update_message">Для продолжения требуется более новая версия Masterstrap. Обновите приложение сейчас.</string>
+    <string name="dialog_update_current_version">Текущая версия: %1$s</string>
+    <string name="dialog_upgrade_now">Обновить сейчас</string>
 </resources>

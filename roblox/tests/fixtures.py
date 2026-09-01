@@ -94,7 +94,19 @@ def encode_bl(pc: int, target: int) -> int:
     return 0x94000000 | ((delta >> 2) & 0x03FFFFFF)
 
 
-def build_macho(*, encrypted: bool = False) -> bytes:
+def _uleb128(value: int) -> bytes:
+    encoded = bytearray()
+    while True:
+        byte = value & 0x7F
+        value >>= 7
+        if value:
+            byte |= 0x80
+        encoded.append(byte)
+        if not value:
+            return bytes(encoded)
+
+
+def build_macho(*, encrypted: bool = False, with_function_starts: bool = False) -> bytes:
     text_sections = [
         _section("__text", "__TEXT", TEXT_ADDRESS, 0x280, TEXT_FILE_OFFSET, 0),
         _section("__cstring", "__TEXT", CSTRING_ADDRESS, 0x300, CSTRING_FILE_OFFSET, 0x2),
@@ -109,6 +121,16 @@ def build_macho(*, encrypted: bool = False) -> bytes:
         struct.pack("<IIIII", 0x2C, 24, 0x400, 0x200, 1 if encrypted else 0) + struct.pack("<I", 0),
         struct.pack("<IIIIII", 0x32, 24, 2, 0x00100000, 0x00110000, 0),
     ]
+    function_starts_blob = b""
+    if with_function_starts:
+        starts = [TEXT_ADDRESS, TEXT_ADDRESS + 0x80, TEXT_ADDRESS + 0x100, TEXT_ADDRESS + 0x180]
+        previous = BASE
+        encoded_starts = bytearray()
+        for value in starts:
+            encoded_starts.extend(_uleb128(value - previous))
+            previous = value
+        function_starts_blob = bytes(encoded_starts) + b"\0"
+        commands.append(struct.pack("<IIII", 0x26, 16, 0x1F00, len(function_starts_blob)))
     command_blob = b"".join(commands)
     header = struct.pack(
         "<IiiIIIII",
@@ -124,6 +146,8 @@ def build_macho(*, encrypted: bool = False) -> bytes:
     data = bytearray(0x2000)
     data[: len(header)] = header
     data[len(header) : len(header) + len(command_blob)] = command_blob
+    if function_starts_blob:
+        data[0x1F00 : 0x1F00 + len(function_starts_blob)] = function_starts_blob
 
     strings = {
         "EnableLoadModule": CSTRING_ADDRESS,
