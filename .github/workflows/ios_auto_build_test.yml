@@ -1,4 +1,4 @@
-﻿name: Masterstrap Roblox iOS Auto Build & Test
+name: Masterstrap Roblox iOS Auto Build & Test
 
 on:
   push:
@@ -18,7 +18,9 @@ permissions:
 
 jobs:
   build-and-test:
-    runs-on: macos-14
+    # LevelPlay 9.6 requires Xcode 26. The macos-26 runner provides it as the
+    # default toolchain, while macos-14 is in deprecation and cannot link this SDK.
+    runs-on: macos-26
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -34,7 +36,40 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          pip install pyyaml capstone
+          pip install pyyaml capstone Pillow
+
+      - name: Verify iOS bridge and ad-gate contracts
+        run: |
+          PYTHONPATH=roblox python -m unittest discover -s roblox/tests -t roblox -p 'test_*.py' -v
+
+      - name: Build Masterstrap iOS with official LevelPlay SDK
+        id: levelplay
+        shell: bash
+        env:
+          IOS_LEVELPLAY_APP_KEY: ${{ secrets.IOS_LEVELPLAY_APP_KEY }}
+          IOS_LEVELPLAY_REWARDED_ID: ${{ secrets.IOS_LEVELPLAY_REWARDED_ID }}
+          IOS_LEVELPLAY_BANNER_ID: ${{ secrets.IOS_LEVELPLAY_BANNER_ID }}
+          IOS_LEVELPLAY_INTERSTITIAL_ID: ${{ secrets.IOS_LEVELPLAY_INTERSTITIAL_ID }}
+        run: |
+          if [ -z "$IOS_LEVELPLAY_APP_KEY" ] || [ -z "$IOS_LEVELPLAY_REWARDED_ID" ] || \
+             [ -z "$IOS_LEVELPLAY_BANNER_ID" ] || [ -z "$IOS_LEVELPLAY_INTERSTITIAL_ID" ]; then
+            echo "::warning::Masterstrap.ipa was not built because one or more iOS LevelPlay secrets are missing."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          curl -fL --retry 3 \
+            "https://raw.githubusercontent.com/ironsource-mobile/iOS-sdk/master/9.6.0/IronSource9.6.0.zip" \
+            -o /tmp/IronSource9.6.0.zip
+          rm -rf /tmp/masterstrap-levelplay
+          mkdir -p /tmp/masterstrap-levelplay output
+          ditto -x -k /tmp/IronSource9.6.0.zip /tmp/masterstrap-levelplay
+          LEVELPLAY_FRAMEWORK="/tmp/masterstrap-levelplay/IronSource/IronSource.xcframework/ios-arm64/IronSource.framework"
+          test -f "$LEVELPLAY_FRAMEWORK/IronSource"
+          test -f "$LEVELPLAY_FRAMEWORK/PrivacyInfo.xcprivacy"
+          python tools/build_masterstrap_app_ipa.py \
+            --out-dir output \
+            --levelplay-framework "$LEVELPLAY_FRAMEWORK"
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
 
       - name: Resolve & Download Decrypted Roblox iOS IPA
         id: prepare-ipa
@@ -110,7 +145,8 @@ jobs:
           python tools/build_integrated_roblox_ipa.py \
             --input-ipa "${{ steps.prepare-ipa.outputs.ipa_path }}" \
             --hpp "output/FFlags.hpp" \
-            --out-dir "output"
+            --out-dir "output" \
+            --no-embedded-flags
 
       - name: Inspect Verification Log & Miss Offsets
         run: |
@@ -119,14 +155,32 @@ jobs:
             cat output/flag_inject_report.log
           fi
 
-      - name: Upload Build Artifacts & Logs
+      - name: Upload Build Logs & Reports
         uses: actions/upload-artifact@v4
         with:
-          name: masterstrap-ios-build-artifacts
+          name: masterstrap-ios-build-logs
           path: |
-            output/*.ipa
             output/flag_inject_report.log
             output/masterstrap_ios.log
             output/FFlags.hpp
             output/Offsets.hpp
           if-no-files-found: warn
+          retention-days: 1
+
+      - name: Publish iOS IPA to GitHub Release
+        if: steps.prepare-ipa.outputs.available == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: release-ios-${{ github.run_number }}
+          name: Masterstrap Roblox Patched iOS (Build ${{ github.run_number }})
+          body: |
+            ## Masterstrap Roblox Patched iOS
+            - Patched IPA: ready to sideload via TrollStore, AltStore, Sideloadly, or Scarlet.
+            - Includes compiled Native Hook and current FastFlags/Offsets.
+          files: |
+            output/*.ipa
+            output/flag_inject_report.log
+            output/FFlags.hpp
+            output/Offsets.hpp
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,62 @@
+name: Validate Roblox iOS Dumper
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "roblox/**"
+      - ".github/workflows/ios-dumper-validation.yml"
+  push:
+    branches: [ master, main ]
+    paths:
+      - "roblox/**"
+      - ".github/workflows/ios-dumper-validation.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  static-validation:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: roblox
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Compile package
+        run: python -m compileall -q roblox_ios_dumper tests
+
+      - name: Run unit and regression tests
+        run: python -m unittest discover -s tests -t . -v
+
+      - name: Create synthetic ARM64e IPA fixture
+        run: python -c "from pathlib import Path; from tests.fixtures import build_ipa; build_ipa(Path('fixture.ipa'))"
+
+      - name: Dump fixture
+        run: >-
+          python -m roblox_ios_dumper dump fixture.ipa
+          --known-fflags missing.hpp
+          --known-json-root missing-json
+          --output workflow-output
+
+      - name: Verify identity, RVAs, evidence, and generated headers
+        run: >-
+          python -m roblox_ios_dumper verify workflow-output
+          --input fixture.ipa
+          --min-flag-coverage 0.50
+
+      - name: Upload evidence report
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-dumper-static-evidence
+          path: roblox/workflow-output/
+          if-no-files-found: error
+          retention-days: 1
+
