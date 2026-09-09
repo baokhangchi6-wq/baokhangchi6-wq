@@ -878,8 +878,17 @@ def compile_native_executable(
             framework_flags = []
             for fdir in framework_dirs:
                 framework_flags.extend(["-F", fdir])
-            for fname in framework_names:
-                framework_flags.extend(["-framework", fname])
+
+            # Pass -force_load for static archives to load all symbols and preserve
+            # Swift type metadata sections without dead-stripping. Do NOT also pass
+            # -framework for these static libraries, to prevent duplicate symbols!
+            for fdir, fname in zip(framework_dirs, framework_names):
+                lib_file = Path(fdir) / f"{fname}.framework" / fname
+                if lib_file.is_file():
+                    framework_flags.extend(["-Wl,-force_load", str(lib_file)])
+                    print(f"[LevelPlay] Linking with -force_load: {lib_file.name}")
+                else:
+                    framework_flags.extend(["-framework", fname])
 
             framework_flags.extend([
                 "-ObjC",
@@ -895,13 +904,6 @@ def compile_native_executable(
                 "-framework", "Network", "-framework", "AVFAudio",
                 "-lz",
             ])
-            # Pass -force_load for static archives to prevent linker from dead-stripping
-            # Swift type metadata sections (__swift5_types, __swift5_reflstr, etc.)
-            for fdir, fname in zip(framework_dirs, framework_names):
-                lib_file = Path(fdir) / f"{fname}.framework" / fname
-                if lib_file.is_file():
-                    framework_flags.extend(["-Wl,-force_load", str(lib_file)])
-                    print(f"[LevelPlay] Preserving Swift metadata with -force_load: {lib_file.name}")
 
             # IronSource 9.6+ and UnityAds contain Swift code — the linker needs the
             # Swift runtime compatibility libraries (libswiftCompatibility50/51/56 etc.)

@@ -1,10 +1,6 @@
 name: Masterstrap Roblox iOS Auto Build & Test
 
 on:
-  push:
-    branches: [ master, main ]
-  pull_request:
-    branches: [ master, main ]
   workflow_dispatch:
     inputs:
       ipa_url:
