@@ -61,17 +61,19 @@ jobs:
             "https://github.com/Unity-Technologies/unity-ads-ios/releases/download/4.20.0/UnityAds.zip" \
             -o /tmp/UnityAds.zip
           rm -rf /tmp/masterstrap-levelplay
-          mkdir -p /tmp/masterstrap-levelplay/IronSource /tmp/masterstrap-levelplay/ISUnityAdsAdapter /tmp/masterstrap-levelplay/UnityAds output
-          ditto -x -k /tmp/IronSource9.6.0.zip /tmp/masterstrap-levelplay/IronSource
-          ditto -x -k /tmp/ISUnityAdsAdapter5.11.0.zip /tmp/masterstrap-levelplay/ISUnityAdsAdapter
+          mkdir -p /tmp/masterstrap-levelplay output
+          ditto -x -k /tmp/IronSource9.6.0.zip /tmp/masterstrap-levelplay
+          ditto -x -k /tmp/ISUnityAdsAdapter5.11.0.zip /tmp/masterstrap-levelplay
           ditto -x -k /tmp/UnityAds.zip /tmp/masterstrap-levelplay/UnityAds
-          LEVELPLAY_FRAMEWORK="/tmp/masterstrap-levelplay/IronSource/IronSource.xcframework/ios-arm64/IronSource.framework"
-          UNITYADS_ADAPTER_FRAMEWORK="/tmp/masterstrap-levelplay/ISUnityAdsAdapter/ISUnityAdsAdapter/ISUnityAdsAdapter.xcframework/ios-arm64/ISUnityAdsAdapter.framework"
-          UNITYADS_FRAMEWORK="/tmp/masterstrap-levelplay/UnityAds/UnityAds.xcframework/ios-arm64/UnityAds.framework"
-          test -f "$LEVELPLAY_FRAMEWORK/IronSource"
-          test -f "$LEVELPLAY_FRAMEWORK/PrivacyInfo.xcprivacy"
-          test -f "$UNITYADS_ADAPTER_FRAMEWORK/ISUnityAdsAdapter"
-          test -f "$UNITYADS_FRAMEWORK/UnityAds"
+          LEVELPLAY_FRAMEWORK=$(find /tmp/masterstrap-levelplay -type d -name "IronSource.framework" | grep "ios-arm64/" | grep -v "simulator" | head -n 1)
+          UNITYADS_ADAPTER_FRAMEWORK=$(find /tmp/masterstrap-levelplay -type d -name "ISUnityAdsAdapter.framework" | grep "ios-arm64/" | grep -v "simulator" | head -n 1)
+          UNITYADS_FRAMEWORK=$(find /tmp/masterstrap-levelplay -type d -name "UnityAds.framework" | grep "ios-arm64/" | grep -v "simulator" | head -n 1)
+          echo "IronSource Framework: $LEVELPLAY_FRAMEWORK"
+          echo "ISUnityAdsAdapter Framework: $UNITYADS_ADAPTER_FRAMEWORK"
+          echo "UnityAds Framework: $UNITYADS_FRAMEWORK"
+          test -n "$LEVELPLAY_FRAMEWORK" && test -f "$LEVELPLAY_FRAMEWORK/IronSource"
+          test -n "$UNITYADS_ADAPTER_FRAMEWORK" && test -f "$UNITYADS_ADAPTER_FRAMEWORK/ISUnityAdsAdapter"
+          test -n "$UNITYADS_FRAMEWORK" && test -f "$UNITYADS_FRAMEWORK/UnityAds"
           python tools/build_masterstrap_app_ipa.py \
             --out-dir output \
             --levelplay-framework "$LEVELPLAY_FRAMEWORK" \
