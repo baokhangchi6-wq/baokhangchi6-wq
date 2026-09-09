@@ -846,6 +846,20 @@ def compile_native_executable(
                 "-framework", "Network", "-framework", "AVFAudio",
                 "-lz",
             ])
+            # IronSource 9.6+ and UnityAds contain Swift code — the linker needs the
+            # Swift runtime compatibility libraries (libswiftCompatibility50/51/56 etc.)
+            # Add the Xcode toolchain Swift stdlib directory so auto-linking resolves.
+            swift_find = subprocess.run(
+                ["xcrun", "--find", "swift"], capture_output=True, text=True
+            )
+            if swift_find.returncode == 0 and swift_find.stdout.strip():
+                swift_bin = Path(swift_find.stdout.strip())
+                # e.g. /Applications/Xcode_26.0.app/.../Toolchains/XcodeDefault.xctoolchain/usr/bin/swift
+                # Swift libs are at: usr/lib/swift/iphoneos
+                swift_lib_dir = swift_bin.parent.parent / "lib" / "swift" / "iphoneos"
+                if swift_lib_dir.is_dir():
+                    framework_flags.extend(["-L", str(swift_lib_dir)])
+                    print(f"[LevelPlay] Swift stdlib path: {swift_lib_dir}")
         link_cmd = [
             "xcrun", "clang", "-target", "arm64-apple-ios14.0",
             "-isysroot", sdk_path, *objects, *framework_flags,
