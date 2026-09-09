@@ -13,6 +13,7 @@ static NSString *MSPendingRequest;
 static NSString *MSPendingFormat;
 static NSString *MSRewardedAdUnitId;
 static NSString *MSInterstitialAdUnitId;
+static NSString *MSBannerAdUnitId;
 static BOOL MSRewardEarned;
 static BOOL MSInitialized;
 static BOOL MSInitializationStarted;
@@ -121,12 +122,14 @@ static void MSInitializeLevelPlay(BOOL gdprConsent, BOOL ccpaOptOut) {
     NSString *appKey = info[@"MSLevelPlayAppKey"];
     NSString *rewardedId = info[@"MSLevelPlayRewardedAdUnitId"];
     NSString *interstitialId = info[@"MSLevelPlayInterstitialAdUnitId"];
+    NSString *bannerId = info[@"MSLevelPlayBannerAdUnitId"];
     if (appKey.length == 0 || rewardedId.length == 0) {
         MSLog(@"SDK disabled: missing iOS app key or ad-unit ID");
         return;
     }
     if (interstitialId.length == 0) interstitialId = rewardedId;
     if (bannerId.length == 0) bannerId = rewardedId;
+    MSBannerAdUnitId = bannerId;
 
     // Match Android: an explicit user choice is applied before LevelPlay init.
     [LPMPrivacySettings setGDPRConsent:gdprConsent];
@@ -261,7 +264,9 @@ void MSLevelPlaySetBannerVisible(int visible) {
         return;
     }
     if (MSBanner) return;
-    NSString *bannerId = NSBundle.mainBundle.infoDictionary[@"MSLevelPlayBannerAdUnitId"];
+    NSString *bannerId = MSBannerAdUnitId ?: NSBundle.mainBundle.infoDictionary[@"MSLevelPlayBannerAdUnitId"];
+    if (bannerId.length == 0) bannerId = MSRewardedAdUnitId;
+    if (bannerId.length == 0) return;
     MSBanner = [[LPMBannerAdView alloc] initWithAdUnitId:bannerId];
     [MSBanner setDelegate:MSDelegate];
     MSBanner.translatesAutoresizingMaskIntoConstraints = NO;
