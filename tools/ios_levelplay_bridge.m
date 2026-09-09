@@ -158,20 +158,6 @@ static void MSInitializeLevelPlay(BOOL gdprConsent, BOOL ccpaOptOut) {
                 MSRewardedAdUnitId = rewardedId;
                 MSInterstitialAdUnitId = interstitialId;
                 MSLog(@"init complete; LevelPlay SDK ready");
-                @try {
-                    MSRewarded = [[LPMRewardedAd alloc] initWithAdUnitId:rewardedId];
-                    [MSRewarded setDelegate:MSDelegate];
-                    [MSRewarded loadAd];
-                } @catch (NSException *rx) {
-                    MSLog(@"Rewarded ad pre-warm error: %@ - %@", rx.name, rx.reason);
-                }
-                @try {
-                    MSInterstitial = [[LPMInterstitialAd alloc] initWithAdUnitId:interstitialId];
-                    [MSInterstitial setDelegate:MSDelegate];
-                    [MSInterstitial loadAd];
-                } @catch (NSException *ix) {
-                    MSLog(@"Interstitial ad pre-warm error: %@ - %@", ix.name, ix.reason);
-                }
                 MSTryShowPending();
             } @catch (NSException *e) {
                 MSLog(@"LevelPlay completion block caught exception: %@ - %@", e.name, e.reason);
