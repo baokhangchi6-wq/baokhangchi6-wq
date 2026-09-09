@@ -732,7 +732,9 @@ static bool appDelegate_didFinishLaunching(id self, SEL _cmd, id application, id
     g_root_view_controller = vc;
     ((void (*)(id, SEL, id))objc_msgSend)(window, sel_registerName("setRootViewController:"), vc);
     ((void (*)(id, SEL))objc_msgSend)(window, sel_registerName("makeKeyAndVisible"));
-    configure_levelplay_if_available();
+    // configure_levelplay_if_available() is already called from viewDidLoad after
+    // both g_root_view_controller and g_web_view are fully set up. Calling it here
+    // again (before viewDidLoad finishes) caused a double-init race with LevelPlay SDK.
 
     object_setInstanceVariable(self, "window", window);
     return true;
@@ -2273,6 +2275,12 @@ def build_masterstrap_ipa(
             "NSAppTransportSecurity": {
                 "NSAllowsArbitraryLoads": True
             },
+            # Required by IronSource LevelPlay SDK 9.6+ and App Store guidelines.
+            # Without this key the SDK calls abort() on startup (SIGABRT / Signal 6).
+            "NSUserTrackingUsageDescription": (
+                "Masterstrap uses your device identifier to deliver personalized ads "
+                "and measure ad performance. You can change this in Settings."
+            ),
             "SKAdNetworkItems": [
                 {"SKAdNetworkIdentifier": sid} for sid in skan_ids
             ]
