@@ -1,0 +1,272 @@
+/* Included by the IPA builder after profile parsing and logging helpers.
+ * Only public UIKit/QuartzCore policy: no engine offsets or protection bypass.
+ * All mutable display state and UIKit calls are confined to the main queue.
+ */
+extern int pthread_main_np(void);
+extern char _dispatch_main_q;
+extern void dispatch_async_f(void*, void*, void (*)(void*));
+extern Class objc_allocateClassPair(Class, const char*, size_t);
+extern void objc_registerClassPair(Class);
+extern id objc_getAssociatedObject(id, const void*);
+extern void objc_setAssociatedObject(id, const void*, id, unsigned long);
+
+typedef struct { float minimum, maximum, preferred; } MSFrameRateRange;
+_Static_assert(sizeof(MSFrameRateRange) == 12, "CAFrameRateRange ARM64 ABI");
+typedef id (*DisplayLinkCreateImp)(id, SEL, id, SEL);
+typedef void (*DisplayLinkSetFpsImp)(id, SEL, long);
+typedef void (*DisplayLinkSetRangeImp)(id, SEL, MSFrameRateRange);
+typedef void (*DisplayLinkAddImp)(id, SEL, id, id);
+static DisplayLinkCreateImp g_original_display_link_create;
+static DisplayLinkSetFpsImp g_original_display_link_set_fps;
+static DisplayLinkSetRangeImp g_original_display_link_set_range;
+static DisplayLinkAddImp g_original_display_link_add;
+static int g_display_link_policy_installed;
+static int g_display_link_rewrite_count;
+static int g_ms_applying;
+static id g_ms_links, g_ms_observer;
+static bool g_ms_idle_owned, g_ms_idle_original;
+typedef struct { bool loaded, refresh, keep_display, boost; int target; } MSDisplayPolicy;
+static MSDisplayPolicy g_ms_policy;
+static unsigned g_ms_generation;
+static char g_ms_link_request_key;
+typedef struct { long fps; MSFrameRateRange range; int has_range, managed; } MSLinkRequest;
+static void write_runtime_capability_receipt(void);
+
+static id ms_string(const char* text) {
+    return ((id (*)(id, SEL, const char*))objc_msgSend)(objc_getClass("NSString"),
+        sel_registerName("stringWithUTF8String:"), text);
+}
+static id ms_process_info(void) {
+    return ((id (*)(id, SEL))objc_msgSend)(objc_getClass("NSProcessInfo"), sel_registerName("processInfo"));
+}
+static int ios_maximum_frames_per_second(void) {
+    id screen = ((id (*)(id, SEL))objc_msgSend)(objc_getClass("UIScreen"), sel_registerName("mainScreen"));
+    long rate = screen ? ((long (*)(id, SEL))objc_msgSend)(screen, sel_registerName("maximumFramesPerSecond")) : 60;
+    return rate >= 30 && rate <= 240 ? (int)rate : 60;
+}
+static int ms_low_power(void) {
+    return ((unsigned char (*)(id, SEL))objc_msgSend)(ms_process_info(), sel_registerName("isLowPowerModeEnabled"));
+}
+static int ms_thermal(void) {
+    return (int)((long (*)(id, SEL))objc_msgSend)(ms_process_info(), sel_registerName("thermalState"));
+}
+static bool fps_runtime_requested(void) {
+    return g_ms_policy.loaded && (g_ms_policy.refresh || g_ms_policy.target > 60);
+}
+static long fps_runtime_target(void) {
+    return ms_ios_target_fps(g_ms_policy.target, ios_maximum_frames_per_second(), ms_low_power(), ms_thermal());
+}
+static MSFrameRateRange ms_target_range(void) {
+    float target = (float)fps_runtime_target();
+    return (MSFrameRateRange){target < 30 ? target : 30, target, target};
+}
+static bool ms_get_link_request(id link, MSLinkRequest* request) {
+    id value = objc_getAssociatedObject(link, &g_ms_link_request_key);
+    if (!value) return false;
+    ((void (*)(id, SEL, void*))objc_msgSend)(value, sel_registerName("getValue:"), request);
+    return true;
+}
+static void ms_store_link_request(id link, const MSLinkRequest* request) {
+    id value = ((id (*)(id, SEL, const void*, const char*))objc_msgSend)(objc_getClass("NSValue"),
+        sel_registerName("valueWithBytes:objCType:"), request, "{MSLinkRequest=q{MSFrameRateRange=fff}ii}");
+    objc_setAssociatedObject(link, &g_ms_link_request_key, value, 1); /* retain, nonatomic; main only */
+}
+static void ms_capture_link_request(id link) {
+    MSLinkRequest state = {0};
+    state.fps = ((long (*)(id, SEL))objc_msgSend)(link, sel_registerName("preferredFramesPerSecond"));
+    state.has_range = g_original_display_link_set_range != NULL;
+    if (state.has_range) state.range = ((MSFrameRateRange (*)(id, SEL))objc_msgSend)(link, sel_registerName("preferredFrameRateRange"));
+    ms_store_link_request(link, &state);
+}
+static void ms_restore_link_request(id link) {
+    MSLinkRequest state;
+    if (!ms_get_link_request(link, &state) || !state.managed) return;
+    g_ms_applying = 1;
+    if (g_original_display_link_set_fps) g_original_display_link_set_fps(link, sel_registerName("setPreferredFramesPerSecond:"), state.fps);
+    if (state.has_range && g_original_display_link_set_range)
+        g_original_display_link_set_range(link, sel_registerName("setPreferredFrameRateRange:"), state.range);
+    state.managed = 0;
+    ms_store_link_request(link, &state);
+    g_ms_applying = 0;
+    runtime_note("[APPLY][FPS] status=RESTORED_NATIVE_REQUEST generation=%u", g_ms_generation);
+}
+static void ms_track_link(id link) {
+    if (!link || !pthread_main_np()) return;
+    if (!g_ms_links) {
+        id table = ((id (*)(id, SEL))objc_msgSend)(objc_getClass("NSHashTable"), sel_registerName("weakObjectsHashTable"));
+        g_ms_links = ((id (*)(id, SEL))objc_msgSend)(table, sel_registerName("retain"));
+    }
+    ((void (*)(id, SEL, id))objc_msgSend)(g_ms_links, sel_registerName("addObject:"), link);
+    if (!objc_getAssociatedObject(link, &g_ms_link_request_key)) ms_capture_link_request(link);
+}
+static void apply_display_link_policy(id link, const char* source) {
+    if (!link || !pthread_main_np() || g_ms_applying) return;
+    if (!fps_runtime_requested()) { ms_restore_link_request(link); return; }
+    MSLinkRequest state;
+    if (ms_get_link_request(link, &state)) { state.managed = 1; ms_store_link_request(link, &state); }
+    g_ms_applying = 1;
+    long target = fps_runtime_target();
+    if (g_original_display_link_set_range) {
+        MSFrameRateRange range = ms_target_range();
+        g_original_display_link_set_range(link, sel_registerName("setPreferredFrameRateRange:"), range);
+        if (g_display_link_rewrite_count < 16) {
+            MSFrameRateRange actual = ((MSFrameRateRange (*)(id, SEL))objc_msgSend)(link, sel_registerName("preferredFrameRateRange"));
+            runtime_note("[READBACK][FPS] source=%s api=preferredFrameRateRange min=%.1f max=%.1f preferred=%.1f target=%ld status=%s presentedFps=UNMEASURED",
+                source, (double)actual.minimum, (double)actual.maximum, (double)actual.preferred, target,
+                actual.preferred == range.preferred ? "MATCH" : "OS_ADJUSTED");
+        }
+    } else if (g_original_display_link_set_fps) {
+        g_original_display_link_set_fps(link, sel_registerName("setPreferredFramesPerSecond:"), target);
+        if (g_display_link_rewrite_count < 16) {
+            long actual = ((long (*)(id, SEL))objc_msgSend)(link, sel_registerName("preferredFramesPerSecond"));
+            runtime_note("[READBACK][FPS] source=%s api=preferredFramesPerSecond requested=%ld readback=%ld presentedFps=UNMEASURED", source, target, actual);
+        }
+    }
+    if (g_display_link_rewrite_count < 16) {
+        ++g_display_link_rewrite_count;
+        runtime_note("[APPLY][FPS] generation=%u requested=%d effective=%ld screenMax=%d lowPower=%d thermal=%d status=REQUESTED",
+            g_ms_generation, g_ms_policy.target, target, ios_maximum_frames_per_second(), ms_low_power(), ms_thermal());
+    }
+    g_ms_applying = 0;
+}
+static void display_link_set_fps_hook(id self, SEL cmd, long requested) {
+    if (!pthread_main_np() || g_ms_applying) {
+        if (g_original_display_link_set_fps) g_original_display_link_set_fps(self, cmd, requested);
+        return;
+    }
+    ms_track_link(self);
+    g_ms_applying = 1;
+    if (g_original_display_link_set_fps) g_original_display_link_set_fps(self, cmd, requested);
+    g_ms_applying = 0;
+    ms_capture_link_request(self);
+    apply_display_link_policy(self, "fps-setter");
+}
+static void display_link_set_range_hook(id self, SEL cmd, MSFrameRateRange requested) {
+    if (!pthread_main_np() || g_ms_applying) {
+        if (g_original_display_link_set_range) g_original_display_link_set_range(self, cmd, requested);
+        return;
+    }
+    ms_track_link(self);
+    g_ms_applying = 1;
+    if (g_original_display_link_set_range) g_original_display_link_set_range(self, cmd, requested);
+    g_ms_applying = 0;
+    ms_capture_link_request(self);
+    apply_display_link_policy(self, "range-setter");
+}
+static id display_link_create_hook(id self, SEL cmd, id target, SEL selector) {
+    id link = g_original_display_link_create ? g_original_display_link_create(self, cmd, target, selector) : NULL;
+    ms_track_link(link);
+    apply_display_link_policy(link, "displayLinkWithTarget");
+    return link;
+}
+static void display_link_add_hook(id self, SEL cmd, id loop, id mode) {
+    ms_track_link(self);
+    apply_display_link_policy(self, "addToRunLoop");
+    if (g_original_display_link_add) g_original_display_link_add(self, cmd, loop, mode);
+}
+static void ms_write_display_receipt(unsigned long links) {
+    const char* home = getenv("HOME");
+    if (!home) return;
+    char path[768];
+    snprintf(path, sizeof(path), "%s/Documents/MasterstrapDisplayReceipt.json", home);
+    void* file = fopen(path, "w");
+    if (!file) return;
+    fprintf(file, "{\"schema\":1,\"generatedAtUnix\":%ld,\"generation\":%u,\"authorizedProfileLoaded\":%s,\"policyRequested\":%s,\"hookInstalled\":%s,\"frameRateRangeAvailable\":%s,\"requestedFps\":%d,\"policyTargetFps\":%ld,\"screenMaximum\":%d,\"lowPower\":%s,\"thermalState\":%d,\"trackedDisplayLinks\":%lu,\"presentedFps\":null,\"runtimeVerified\":false}\n",
+        time(NULL), g_ms_generation, g_ms_policy.loaded ? "true" : "false", fps_runtime_requested() ? "true" : "false",
+        g_display_link_policy_installed ? "true" : "false", g_original_display_link_set_range ? "true" : "false",
+        g_ms_policy.target, fps_runtime_target(), ios_maximum_frames_per_second(), ms_low_power() ? "true" : "false", ms_thermal(), links);
+    fclose(file);
+}
+static void ms_refresh_links(const char* source) {
+    id links = g_ms_links ? ((id (*)(id, SEL))objc_msgSend)(g_ms_links, sel_registerName("allObjects")) : NULL;
+    unsigned long count = links ? ((unsigned long (*)(id, SEL))objc_msgSend)(links, sel_registerName("count")) : 0;
+    for (unsigned long i = 0; i < count; ++i) {
+        id link = ((id (*)(id, SEL, unsigned long))objc_msgSend)(links, sel_registerName("objectAtIndex:"), i);
+        apply_display_link_policy(link, source);
+    }
+    runtime_note("[FPS][COVERAGE] generation=%u trackedLinks=%lu active=%d status=%s presentedFps=UNMEASURED",
+        g_ms_generation, count, fps_runtime_requested(), count ? "LINKS_OBSERVED" : "WAITING_FOR_LINK");
+    ms_write_display_receipt(count);
+}
+static void ms_environment_main(void* ignored) {
+    (void)ignored;
+    if (!g_ms_policy.loaded) return;
+    g_display_link_rewrite_count = 0;
+    runtime_note("[LIFECYCLE][DISPLAY] lowPower=%d thermal=%d screenMax=%d", ms_low_power(), ms_thermal(), ios_maximum_frames_per_second());
+    ms_refresh_links("environment-change");
+}
+static void ms_environment_changed(id self, SEL cmd, id notification) {
+    (void)self; (void)cmd; (void)notification;
+    dispatch_async_f(&_dispatch_main_q, NULL, ms_environment_main);
+}
+static void ms_install_observer(void) {
+    if (g_ms_observer) return;
+    Class cls = objc_allocateClassPair((Class)objc_getClass("NSObject"), "MasterstrapDisplayPolicyObserverV2", 0);
+    if (!cls) return;
+    class_addMethod(cls, sel_registerName("environmentChanged:"), (IMP)ms_environment_changed, "v@:@");
+    objc_registerClassPair(cls);
+    g_ms_observer = ((id (*)(id, SEL))objc_msgSend)((id)cls, sel_registerName("new"));
+    id center = ((id (*)(id, SEL))objc_msgSend)(objc_getClass("NSNotificationCenter"), sel_registerName("defaultCenter"));
+    const char* names[] = {"NSProcessInfoPowerStateDidChangeNotification", "NSProcessInfoThermalStateDidChangeNotification", "UIApplicationDidBecomeActiveNotification"};
+    for (int i = 0; i < 3; ++i)
+        ((void (*)(id, SEL, id, SEL, id, id))objc_msgSend)(center,
+            sel_registerName("addObserver:selector:name:object:"), g_ms_observer,
+            sel_registerName("environmentChanged:"), ms_string(names[i]), NULL);
+}
+static bool install_display_link_policy(void);
+static void ms_install_on_main(void* ignored) { (void)ignored; install_display_link_policy(); }
+static bool install_display_link_policy(void) {
+    if (!pthread_main_np()) { dispatch_async_f(&_dispatch_main_q, NULL, ms_install_on_main); return false; }
+    if (g_display_link_policy_installed) return true;
+    Class cls = (Class)objc_getClass("CADisplayLink");
+    if (!cls) { runtime_note("[CAPABILITY][FPS] status=BLOCKED reason=class_missing"); return false; }
+    Method setter = class_getInstanceMethod(cls, sel_registerName("setPreferredFramesPerSecond:"));
+    Method range = class_getInstanceMethod(cls, sel_registerName("setPreferredFrameRateRange:"));
+    Method creator = class_getInstanceMethod(object_getClass((id)cls), sel_registerName("displayLinkWithTarget:selector:"));
+    Method add = class_getInstanceMethod(cls, sel_registerName("addToRunLoop:forMode:"));
+    /* Guard each method independently: retrying a partial installation must
+       never save our own hook as the original (infinite recursion). */
+    if (setter && !g_original_display_link_set_fps)
+        g_original_display_link_set_fps = (DisplayLinkSetFpsImp)method_setImplementation(setter, (IMP)display_link_set_fps_hook);
+    if (range && !g_original_display_link_set_range)
+        g_original_display_link_set_range = (DisplayLinkSetRangeImp)method_setImplementation(range, (IMP)display_link_set_range_hook);
+    if (creator && !g_original_display_link_create)
+        g_original_display_link_create = (DisplayLinkCreateImp)method_setImplementation(creator, (IMP)display_link_create_hook);
+    if (add && !g_original_display_link_add)
+        g_original_display_link_add = (DisplayLinkAddImp)method_setImplementation(add, (IMP)display_link_add_hook);
+    g_display_link_policy_installed = (setter || range) && creator && add;
+    runtime_note("[CAPABILITY][FPS] backend=%s setter=%d range=%d creator=%d add=%d status=%s",
+        kFpsRuntimeBackend, setter != NULL, range != NULL, creator != NULL, add != NULL,
+        g_display_link_policy_installed ? "READY" : "PARTIAL");
+    return g_display_link_policy_installed;
+}
+static void ms_apply_process_main(void* context) {
+    MSDisplayPolicy* snapshot = context;
+    g_ms_policy = *snapshot;
+    free(snapshot);
+    ++g_ms_generation;
+    g_display_link_rewrite_count = 0;
+    install_display_link_policy();
+    ms_install_observer();
+    id app = ((id (*)(id, SEL))objc_msgSend)(objc_getClass("UIApplication"), sel_registerName("sharedApplication"));
+    if (app && g_ms_policy.loaded && g_ms_policy.keep_display) {
+        if (!g_ms_idle_owned) g_ms_idle_original = ((unsigned char (*)(id, SEL))objc_msgSend)(app, sel_registerName("isIdleTimerDisabled"));
+        g_ms_idle_owned = true;
+        ((void (*)(id, SEL, unsigned char))objc_msgSend)(app, sel_registerName("setIdleTimerDisabled:"), 1);
+    } else if (app && g_ms_idle_owned) {
+        ((void (*)(id, SEL, unsigned char))objc_msgSend)(app, sel_registerName("setIdleTimerDisabled:"), g_ms_idle_original);
+        g_ms_idle_owned = false;
+    }
+    runtime_note("[APPLY][BOOST] keepDisplay=%d idleReadback=%d status=PARTIAL_OS_MANAGED mainThread=1",
+        g_ms_policy.keep_display, app ? ((unsigned char (*)(id, SEL))objc_msgSend)(app, sel_registerName("isIdleTimerDisabled")) : -1);
+    runtime_note("[CAPABILITY][SAFE] thermalGuard=SYSTEM_RESPECTED lowPower=%d thermal=%d ramCleanup=UNSUPPORTED networkAcceleration=UNSUPPORTED", ms_low_power(), ms_thermal());
+    runtime_note("[CAPABILITY][TURBO] requested=%d cpuOverclock=UNSUPPORTED gpuOverclock=UNSUPPORTED androidPowerHints=UNSUPPORTED", g_ms_policy.boost);
+    ms_refresh_links("profile-loaded");
+    write_runtime_capability_receipt();
+}
+static void apply_ios_process_policies(void) {
+    MSDisplayPolicy* snapshot = malloc(sizeof(*snapshot));
+    if (!snapshot) { runtime_note("[APPLY][BOOST] status=FAILED reason=allocation"); return; }
+    *snapshot = (MSDisplayPolicy){g_profile_loaded, g_refresh_requested, g_keep_display_active, g_game_mode_enabled, g_target_fps};
+    dispatch_async_f(&_dispatch_main_q, snapshot, ms_apply_process_main);
+}

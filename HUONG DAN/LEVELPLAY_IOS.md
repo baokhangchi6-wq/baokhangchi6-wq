@@ -17,15 +17,14 @@ Rewarded luôn fail-closed. Callback đóng quảng cáo không được xem là
 
 Tạo đúng bốn repository secrets sau bằng thông tin của ứng dụng **iOS** trong LevelPlay:
 
-- `IOS_LEVELPLAY_APP_KEY`
-- `IOS_LEVELPLAY_REWARDED_ID`
-- `IOS_LEVELPLAY_BANNER_ID`
-- `IOS_LEVELPLAY_INTERSTITIAL_ID`
+- `IOS_LEVELPLAY_APP_KEY`: `28072d93d`
+- `IOS_LEVELPLAY_REWARDED_ID`: `Rewarded_iOS`
+- `IOS_LEVELPLAY_BANNER_ID`: `Banner_iOS`
+- `IOS_LEVELPLAY_INTERSTITIAL_ID`: `Interstitial_iOS`
 
-Không dùng lại ID Android. Nếu thiếu một secret, workflow vẫn build Roblox patched nhưng chủ động
-không tạo `Masterstrap.ipa`, đồng thời in warning rõ ràng.
+Không dùng lại ID Android. Mã nguồn và workflow đã có fallback mặc định các ID trên, tự động nhúng `SKAdNetworkItems` của ironSource & Unity Ads vào `Info.plist`.
 
-Workflow tải SDK chính thức 9.6.0 trực tiếp trong runner macOS, liên kết bằng Xcode và chép
+Workflow tải SDK chính thức LevelPlay 9.6.0, Unity Ads Adapter 5.11.0 và Unity Ads iOS SDK 4.20.0 trực tiếp trong runner macOS, liên kết bằng Xcode và chép
 `PrivacyInfo.xcprivacy` vào bundle. SDK/xcframework không được commit vào Git để tránh tăng dung lượng.
 Workflow dùng runner `macos-26` vì LevelPlay 9.6 yêu cầu Xcode 26.
 

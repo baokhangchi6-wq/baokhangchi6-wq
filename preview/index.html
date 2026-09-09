@@ -730,6 +730,91 @@ input:checked + .slider:before { transform: translateX(22px); }
     align-items: center; justify-content: center; padding: 20px;
 }
 .dialog-overlay.active { display: flex; }
+.dialog-box-android {
+    background: var(--card-bg, #1e293b);
+    border: 1px solid var(--card-stroke, rgba(255,255,255,0.12));
+    border-radius: 16px;
+    width: 100%;
+    max-width: 380px;
+    padding: 24px;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.5);
+    animation: androidDialogPop 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes androidDialogPop {
+    from { opacity: 0; transform: scale(0.92); }
+    to { opacity: 1; transform: scale(1); }
+}
+.dialog-title-android {
+    font-size: 19px;
+    font-weight: 700;
+    color: var(--text-main, #ffffff);
+    margin: 0 0 16px 0;
+    letter-spacing: -0.2px;
+}
+.dialog-textarea-android {
+    width: 100%;
+    height: 130px;
+    background: var(--input-bg, #0f172a);
+    border: 1.5px solid var(--input-stroke, rgba(255,255,255,0.15));
+    border-radius: 10px;
+    color: var(--input-text, #ffffff);
+    padding: 12px 14px;
+    font-size: 13px;
+    line-height: 1.45;
+    font-family: monospace, -apple-system, sans-serif;
+    resize: none;
+    outline: none;
+    box-sizing: border-box;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.dialog-textarea-android:focus {
+    border-color: #00A5FF;
+    box-shadow: 0 0 0 3px rgba(0, 165, 255, 0.15);
+}
+.dialog-textarea-android::placeholder {
+    color: var(--text-muted, #64748b);
+    opacity: 0.85;
+}
+.dialog-message-android {
+    font-size: 14px;
+    color: var(--text-sub, #94a3b8);
+    line-height: 1.5;
+    margin-bottom: 20px;
+}
+.dialog-actions-android {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 18px;
+    margin-top: 18px;
+}
+.dialog-btn-flat {
+    background: transparent;
+    border: none;
+    color: #00A5FF;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s, opacity 0.15s;
+    user-select: none;
+    -webkit-user-select: none;
+}
+.dialog-btn-flat:active {
+    background: rgba(0, 165, 255, 0.12);
+    opacity: 0.8;
+}
+.dialog-btn-flat.dialog-btn-apply {
+    font-weight: 700;
+}
+.dialog-btn-flat.dialog-btn-clear {
+    color: #EF4444;
+    font-weight: 700;
+}
+.dialog-btn-flat.dialog-btn-clear:active {
+    background: rgba(239, 68, 68, 0.12);
+}
 .dialog-box {
     background: var(--card-bg); border: 1px solid var(--card-stroke);
     border-radius: 16px; width: 100%; max-width: 360px; padding: 20px;
@@ -988,7 +1073,7 @@ input:checked + .slider:before { transform: translateX(22px); }
     width: 116px;
     height: 14px;
     border-radius: 50%;
-    background: radial-gradient(ellipse at center, rgba(0, 165, 255, 0.45) 0%, rgba(0, 165, 255, 0.15) 45%, transparent 75%);
+    background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.13) 0%, transparent 75%);
     filter: blur(3px);
     pointer-events: none;
     will-change: transform, opacity;
@@ -1016,7 +1101,7 @@ input:checked + .slider:before { transform: translateX(22px); }
     height: 100%;
     object-fit: contain;
     display: block;
-    filter: drop-shadow(0 10px 28px rgba(0, 165, 255, 0.4));
+    filter: none;
 }
 
 #splashChromeSheen {
@@ -1175,6 +1260,11 @@ input:checked + .slider:before { transform: translateX(22px); }
                         if (typeof showToast === "function") {
                             showToast("🚀 [Simulator] Roblox Launched Successfully!");
                         }
+                    }
+                },
+                saveConfig: {
+                    postMessage: function(payload) {
+                        console.log("%c[iOS Native Config Saved]", "color: #10B981;", payload);
                     }
                 },
                 openURL: {
@@ -1511,11 +1601,12 @@ input:checked + .slider:before { transform: translateX(22px); }
 
         <!-- 4 Action Buttons in a Single Row (All Blue as in APK) -->
         <div class="editor-actions-row">
-            <button class="action-btn-compact" onclick="openAddFlagDialog()" data-i18n="btn_add_flag">+ Add</button>
-            <button class="action-btn-compact" onclick="importJsonPrompt()" data-i18n="btn_import_json">Import JSON</button>
-            <button class="action-btn-compact" onclick="exportJsonPrompt()" data-i18n="btn_export_json">Export JSON</button>
-            <button class="action-btn-compact" onclick="clearAllFlags()" data-i18n="btn_clear_all">Clear All</button>
+            <button type="button" class="action-btn-compact" onclick="openAddFlagDialog()" data-i18n="btn_add_flag">+ Add</button>
+            <button type="button" class="action-btn-compact" onclick="triggerImportJson()" data-i18n="btn_import_json">Import JSON</button>
+            <button type="button" class="action-btn-compact" onclick="exportJson()" data-i18n="btn_export_json">Export JSON</button>
+            <button type="button" class="action-btn-compact" onclick="openClearAllDialog()" data-i18n="btn_clear_all">Clear All</button>
         </div>
+        <input type="file" id="file-import-json" accept=".json,application/json,text/plain" style="display:none" onchange="handleImportJsonFile(this)">
 
         <!-- Search Input with Android APK Placeholder -->
         <input type="text" class="editor-search-box" placeholder="Search flags (e.g. FFlagDebug, FPS)..." id="flag-search" oninput="renderFlagTable()" data-i18n-ph="search_hint">
@@ -2287,20 +2378,26 @@ input:checked + .slider:before { transform: translateX(22px); }
     </div>
 </div>
 
-<!-- DIALOG MODAL: ADD FASTFLAG -->
-<div id="modal-add-flag" class="dialog-overlay">
-    <div class="dialog-box">
-        <h3 data-i18n="dialog_add_flag_title">Add FastFlag</h3>
-        <input type="text" id="input-new-flag-key" class="dialog-input" placeholder="Flag Name (e.g. FFlagDebugDisplayFPS)" data-i18n-ph="hint_flag_name">
-        <select id="select-new-flag-type" class="dialog-input" onchange="onAddFlagTypeChange(this.value)">
-            <option value="bool" data-i18n="type_bool">Boolean (True / False)</option>
-            <option value="int" data-i18n="type_int">Integer (Number)</option>
-            <option value="str" data-i18n="type_str">String (Text)</option>
-        </select>
-        <input type="text" id="input-new-flag-val" class="dialog-input" placeholder="Flag Value (e.g. True)" value="True" data-i18n-ph="hint_flag_value">
-        <div class="dialog-actions">
-            <button class="action-btn-compact" style="background:#2A3447;max-width:80px" onclick="closeAddFlagDialog()" data-i18n="btn_cancel">Cancel</button>
-            <button class="action-btn-compact" style="max-width:80px" onclick="submitNewFlag()" data-i18n="btn_save">Save</button>
+<!-- DIALOG MODAL: ADD FASTFLAG (100% PARITY WITH ANDROID APK) -->
+<div id="modal-add-flag" class="dialog-overlay" onclick="if(event.target===this)closeAddFlagDialog()">
+    <div class="dialog-box dialog-box-android">
+        <h3 class="dialog-title-android" data-i18n="dialog_add_flag_title">Add FastFlag</h3>
+        <textarea id="input-add-flag-text" class="dialog-textarea-android" placeholder="Paste flag name or JSON snippet here...&#10;Example:&#10;{&#10;  &quot;FFlagDebugDisplayFPS&quot;: &quot;True&quot;&#10;}" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"></textarea>
+        <div class="dialog-actions-android">
+            <button type="button" class="dialog-btn-flat" onclick="closeAddFlagDialog()" data-i18n="btn_cancel">Cancel</button>
+            <button type="button" class="dialog-btn-flat dialog-btn-apply" onclick="submitAddFlag()" data-i18n="btn_apply">Apply</button>
+        </div>
+    </div>
+</div>
+
+<!-- DIALOG MODAL: CLEAR ALL FASTFLAGS (100% PARITY WITH ANDROID APK) -->
+<div id="modal-clear-all-flags" class="dialog-overlay" onclick="if(event.target===this)closeClearAllDialog()">
+    <div class="dialog-box dialog-box-android">
+        <h3 class="dialog-title-android" data-i18n="btn_clear_all">Clear All</h3>
+        <div class="dialog-message-android" data-i18n="msg_confirm_clear_all">Are you sure you want to remove all custom FastFlags?</div>
+        <div class="dialog-actions-android">
+            <button type="button" class="dialog-btn-flat" onclick="closeClearAllDialog()" data-i18n="btn_cancel">Cancel</button>
+            <button type="button" class="dialog-btn-flat dialog-btn-clear" onclick="confirmClearAllFlags()" data-i18n="btn_clear">Clear</button>
         </div>
     </div>
 </div>
@@ -4720,73 +4817,222 @@ function deleteFlag(k) {
     showToast((dict["deleted_flag_msg"] || "Deleted ") + k);
 }
 
+function isFlagBlocked(name) {
+    if (!name || typeof name !== "string") return false;
+    const trimmed = name.trim();
+    if (!trimmed) return false;
+    const prefixes = ["DFString", "DFFloat", "DFInt", "DFFlag", "FString", "FFloat", "FInt", "FFlag"];
+    let bare = trimmed;
+    for (const p of prefixes) {
+        if (trimmed.startsWith(p) && trimmed.length > p.length) {
+            bare = trimmed.substring(p.length);
+            break;
+        }
+    }
+    const lowerBare = bare.toLowerCase();
+    const blockedList = [
+        "filecachereservesize",
+        "taskschedulertargetfps",
+        "targetrefreshrate",
+        "gamebasicsettingsframeratecap",
+        "gamebasicsettingsframeratecap5"
+    ];
+    return blockedList.includes(lowerBare);
+}
+
 function openAddFlagDialog() {
-    document.getElementById("input-new-flag-key").value = "";
-    document.getElementById("select-new-flag-type").value = "bool";
-    document.getElementById("input-new-flag-val").value = "True";
-    document.getElementById("modal-add-flag").classList.add("active");
+    const ta = document.getElementById("input-add-flag-text");
+    if (ta) ta.value = "";
+    const modal = document.getElementById("modal-add-flag");
+    if (modal) modal.classList.add("active");
+    if (ta) setTimeout(() => ta.focus(), 80);
 }
 
 function closeAddFlagDialog() {
-    document.getElementById("modal-add-flag").classList.remove("active");
+    const modal = document.getElementById("modal-add-flag");
+    if (modal) modal.classList.remove("active");
 }
 
-function onAddFlagTypeChange(type) {
-    const valInput = document.getElementById("input-new-flag-val");
-    if (type === "bool") {
-        valInput.value = "True";
-        valInput.placeholder = "True or False";
-    } else if (type === "int") {
-        valInput.value = "0";
-        valInput.placeholder = "Number (e.g. 120)";
-    } else {
-        valInput.value = "";
-        valInput.placeholder = "String value";
-    }
-}
-
-function submitNewFlag() {
-    const k = (document.getElementById("input-new-flag-key").value || "").trim();
-    const v = (document.getElementById("input-new-flag-val").value || "").trim();
-    if (!k) {
-        showToast("Please enter a FastFlag name!");
+function submitAddFlag() {
+    const ta = document.getElementById("input-add-flag-text");
+    const rawText = (ta ? ta.value : "").trim();
+    if (!rawText) {
+        showToast("Please enter a flag name or JSON snippet!");
         return;
     }
-    activeFlags[k] = v;
-    closeAddFlagDialog();
-    renderFlagTable();
-    const lang = localStorage.getItem("masterstrap_lang") || "vi";
-    const dict = TRANSLATIONS[lang] || TRANSLATIONS["vi"] || TRANSLATIONS["en"];
-    showToast((dict["added_flag_msg"] || "Added ") + k + " = " + v);
+    parseAndAddFlags(rawText);
 }
 
-function importJsonPrompt() {
-    const raw = prompt("Paste your ClientAppSettings.json content:");
-    if (!raw) return;
+function parseAndAddFlags(rawText) {
     try {
-        const parsed = JSON.parse(raw);
-        Object.assign(activeFlags, parsed);
+        if (rawText.startsWith("{") && rawText.endsWith("}")) {
+            const obj = JSON.parse(rawText);
+            let count = 0;
+            for (const [key, value] of Object.entries(obj)) {
+                if (isFlagBlocked(key)) continue;
+                activeFlags[key] = String(value);
+                count++;
+            }
+            if (window.SettingsPersistence) {
+                SettingsPersistence.saveCustomFlags(activeFlags);
+            } else {
+                localStorage.setItem("masterstrap_custom_flags", JSON.stringify(activeFlags));
+            }
+            renderFlagTable();
+            closeAddFlagDialog();
+            showToast("Added " + count + " flags from JSON");
+            return;
+        }
+
+        if (rawText.includes("=") || rawText.includes(":")) {
+            const lines = rawText.split("
+");
+            let count = 0;
+            for (const line of lines) {
+                let trimmed = line.trim();
+                if (trimmed.endsWith(",")) trimmed = trimmed.slice(0, -1).trim();
+                if (!trimmed) continue;
+                const delimiter = trimmed.includes("=") ? "=" : ":";
+                const parts = trimmed.split(delimiter);
+                if (parts.length >= 2) {
+                    const key = parts[0].trim().replace(/^["']|["']$/g, "").trim();
+                    if (!key) continue;
+                    if (isFlagBlocked(key)) continue;
+                    const value = parts.slice(1).join(delimiter).trim().replace(/^["']|["']$/g, "").trim();
+                    activeFlags[key] = value;
+                    count++;
+                }
+            }
+            if (count > 0) {
+                if (window.SettingsPersistence) {
+                    SettingsPersistence.saveCustomFlags(activeFlags);
+                } else {
+                    localStorage.setItem("masterstrap_custom_flags", JSON.stringify(activeFlags));
+                }
+                renderFlagTable();
+                closeAddFlagDialog();
+                showToast("Added " + count + " flags");
+                return;
+            }
+        }
+
+        const flagName = rawText.trim().replace(/^["']|["']$/g, "").trim();
+        if (isFlagBlocked(flagName)) {
+            showToast("This flag is managed by Roblox and cannot be added.");
+            return;
+        }
+        activeFlags[flagName] = "True";
+        if (window.SettingsPersistence) {
+            SettingsPersistence.saveCustomFlags(activeFlags);
+        } else {
+            localStorage.setItem("masterstrap_custom_flags", JSON.stringify(activeFlags));
+        }
         renderFlagTable();
-        showToast("Imported JSON successfully (" + Object.keys(parsed).length + " flags)!");
+        closeAddFlagDialog();
+        showToast("Added " + flagName);
     } catch(e) {
-        alert("Invalid JSON format: " + e.message);
+        showToast("Parse error: " + e.message);
     }
 }
 
-function exportJsonPrompt() {
+function triggerImportJson() {
+    const fileInput = document.getElementById("file-import-json");
+    if (fileInput) {
+        fileInput.value = "";
+        fileInput.click();
+    }
+}
+
+function handleImportJsonFile(input) {
+    const file = input && input.files && input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const rawText = (e.target ? e.target.result : "").trim();
+        if (!rawText.startsWith("{") || !rawText.endsWith("}")) {
+            showToast("Invalid flag file: Must be a valid JSON object");
+            return;
+        }
+        try {
+            const obj = JSON.parse(rawText);
+            let count = 0;
+            for (const [key, value] of Object.entries(obj)) {
+                if (isFlagBlocked(key)) continue;
+                activeFlags[key] = String(value);
+                count++;
+            }
+            if (window.SettingsPersistence) {
+                SettingsPersistence.saveCustomFlags(activeFlags);
+            } else {
+                localStorage.setItem("masterstrap_custom_flags", JSON.stringify(activeFlags));
+            }
+            renderFlagTable();
+            showToast("Successfully imported " + count + " flags from JSON file!");
+        } catch(err) {
+            showToast("Failed to read JSON: " + err.message);
+        }
+    };
+    reader.onerror = function() {
+        showToast("Cannot read selected file.");
+    };
+    reader.readAsText(file);
+}
+
+function exportJson() {
     const jsonStr = JSON.stringify(activeFlags, null, 2);
-    prompt("Copy your active FastFlags JSON:", jsonStr);
+    const filename = "ClientAppSettings.json";
+
+    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.saveConfig) {
+        window.webkit.messageHandlers.saveConfig.postMessage({
+            filename: filename,
+            content: jsonStr
+        });
+    }
+
+    try {
+        const blob = new Blob([jsonStr], { type: "application/json;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function() {
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }, 250);
+    } catch(err) {
+        console.error("Export download error:", err);
+    }
+
+    showToast("Exported to ClientAppSettings.json");
 }
 
-function clearAllFlags() {
-    if (confirm("Clear all active FastFlags?")) {
-        activeFlags = {};
-        activePresetId = null;
-        updateFlagState();
-        renderFlagTable();
-        renderAllPresets();
-        showToast("Cleared all flags");
+function openClearAllDialog() {
+    const modal = document.getElementById("modal-clear-all-flags");
+    if (modal) modal.classList.add("active");
+}
+
+function closeClearAllDialog() {
+    const modal = document.getElementById("modal-clear-all-flags");
+    if (modal) modal.classList.remove("active");
+}
+
+function confirmClearAllFlags() {
+    activeFlags = {};
+    activePresetId = null;
+    if (window.SettingsPersistence) {
+        SettingsPersistence.saveCustomFlags({});
+        SettingsPersistence.saveSelectedPreset(null);
+    } else {
+        localStorage.removeItem("masterstrap_custom_flags");
+        localStorage.removeItem("masterstrap_selected_preset");
     }
+    updateFlagState();
+    renderFlagTable();
+    renderAllPresets();
+    closeClearAllDialog();
+    showToast("Cleared all custom flags");
 }
 
 function switchTheme(theme) {
@@ -4808,22 +5054,57 @@ function switchLanguage(lang) {
     showToast("Language: " + lang.toUpperCase());
 }
 
+function checkLicenseExpired(plan, expiration) {
+    if (!plan || typeof plan !== "string") return false;
+    const normalizedPlan = plan.trim().toLowerCase();
+    if (normalizedPlan !== "plus") return false;
+    if (!expiration || !expiration.trim()) return true;
+    try {
+        const expTime = new Date(expiration.trim()).getTime();
+        if (isNaN(expTime)) return true;
+        return Date.now() >= expTime;
+    } catch (e) {
+        return true;
+    }
+}
+
+function clearLicenseStorage() {
+    localStorage.removeItem("masterstrap_license_active");
+    localStorage.removeItem("masterstrap_license_key");
+    localStorage.setItem("masterstrap_license_plan", "Free");
+    localStorage.removeItem("masterstrap_license_expiry");
+}
+
+function saveLicenseStorage(key, plan, expiry) {
+    localStorage.setItem("masterstrap_license_active", "true");
+    localStorage.setItem("masterstrap_license_key", key);
+    localStorage.setItem("masterstrap_license_plan", plan || "Plus");
+    if (expiry) {
+        localStorage.setItem("masterstrap_license_expiry", expiry);
+    } else {
+        localStorage.removeItem("masterstrap_license_expiry");
+    }
+}
+
 async function activateLicenseKey() {
     const keyInput = document.getElementById("license-key-input");
-    const rawKey = (keyInput.value || "").trim();
+    const rawKey = (keyInput ? keyInput.value : "").trim();
     if (!rawKey) {
         showToast("Please enter a License Key!");
         return;
     }
 
-    showToast("Verifying License Key with Server...");
+    showToast("Validating license...");
+    const activateBtn = document.querySelector(".license-activate-btn");
+    if (activateBtn) activateBtn.disabled = true;
+
     const deviceId = localStorage.getItem("masterstrap_device_id") || ("ios-" + Math.random().toString(36).substring(2, 12));
     localStorage.setItem("masterstrap_device_id", deviceId);
 
     try {
         const res = await fetch("https://liscence-key-t0n3.onrender.com/api/mobile-licenses/validate", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", "Accept": "application/json" },
             body: JSON.stringify({
                 key: rawKey,
                 deviceId: deviceId,
@@ -4831,38 +5112,59 @@ async function activateLicenseKey() {
             })
         });
 
-        if (res.ok) {
-            const data = await res.json();
-            if (data.isValid) {
-                localStorage.setItem("masterstrap_license_active", "true");
-                localStorage.setItem("masterstrap_license_key", rawKey);
-                localStorage.setItem("masterstrap_license_plan", data.plan || "VIP");
-                localStorage.setItem("masterstrap_license_expiry", data.expirationDate || "Permanent");
+        let data = null;
+        try {
+            data = await res.json();
+        } catch (parseErr) {}
 
-                updateLicenseUI(true, data.plan || "VIP", data.expirationDate);
-                showToast("License Activated Successfully (" + (data.plan || "VIP") + ")!");
+        if (res.ok && data && data.isValid) {
+            const plan = data.plan || "Plus";
+            const expiry = data.expirationDate || "";
+            const isExpired = checkLicenseExpired(plan, expiry);
+
+            if (isExpired) {
+                clearLicenseStorage();
+                updateLicenseUI(false, "Free", "");
+                if (window.MasterstrapAds && typeof window.MasterstrapAds.banner === "function") {
+                    window.MasterstrapAds.banner(true);
+                }
+                showToast("Plus license has expired.");
             } else {
-                showToast("Invalid or Expired License Key!");
+                saveLicenseStorage(rawKey, plan, expiry);
+                updateLicenseUI(true, plan, expiry);
+                if (window.MasterstrapAds && typeof window.MasterstrapAds.banner === "function") {
+                    window.MasterstrapAds.banner(false);
+                }
+                showToast(data.message || ("License activated successfully (" + plan + ")!"));
             }
         } else {
-            if (rawKey.startsWith("MST-") || rawKey.length >= 10) {
-                localStorage.setItem("masterstrap_license_active", "true");
-                localStorage.setItem("masterstrap_license_key", rawKey);
-                updateLicenseUI(true, "VIP Plus", "Lifetime");
-                showToast("License Key Activated (Offline Mode)!");
-            } else {
-                showToast("Invalid License Key format!");
+            clearLicenseStorage();
+            updateLicenseUI(false, "Free", "");
+            if (window.MasterstrapAds && typeof window.MasterstrapAds.banner === "function") {
+                window.MasterstrapAds.banner(true);
             }
+            const errMsg = (data && data.message) ? data.message : "Invalid or Expired License Key!";
+            showToast(errMsg);
         }
     } catch (e) {
-        if (rawKey.startsWith("MST-") || rawKey.length >= 10) {
-            localStorage.setItem("masterstrap_license_active", "true");
-            localStorage.setItem("masterstrap_license_key", rawKey);
-            updateLicenseUI(true, "VIP Plus", "Lifetime");
-            showToast("License Key Activated (Offline Mode)!");
+        const cachedKey = localStorage.getItem("masterstrap_license_key") || "";
+        const cachedPlan = localStorage.getItem("masterstrap_license_plan") || "Free";
+        const cachedExpiry = localStorage.getItem("masterstrap_license_expiry") || "";
+        const isPaid = cachedPlan.toLowerCase() === "plus" || cachedPlan.toLowerCase() === "max" || cachedPlan.toLowerCase() === "active";
+
+        if (cachedKey && isPaid && !checkLicenseExpired(cachedPlan, cachedExpiry)) {
+            updateLicenseUI(true, cachedPlan, cachedExpiry);
+            showToast("Network error: Using cached offline entitlement.");
         } else {
-            showToast("Network error: Could not reach license server.");
+            clearLicenseStorage();
+            updateLicenseUI(false, "Free", "");
+            if (window.MasterstrapAds && typeof window.MasterstrapAds.banner === "function") {
+                window.MasterstrapAds.banner(true);
+            }
+            showToast("Unable to reach the license server. Check your connection.");
         }
+    } finally {
+        if (activateBtn) activateBtn.disabled = false;
     }
 }
 
@@ -4871,22 +5173,46 @@ function updateLicenseUI(isActive, plan, expiry) {
     const expiryTxt = document.getElementById("license-expiry-txt");
     const keyInput = document.getElementById("license-key-input");
 
-    if (isActive) {
-        badge.className = "app-version-badge";
-        badge.style.background = "rgba(16, 185, 129, 0.2)";
-        badge.style.color = "var(--accent-green)";
-        badge.innerText = (plan || "VIP") + " Active ✓";
-        if (expiry) {
-            expiryTxt.style.display = "block";
-            expiryTxt.innerText = "Expiry: " + expiry;
+    const currentPlan = (plan || "Free").trim();
+    const isPaid = isActive && (currentPlan.toLowerCase() === "plus" || currentPlan.toLowerCase() === "max" || currentPlan.toLowerCase() === "active");
+
+    if (isPaid) {
+        if (badge) {
+            badge.className = "app-version-badge";
+            badge.style.background = "rgba(16, 185, 129, 0.2)";
+            badge.style.color = "var(--accent-green)";
+            badge.removeAttribute("data-i18n");
+            badge.innerText = currentPlan;
         }
-        const savedKey = localStorage.getItem("masterstrap_license_key");
-        if (savedKey && keyInput) keyInput.value = savedKey;
+        if (expiryTxt) {
+            if (expiry && expiry.trim()) {
+                expiryTxt.style.display = "block";
+                expiryTxt.innerText = "Expiry: " + expiry;
+            } else {
+                expiryTxt.style.display = "none";
+            }
+        }
+        const savedKey = localStorage.getItem("masterstrap_license_key") || "";
+        if (keyInput) {
+            keyInput.value = savedKey;
+        }
     } else {
-        badge.style.background = "rgba(0,165,255,0.15)";
-        badge.style.color = "var(--brand-blue)";
-        badge.innerText = "Free Plan";
-        expiryTxt.style.display = "none";
+        if (badge) {
+            badge.className = "app-version-badge";
+            badge.style.background = "rgba(0,165,255,0.15)";
+            badge.style.color = "var(--brand-blue)";
+            badge.setAttribute("data-i18n", "plan_free");
+            const lang = localStorage.getItem("masterstrap_lang") || "vi";
+            const dict = (typeof TRANSLATIONS !== "undefined" && TRANSLATIONS[lang]) || {};
+            const fallback = (typeof TRANSLATIONS !== "undefined" && TRANSLATIONS["en"]) || {};
+            badge.innerText = dict["plan_free"] || fallback["plan_free"] || "Free Plan";
+        }
+        if (expiryTxt) {
+            expiryTxt.style.display = "none";
+        }
+        if (keyInput) {
+            keyInput.value = "";
+        }
     }
 }
 
@@ -4943,9 +5269,14 @@ function initAppSettings() {
     if (rendererMode) rendererMode.value = localStorage.getItem("masterstrap_renderer_mode") || "auto";
 
     const isLicActive = localStorage.getItem("masterstrap_license_active") === "true";
-    const licPlan = localStorage.getItem("masterstrap_license_plan");
-    const licExpiry = localStorage.getItem("masterstrap_license_expiry");
-    updateLicenseUI(isLicActive, licPlan, licExpiry);
+    const licPlan = localStorage.getItem("masterstrap_license_plan") || "Free";
+    const licExpiry = localStorage.getItem("masterstrap_license_expiry") || "";
+    if (isLicActive && checkLicenseExpired(licPlan, licExpiry)) {
+        clearLicenseStorage();
+        updateLicenseUI(false, "Free", "");
+    } else {
+        updateLicenseUI(isLicActive, licPlan, licExpiry);
+    }
 
     const savedTurboMaster = localStorage.getItem("masterstrap_turbo_master") === "true";
     const masterSw = document.getElementById("sw-gm-master");
@@ -5653,13 +5984,13 @@ function dismissSplashScreen() {
 // editor interstitial fails open, matching the Android policy.
 window.MasterstrapAds = (() => {
     const pending = new Map();
-    const grants = { fps: new Set(), preset: new Set() };
+    const grants = { preset: new Set() };
     const interstitialCooldownMs = 5 * 60 * 1000;
     const interstitialLastShownKey = "masterstrap_ads_last_interstitial_ms";
     let sequence = 0;
     const plan = () => (localStorage.getItem("masterstrap_license_plan") || "FREE").toUpperCase();
     const isFree = () => plan() !== "PLUS" && plan() !== "MAX";
-    const needsFpsReward = fps => isFree() ? fps > 60 : (plan() === "PLUS" && fps > 144);
+    const needsFpsReward = () => false;
 
     function log(message) {
         if (window.webkit?.messageHandlers?.log) {
@@ -5720,9 +6051,71 @@ openFastFlagEditorSubpage = function() {
     MasterstrapAds.request("interstitial", "fastflag_editor", true).then(() => msOpenFastFlagEditor());
 };
 
+const msToggleDesyncVIP = toggleDesyncVIP;
+toggleDesyncVIP = function(checkbox) {
+    if (!checkbox) return;
+    if (!checkbox.checked) {
+        return msToggleDesyncVIP(checkbox);
+    }
+    if (!MasterstrapAds.isFree()) {
+        return msToggleDesyncVIP(checkbox);
+    }
+    checkbox.checked = false;
+    updateFlagState();
+    MasterstrapAds.request("rewarded", "desync", false).then(ok => {
+        if (ok) {
+            checkbox.checked = true;
+            msToggleDesyncVIP(checkbox);
+        } else {
+            checkbox.checked = false;
+            updateFlagState();
+            showToast("Rewarded ad required to enable Desync.");
+        }
+    });
+};
+
+const msOnToggleTurboMaster = onToggleTurboMaster;
+onToggleTurboMaster = function(isChecked, isRestoring) {
+    if (isRestoring || !isChecked) {
+        return msOnToggleTurboMaster(isChecked);
+    }
+    if (!MasterstrapAds.isFree()) {
+        return msOnToggleTurboMaster(true);
+    }
+    const sw = document.getElementById("sw-gm-master");
+    if (sw) sw.checked = false;
+    msOnToggleTurboMaster(false);
+    MasterstrapAds.request("rewarded", "game_mode_master", false).then(ok => {
+        if (ok) {
+            if (sw) sw.checked = true;
+            msOnToggleTurboMaster(true);
+        } else {
+            if (sw) sw.checked = false;
+            msOnToggleTurboMaster(false);
+            showToast("Rewarded ad required to enable Turbo Boost.");
+        }
+    });
+};
+
+const msApplyGamePreset = applyGamePreset;
+applyGamePreset = function(preset) {
+    if (!preset) return;
+    if (!preset.isPopular || !MasterstrapAds.isFree() || MasterstrapAds.grants.preset.has(preset.id)) {
+        return msApplyGamePreset(preset);
+    }
+    MasterstrapAds.request("rewarded", "game_preset:" + preset.id, false).then(ok => {
+        if (!ok) return showToast("Rewarded ad unavailable. Boost was not applied.");
+        MasterstrapAds.grants.preset.add(preset.id);
+        msApplyGamePreset(preset);
+    });
+};
+
 const msApplyGamePresetDirect = applyGamePresetDirect;
 applyGamePresetDirect = function(presetId) {
-    if (!MasterstrapAds.isFree() || MasterstrapAds.grants.preset.has(presetId)) {
+    const all = [...(typeof POPULAR_PRESETS !== "undefined" ? POPULAR_PRESETS : []), ...(typeof HOT_PRESETS !== "undefined" ? HOT_PRESETS : [])];
+    const p = all.find(item => item.id === presetId);
+    if (!p) return msApplyGamePresetDirect(presetId);
+    if (!p.isPopular || !MasterstrapAds.isFree() || MasterstrapAds.grants.preset.has(presetId)) {
         return msApplyGamePresetDirect(presetId);
     }
     MasterstrapAds.request("rewarded", "game_preset:" + presetId, false).then(ok => {
@@ -5752,30 +6145,314 @@ closeFullscreenSettings = function() {
     msCloseFullscreenSettings();
 };
 
-document.addEventListener("DOMContentLoaded", () => {
-    const fpsSelect = document.getElementById("sel-target-fps");
-    if (!fpsSelect) return;
-    let accepted = parseInt(fpsSelect.value) || 60;
-    fpsSelect.addEventListener("focus", () => { accepted = parseInt(fpsSelect.value) || accepted; });
-    fpsSelect.addEventListener("change", () => {
-        const requested = parseInt(fpsSelect.value) || 60;
-        if (!MasterstrapAds.needsFpsReward(requested) || MasterstrapAds.grants.fps.has(requested)) {
-            accepted = requested;
-            return;
+// =========================================================================
+// SETTINGS PERSISTENCE ENGINE (100% PARITY WITH ANDROID SettingsPersistence.kt)
+// =========================================================================
+let syncTimer = null;
+function syncConfigToNative() {
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(() => {
+        if (!window.webkit?.messageHandlers?.saveConfig) return;
+        if (typeof updateFlagState === "function") updateFlagState();
+        const clientJson = JSON.stringify(activeFlags || {}, null, 2);
+        const turboProfile = JSON.stringify({
+            safe_ram_cleanup: document.getElementById("sw-gm-safe-ram")?.checked ?? true,
+            safe_network_opt: document.getElementById("sw-gm-safe-net")?.checked ?? true,
+            safe_power_opt: document.getElementById("sw-gm-safe-power")?.checked ?? true,
+            safe_thermal_guard: document.getElementById("sw-gm-safe-thermal")?.checked ?? true,
+            game_mode_master: document.getElementById("sw-gm-master")?.checked ?? false,
+            system_perf_boost: document.getElementById("sw-gm-system-perf")?.checked ?? true,
+            cpu_priority: document.getElementById("sw-gm-cpu-priority")?.checked ?? true,
+            smart_ram_cleanup: document.getElementById("sw-gm-smart-ram")?.checked ?? true,
+            faster_game_launch: document.getElementById("sw-gm-fast-launch")?.checked ?? true,
+            keep_display_active: document.getElementById("sw-gm-keep-display")?.checked ?? true,
+            unrestricted_power: document.getElementById("sw-gm-unrestricted-power")?.checked ?? true,
+            turbo_wifi_latency: document.getElementById("sw-gm-turbo-wifi")?.checked ?? true,
+            turbo_thermal_guard: document.getElementById("sw-gm-turbo-thermal")?.checked ?? true,
+            turbo_refresh_contract: document.getElementById("sw-gm-turbo-refresh")?.checked ?? true,
+            turbo_sustained_performance: document.getElementById("sw-gm-turbo-sustained")?.checked ?? false,
+            display_shader_package: document.getElementById("display-shader-pkg")?.value || "none",
+            display_shader_wet_floor: document.getElementById("sw-display-wet-floor")?.checked ?? false,
+            display_stretch_screen: parseInt(document.getElementById("slider-stretch-screen")?.value) || 100,
+            display_renderer_mode: document.getElementById("sel-renderer")?.value || "auto",
+            targetFps: parseInt(document.getElementById("sel-target-fps")?.value) || 9999
+        }, null, 2);
+
+        const shaderName = document.getElementById("display-shader-pkg")?.value || "none";
+        const shaderProfile = JSON.stringify({
+            schema: 1,
+            enabled: shaderName !== "none",
+            package: shaderName,
+            applyMode: "once_after_datamodel",
+            maxPostEffects: 5,
+            wetFloor: document.getElementById("sw-display-wet-floor")?.checked ?? false,
+            wetFloorStrategy: "bounded_nearby_once",
+            wetFloorMaxParts: 1024,
+            wetFloorRadiusStuds: 384,
+            allowWorkspaceMaterialScan: false,
+            allowPeriodicWorker: false
+        }, null, 2);
+
+        const selectedFont = document.getElementById("display-font-family")?.value || "Default";
+        const fontStep = parseInt(document.getElementById("display-font-size-step")?.value) || 0;
+        const fontProfile = JSON.stringify({
+            schema: 1,
+            enabled: selectedFont !== "Default" || fontStep !== 0,
+            font: selectedFont,
+            sizeStep: fontStep,
+            applyMode: "once_after_ugc_game_loaded",
+            dynamicDescendants: "event_driven",
+            workspaceScan: "bounded_once"
+        }, null, 2);
+
+        const globalSettingsXml = typeof generateGlobalBasicSettingsXml === "function" ? generateGlobalBasicSettingsXml() : "";
+        const targetChan = localStorage.getItem("masterstrap_channel") || "global";
+
+        window.webkit.messageHandlers.saveConfig.postMessage({
+            clientAppSettings: clientJson,
+            turboProfile: turboProfile,
+            shaderProfile: shaderProfile,
+            fontProfile: fontProfile,
+            globalSettings: globalSettingsXml,
+            targetChannel: targetChan
+        });
+    }, 400);
+}
+
+window.SettingsPersistence = (() => {
+    function saveToggle(toggleId, isEnabled) {
+        localStorage.setItem("masterstrap_toggle_" + toggleId, isEnabled ? "true" : "false");
+        syncConfigToNative();
+    }
+    function loadToggle(toggleId, defaultValue) {
+        const val = localStorage.getItem("masterstrap_toggle_" + toggleId);
+        if (val === null) return defaultValue;
+        return val === "true";
+    }
+    function saveDropdown(dropdownId, value) {
+        localStorage.setItem("masterstrap_select_" + dropdownId, value);
+        syncConfigToNative();
+    }
+    function loadDropdown(dropdownId, defaultValue) {
+        const val = localStorage.getItem("masterstrap_select_" + dropdownId);
+        return val !== null ? val : defaultValue;
+    }
+    function saveFps(fps) {
+        localStorage.setItem("masterstrap_fps_cap", String(fps));
+        syncConfigToNative();
+    }
+    function loadFps(defaultFps = 60) {
+        const val = localStorage.getItem("masterstrap_fps_cap");
+        return val !== null ? (parseInt(val, 10) || defaultFps) : defaultFps;
+    }
+    function saveSelectedPreset(presetId) {
+        if (presetId) {
+            localStorage.setItem("masterstrap_selected_preset", presetId);
+        } else {
+            localStorage.removeItem("masterstrap_selected_preset");
         }
-        MasterstrapAds.request("rewarded", "target_fps:" + requested, false).then(ok => {
-            if (ok) {
-                MasterstrapAds.grants.fps.add(requested);
-                accepted = requested;
-                updateFlagState();
-            } else {
-                fpsSelect.value = String(accepted);
-                updateFlagState();
-                showToast("Rewarded ad unavailable. FPS selection was reverted.");
+        syncConfigToNative();
+    }
+    function loadSelectedPreset() {
+        return localStorage.getItem("masterstrap_selected_preset");
+    }
+    function saveCustomFlags(flags) {
+        try {
+            localStorage.setItem("masterstrap_custom_flags", JSON.stringify(flags));
+        } catch(e) {}
+        syncConfigToNative();
+    }
+    function saveLicenseKey(key) {
+        localStorage.setItem("masterstrap_license_key", key);
+    }
+    function loadLicenseKey() {
+        return localStorage.getItem("masterstrap_license_key") || "";
+    }
+    function saveLicensePlan(plan) {
+        localStorage.setItem("masterstrap_license_plan", plan);
+    }
+    function loadLicensePlan() {
+        return localStorage.getItem("masterstrap_license_plan") || "Free";
+    }
+    function saveLicenseExpiration(expiration) {
+        localStorage.setItem("masterstrap_license_expiry", expiration);
+    }
+    function loadLicenseExpiration() {
+        return localStorage.getItem("masterstrap_license_expiry") || "";
+    }
+    function clearLicense() {
+        clearLicenseStorage();
+    }
+
+    function loadCustomFlags() {
+        try {
+            const raw = localStorage.getItem("masterstrap_custom_flags");
+            return raw ? JSON.parse(raw) : null;
+        } catch(e) {
+            return null;
+        }
+    }
+
+    function restoreAllUI() {
+        const isFree = window.MasterstrapAds ? window.MasterstrapAds.isFree() : ((localStorage.getItem("masterstrap_license_plan") || "FREE").toUpperCase() === "FREE");
+
+        // 1. Restore all checkboxes (matches Android SettingsPersistence.loadToggle)
+        document.querySelectorAll('input[type="checkbox"][id]').forEach(cb => {
+            if (cb.id === "sw-gm-master") {
+                if (isFree) {
+                    cb.checked = false;
+                    localStorage.setItem("masterstrap_turbo_master", "false");
+                    localStorage.setItem("masterstrap_toggle_sw-gm-master", "false");
+                    if (typeof onToggleTurboMaster === "function") {
+                        onToggleTurboMaster(false, true);
+                    }
+                    return;
+                }
+            }
+            const saved = localStorage.getItem("masterstrap_toggle_" + cb.id);
+            if (saved !== null) {
+                cb.checked = (saved === "true");
             }
         });
-    });
+
+        // 2. Restore all select dropdowns (matches Android SettingsPersistence.loadDropdown)
+        document.querySelectorAll('select[id]').forEach(sel => {
+            const saved = localStorage.getItem("masterstrap_select_" + sel.id);
+            if (saved !== null) {
+                sel.value = saved;
+            }
+        });
+
+        // 3. Restore Target FPS (matches Android SettingsPersistence.loadFps)
+        const savedFps = localStorage.getItem("masterstrap_fps_cap");
+        const fpsSelect = document.getElementById("sel-target-fps");
+        if (savedFps && fpsSelect) {
+            fpsSelect.value = savedFps;
+        }
+
+        // 4. Restore Renderer Mode
+        const savedRenderer = localStorage.getItem("masterstrap_renderer_mode") || localStorage.getItem("masterstrap_select_sel-renderer");
+        const rendererSelect = document.getElementById("sel-renderer");
+        if (savedRenderer && rendererSelect) {
+            rendererSelect.value = savedRenderer;
+        }
+
+        // 5. Restore selected Game Preset (matches Android SettingsPersistence.loadSelectedPreset)
+        const savedPreset = loadSelectedPreset();
+        if (savedPreset && typeof renderAllPresets === "function") {
+            activePresetId = savedPreset;
+            renderAllPresets();
+            const all = [...(typeof POPULAR_PRESETS !== "undefined" ? POPULAR_PRESETS : []), ...(typeof HOT_PRESETS !== "undefined" ? HOT_PRESETS : [])];
+            const p = all.find(item => item.id === savedPreset);
+            if (p && p.flags) {
+                Object.assign(activeFlags, p.flags);
+            }
+        }
+
+        // 6. Restore custom flags (matches Android SettingsPersistence.loadCustomFlags)
+        const savedCustom = loadCustomFlags();
+        if (savedCustom && typeof savedCustom === "object") {
+            Object.assign(activeFlags, savedCustom);
+        }
+    }
+
+    return {
+        saveToggle,
+        loadToggle,
+        saveDropdown,
+        loadDropdown,
+        saveFps,
+        loadFps,
+        saveSelectedPreset,
+        loadSelectedPreset,
+        saveCustomFlags,
+        loadCustomFlags,
+        saveLicenseKey,
+        loadLicenseKey,
+        saveLicensePlan,
+        loadLicensePlan,
+        saveLicenseExpiration,
+        loadLicenseExpiration,
+        clearLicense,
+        restoreAllUI
+    };
+})();
+
+// Auto-save any interactive input change (100% Android parity)
+document.addEventListener("change", (e) => {
+    const target = e.target;
+    if (!target || !target.id) return;
+    if (target.type === "checkbox") {
+        SettingsPersistence.saveToggle(target.id, target.checked);
+    } else if (target.tagName === "SELECT") {
+        SettingsPersistence.saveDropdown(target.id, target.value);
+        if (target.id === "sel-target-fps") {
+            SettingsPersistence.saveFps(target.value);
+        } else if (target.id === "sel-renderer") {
+            localStorage.setItem("masterstrap_renderer_mode", target.value);
+        }
+    }
 });
+
+document.addEventListener("input", (e) => {
+    const target = e.target;
+    if (!target || !target.id) return;
+    if (target.type === "range") {
+        syncConfigToNative();
+    }
+});
+
+const origApplyPresetImmediate = typeof applyGamePresetDirectImmediate === "function" ? applyGamePresetDirectImmediate : null;
+if (origApplyPresetImmediate) {
+    applyGamePresetDirectImmediate = function(preset) {
+        origApplyPresetImmediate(preset);
+        SettingsPersistence.saveSelectedPreset(preset.id);
+        SettingsPersistence.saveCustomFlags(activeFlags);
+    };
+}
+
+const origClearAllFlags = typeof clearAllFlags === "function" ? clearAllFlags : null;
+if (origClearAllFlags) {
+    clearAllFlags = function() {
+        origClearAllFlags();
+        SettingsPersistence.saveSelectedPreset(null);
+        SettingsPersistence.saveCustomFlags({});
+    };
+}
+
+const origUpdateFlagValue = typeof updateFlagValue === "function" ? updateFlagValue : null;
+if (origUpdateFlagValue) {
+    updateFlagValue = function(key, newVal) {
+        origUpdateFlagValue(key, newVal);
+        SettingsPersistence.saveCustomFlags(activeFlags);
+    };
+}
+
+const origDeleteFlag = typeof deleteFlag === "function" ? deleteFlag : null;
+if (origDeleteFlag) {
+    deleteFlag = function(k) {
+        origDeleteFlag(k);
+        SettingsPersistence.saveCustomFlags(activeFlags);
+    };
+}
+
+const origSubmitAddFlag = typeof submitAddFlag === "function" ? submitAddFlag : null;
+if (origSubmitAddFlag) {
+    submitAddFlag = function() {
+        origSubmitAddFlag();
+        SettingsPersistence.saveCustomFlags(activeFlags);
+    };
+}
+
+const origInitAppSettings = typeof initAppSettings === "function" ? initAppSettings : null;
+if (origInitAppSettings) {
+    initAppSettings = function() {
+        origInitAppSettings();
+        SettingsPersistence.restoreAllUI();
+        if (typeof updateFlagState === "function") updateFlagState();
+        if (typeof updateTurboProfileState === "function") updateTurboProfileState();
+    };
+}
 
 initAppSettings();
 updateFlagState();

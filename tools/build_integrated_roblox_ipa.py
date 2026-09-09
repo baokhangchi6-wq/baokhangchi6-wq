@@ -110,20 +110,34 @@ def fetch_or_load_fflags_map(local_hpp: Path) -> dict:
 
 
 def run_local_dumper(ipa_path: Path, out_dir: Path) -> Path:
-    dumper_pkg = ROOT / "roblox_ios_dumper"
-    if not dumper_pkg.is_dir() or not ipa_path or not ipa_path.is_file():
-        return None
+    dumper_root = ROOT / "roblox"
+    if not (dumper_root / "roblox_ios_dumper").is_dir():
+        raise RuntimeError("Local iOS dumper missing; refusing remote offsets for an IPA build")
     print(f"Running automated iOS Dumper on {ipa_path.name}...")
-    try:
-        cmd = [sys.executable, "-m", "roblox_ios_dumper", "dump", str(ipa_path), "-o", str(out_dir)]
-        subprocess.run(cmd, cwd=str(ROOT), check=True)
-        dumped_fflags = out_dir / "FFlags.hpp"
-        if dumped_fflags.is_file():
-            print(f"Dumper successfully generated fresh FFlags.hpp ({dumped_fflags.stat().st_size} bytes)")
-            return dumped_fflags
-    except Exception as e:
-        print(f"Dumper run error: {e}")
-    return None
+    # Explicit sys.path also supports the bundled/isolated Windows Python.
+    entry = "import sys; sys.path.insert(0, sys.argv.pop(1)); from roblox_ios_dumper.cli import main; raise SystemExit(main())"
+    cmd = [sys.executable, "-c", entry, str(dumper_root), "dump", str(ipa_path.resolve()),
+           "--patterns", str(ROOT / "patterns.ios.json"), "-o", str(out_dir.resolve())]
+    subprocess.run(cmd, cwd=str(dumper_root), check=True)
+    dumped_fflags = out_dir / "FFlags.hpp"
+    if not dumped_fflags.is_file():
+        raise RuntimeError("Local iOS dump did not produce FFlags.hpp")
+    return dumped_fflags
+
+
+def verify_ipa_profile(input_ipa: Path, header: Path) -> str:
+    """Recheck binary identity AND generated maps; a filename is not evidence."""
+    import uuid
+    if header.name != "FFlags.hpp":
+        raise RuntimeError("Select FFlags.hpp from the complete verified dump directory")
+    sys.path.insert(0, str(ROOT / "roblox"))
+    from roblox_ios_dumper.verification import verify_dump
+    result = verify_dump(header.parent, input_path=input_ipa)
+    if not result.ok:
+        raise RuntimeError("iOS profile verification failed: " + "; ".join(result.errors))
+    identity = str(uuid.UUID(str(result.checks["uuid"])))
+    print(f"Verified local iOS profile: UUID={identity} SHA256={result.checks['sha256']}")
+    return identity
 
 
 def resolve_flags_with_miss_report(flags: dict, table: dict):
@@ -186,7 +200,9 @@ def fetch_or_load_offsets_map(local_hpp: Path) -> dict:
     return table
 
 
-def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_count: int, offset_entries: list = None, all_flags_table: dict = None) -> str:
+def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_count: int, offset_entries: list = None, all_flags_table: dict = None, expected_uuid: str = None) -> str:
+    import uuid
+    uuid_bytes = uuid.UUID(expected_uuid).bytes if expected_uuid else bytes(16)
     if offset_entries is None:
         offset_entries = []
     if all_flags_table is None:
@@ -266,6 +282,27 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "typedef struct { uint32_t cmd; uint32_t cmdsize; char segname[16]; uint64_t vmaddr; uint64_t vmsize; uint64_t fileoff; uint64_t filesize; int32_t maxprot; int32_t initprot; uint32_t nsects; uint32_t flags; } MachSegment64;",
         "#define MH_MAGIC_64 0xFEEDFACF",
         "#define LC_SEGMENT_64 0x19",
+        "static const uint8_t kExpectedEngineUuid[16] = {" + ",".join(str(b) for b in uuid_bytes) + "};",
+        'static const char* kExpectedEngineUuidText = "' + (str(uuid.UUID(expected_uuid)) if expected_uuid else "unbound") + '";',
+        f"static const bool kEngineIdentityPinned = {'true' if expected_uuid else 'false'};",
+        "static bool engine_identity_matches(uintptr_t base) {",
+        "    if (!base || !kEngineIdentityPinned) return false;",
+        "    const MachHeader64* h = (const MachHeader64*)base;",
+        "    if (h->magic != MH_MAGIC_64 || h->ncmds > 4096 || h->sizeofcmds > 4194304) return false;",
+        "    const uint8_t* cursor = (const uint8_t*)(h + 1);",
+        "    const uint8_t* end = cursor + h->sizeofcmds;",
+        "    for (uint32_t i = 0; i < h->ncmds; ++i) {",
+        "        if (cursor + sizeof(MachLoadCommand) > end) return false;",
+        "        const MachLoadCommand* cmd = (const MachLoadCommand*)cursor;",
+        "        if (cmd->cmdsize < sizeof(*cmd) || cmd->cmdsize > (size_t)(end - cursor)) return false;",
+        "        if (cmd->cmd == 0x1b && cmd->cmdsize >= 24) {",
+        "            for (int n = 0; n < 16; ++n) if (cursor[8 + n] != kExpectedEngineUuid[n]) return false;",
+        "            return true;",
+        "        }",
+        "        cursor += cmd->cmdsize;",
+        "    }",
+        "    return false;",
+        "}",
         "",
         "static const OffsetEntry kVerifiedOffsets[] = {"
     ]
@@ -324,7 +361,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static const char* kFastFlagBackend = \"direct-rva-write-v1\";",
         "static const char* kEngineSetFFlagBackend = \"not-installed\";",
         "static const char* kEngineGetFastFlagBackend = \"not-installed\";",
-        "static const char* kFpsRuntimeBackend = \"cadisplaylink-policy-v1\";",
+        "static const char* kFpsRuntimeBackend = \"cadisplaylink-range-policy-v2\";",
         "static const char* kFontRuntimeBackend = \"guarded-ios-luau-pending\";",
         "static const char* kShaderRuntimeBackend = \"guarded-ios-luau-pending\";",
         "static const char* kStretchRuntimeBackend = \"guarded-projection-pending\";",
@@ -518,7 +555,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "            FFlagPatchEntry entry;",
         "            entry.name = flag->name;",
             "            entry.rva = (uintptr_t)flag->rva;",
-            "            entry.kind = (flag->kind == 0) ? 0 : val_kind;",
+            "            entry.kind = flag->kind; // Storage width comes from the verified map, not JSON syntax.",
             "            entry.value = num_val;",
             "            cache_dynamic_flag(flag, entry.kind, entry.value);",
             "            bool ok = SetFastFlag(base, &entry);",
@@ -612,9 +649,17 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    const char* value = profile_find_value(json, first);",
         "    if (!value && second) value = profile_find_value(json, second);",
         "    if (!value) return fallback;",
-        "    if (strncmp(value, \"true\", 4) == 0 || strncmp(value, \"\\\"true\\\"\", 6) == 0) return true;",
-        "    if (strncmp(value, \"false\", 5) == 0 || strncmp(value, \"\\\"false\\\"\", 7) == 0) return false;",
-        "    return fallback;",
+        "    char token[48]; size_t length = 0;",
+        "    bool quoted = (unsigned char)*value == 34; if (quoted) value++;",
+        "    while (*value && length + 1 < sizeof(token)) {",
+        "        if ((quoted && (unsigned char)*value == 34) || (!quoted && (*value == ',' || *value == '}' || *value == ' ' || *value == '\\n' || *value == '\\r' || *value == '\\t'))) break;",
+        "        token[length++] = *value++;",
+        "    }",
+        "    if (length + 1 == sizeof(token)) return fallback;",
+        "    token[length] = '\\0';",
+        "    int64_t number = 0; int kind = 0;",
+        "    if (!parse_dynamic_scalar_text(token, &number, &kind) || (number != 0 && number != 1)) return fallback;",
+        "    return number != 0;",
         "}",
         "",
         "static int profile_read_int(const char* json, const char* first, const char* second, int fallback) {",
@@ -743,6 +788,12 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "}",
         "",
         "static void load_and_apply_runtime_profiles(void* log_file) {",
+        "    // Every new request replaces the previous profile, including missing fields.",
+        "    g_profile_loaded = g_game_mode_enabled = g_refresh_requested = g_keep_display_active = false;",
+        "    g_target_fps = 60; g_stretch_percent = 100; g_shader_wet_floor = false; g_font_size_step = 0;",
+        "    snprintf(g_renderer_mode, sizeof(g_renderer_mode), \"Automatic\");",
+        "    snprintf(g_shader_package, sizeof(g_shader_package), \"none\");",
+        "    snprintf(g_font_family, sizeof(g_font_family), \"Default\");",
         "    long turbo_size = 0;",
         "    char* turbo = read_profile_file(\"MasterstrapTurboProfile.json\", &turbo_size);",
         "    g_profile_loaded = turbo != NULL;",
@@ -927,89 +978,8 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    runtime_note(\"[ABI_PROBE][SUMMARY] total=%d executable=%d plausible=%d ambiguousRoles=%d callGate=CLOSED reason=function-signatures-unverified\", g_abi_probe_total, g_abi_probe_executable, g_abi_probe_plausible, g_abi_probe_duplicate_roles);",
         "}",
         "",
-        "typedef id (*DisplayLinkCreateImp)(id, SEL, id, SEL);",
-        "typedef void (*DisplayLinkSetFpsImp)(id, SEL, long);",
-        "static DisplayLinkCreateImp g_original_display_link_create = NULL;",
-        "static DisplayLinkSetFpsImp g_original_display_link_set_fps = NULL;",
-        "static int g_display_link_policy_installed = 0;",
-        "static int g_display_link_rewrite_count = 0;",
-        "",
-        "static int ios_maximum_frames_per_second(void) {",
-        "    id UIScreen = objc_getClass(\"UIScreen\");",
-        "    id screen = UIScreen ? ((id (*)(id, SEL))objc_msgSend)(UIScreen, sel_registerName(\"mainScreen\")) : NULL;",
-        "    if (!screen) return 60;",
-        "    long maximum = ((long (*)(id, SEL))objc_msgSend)(screen, sel_registerName(\"maximumFramesPerSecond\"));",
-        "    return (maximum >= 30 && maximum <= 240) ? (int)maximum : 60;",
-        "}",
-        "",
-        "static bool fps_runtime_requested(void) {",
-        "    return g_refresh_requested || g_target_fps > 60;",
-        "}",
-        "",
-        "static long fps_runtime_target(void) {",
-        "    int maximum = ios_maximum_frames_per_second();",
-        "    int requested = g_target_fps > 0 ? g_target_fps : maximum;",
-        "    return requested > maximum ? maximum : requested;",
-        "}",
-        "",
-        "static void display_link_set_fps_hook(id self, SEL cmd, long requested) {",
-        "    long effective = requested;",
-        "    if (fps_runtime_requested()) effective = fps_runtime_target();",
-        "    if (g_original_display_link_set_fps) g_original_display_link_set_fps(self, cmd, effective);",
-        "    if (effective != requested && g_display_link_rewrite_count < 8) {",
-        "        g_display_link_rewrite_count++;",
-        "        runtime_note(\"[APPLY][FPS] source=CADisplayLink requested=%ld effective=%ld screenMax=%d rewrite=%d\", requested, effective, ios_maximum_frames_per_second(), g_display_link_rewrite_count);",
-        "        long readback = ((long (*)(id, SEL))objc_msgSend)(self, sel_registerName(\"preferredFramesPerSecond\"));",
-        "        runtime_note(\"[READBACK][FPS] source=CADisplayLink preferredFramesPerSecond=%ld expected=%ld status=%s\", readback, effective, readback == effective ? \"MATCH\" : \"OS_ADJUSTED\");",
-        "    }",
-        "}",
-        "",
-        "static void apply_display_link_policy(id link, const char* source) {",
-        "    if (!link || !fps_runtime_requested()) return;",
-        "    long effective = fps_runtime_target();",
-        "    if (g_original_display_link_set_fps) {",
-        "        g_original_display_link_set_fps(link, sel_registerName(\"setPreferredFramesPerSecond:\"), effective);",
-        "        runtime_note(\"[APPLY][FPS] source=%s effective=%ld screenMax=%d status=REQUESTED\", source, effective, ios_maximum_frames_per_second());",
-        "        long readback = ((long (*)(id, SEL))objc_msgSend)(link, sel_registerName(\"preferredFramesPerSecond\"));",
-        "        runtime_note(\"[READBACK][FPS] source=%s preferredFramesPerSecond=%ld expected=%ld status=%s\", source, readback, effective, readback == effective ? \"MATCH\" : \"OS_ADJUSTED\");",
-        "    }",
-        "}",
-        "",
-        "static id display_link_create_hook(id self, SEL cmd, id target, SEL selector) {",
-        "    id link = g_original_display_link_create",
-        "        ? g_original_display_link_create(self, cmd, target, selector) : NULL;",
-        "    apply_display_link_policy(link, \"displayLinkWithTarget\");",
-        "    return link;",
-        "}",
-        "",
-        "static bool install_display_link_policy(void) {",
-        "    if (g_display_link_policy_installed) return true;",
-        "    Class cls = (Class)objc_getClass(\"CADisplayLink\");",
-        "    if (!cls) { runtime_note(\"[CAPABILITY][FPS] CADisplayLink class missing status=BLOCKED\"); return false; }",
-        "    SEL setter_sel = sel_registerName(\"setPreferredFramesPerSecond:\");",
-        "    Method setter = class_getInstanceMethod(cls, setter_sel);",
-        "    Method creator = class_getInstanceMethod(object_getClass((id)cls), sel_registerName(\"displayLinkWithTarget:selector:\"));",
-        "    if (setter) {",
-        "        g_original_display_link_set_fps = (DisplayLinkSetFpsImp)method_getImplementation(setter);",
-        "        method_setImplementation(setter, (IMP)display_link_set_fps_hook);",
-        "    }",
-        "    if (creator) {",
-        "        g_original_display_link_create = (DisplayLinkCreateImp)method_getImplementation(creator);",
-        "        method_setImplementation(creator, (IMP)display_link_create_hook);",
-        "    }",
-        "    g_display_link_policy_installed = setter != NULL && creator != NULL;",
-        "    runtime_note(\"[CAPABILITY][FPS] backend=%s setter=%d creator=%d plistHighRefresh=1 screenMax=%d status=%s\", kFpsRuntimeBackend, setter != NULL, creator != NULL, ios_maximum_frames_per_second(), g_display_link_policy_installed ? \"READY\" : \"PARTIAL\");",
-        "    return g_display_link_policy_installed;",
-        "}",
-        "",
-        "static void apply_ios_process_policies(void) {",
-        "    id UIApplication = objc_getClass(\"UIApplication\");",
-        "    id application = UIApplication ? ((id (*)(id, SEL))objc_msgSend)(UIApplication, sel_registerName(\"sharedApplication\")) : NULL;",
-        "    if (application) ((void (*)(id, SEL, bool))objc_msgSend)(application, sel_registerName(\"setIdleTimerDisabled:\"), g_keep_display_active);",
-        "    runtime_note(\"[REQUEST][BOOST] enabled=%d keepDisplay=%d renderer=%s\", g_game_mode_enabled, g_keep_display_active, g_renderer_mode);",
-        "    runtime_note(\"[APPLY][BOOST] keepDisplay=%d qos=OS_MANAGED unrestrictedPower=UNAVAILABLE status=%s\", g_keep_display_active, g_game_mode_enabled ? \"PARTIAL\" : \"INACTIVE\");",
-        "    runtime_note(\"[REQUEST][FPS] target=%d refreshContract=%d screenMax=%d\", g_target_fps, g_refresh_requested, ios_maximum_frames_per_second());",
-        "}",
+        *(ROOT / "tools" / "ios_frame_policy.h").read_text(encoding="utf-8").splitlines(),
+        *(ROOT / "tools" / "ios_display_policy.c").read_text(encoding="utf-8").splitlines(),
         "",
         "static void log_runtime_consumer_contract(void) {",
         "    runtime_note(\"[REQUEST][FONT] family=%s sizeStep=%d\", g_font_family, g_font_size_step);",
@@ -1346,7 +1316,6 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        install_display_link_policy();",
         "        apply_ios_process_policies();",
         "        log_runtime_consumer_contract();",
-        "        write_runtime_capability_receipt();",
         "        if (g_engine_base != 0) {",
         "            int warm_dynamic = load_dynamic_config_files(g_engine_base, NULL);",
         "            int warm_applied = apply_cached_dynamic_flags(g_engine_base);",
@@ -1497,6 +1466,8 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        if (base != 0) break;",
         "        usleep(100000); // 100ms",
         "    }",
+        "    if (!engine_identity_matches(base)) { runtime_note(\"[IDENTITY] UUID status=MISMATCH_OR_UNPINNED engineWrites=BLOCKED\"); base = 0; }",
+        "    else runtime_note(\"[IDENTITY] UUID status=MATCH expected=%s engineWrites=ALLOWED functionCalls=STILL_GATED\", kExpectedEngineUuidText);",
         "    g_engine_base = base;",
         "",
         "    char log_path[512] = {0};",
@@ -1578,7 +1549,6 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "            install_display_link_policy();",
         "            apply_ios_process_policies();",
         "            log_runtime_consumer_contract();",
-        "            write_runtime_capability_receipt();",
         "",
         "            // 2. Apply verified baseline flags only inside an authorized launch.",
         "            for (size_t i = 0; i < kVerifiedCount; i++) {",
@@ -1625,7 +1595,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    runtime_note(\"Persistence loop requested: pid=%d durationSeconds=30 authorized=%d cachedFlags=%zu\", getpid(), launch_authorized, g_cached_dynamic_count);",
         "    for (int loop = 0; launch_authorized && loop < 60; loop++) {",
         "        usleep(500000); // 500ms",
-        "        if (base == 0) { base = get_robloxlib_base(); g_engine_base = base; }",
+        "        if (base == 0) { base = get_robloxlib_base(); if (!engine_identity_matches(base)) base = 0; g_engine_base = base; }",
         "        if (base != 0) {",
         "            for (size_t i = 0; i < kVerifiedCount; i++) {",
         "                SetFastFlag(base, &kVerifiedFlags[i]);",
@@ -1758,10 +1728,12 @@ SUMMARY:
 def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir: Path, embed_flags: bool = True):
     out_dir.mkdir(parents=True, exist_ok=True)
     
-    # 1. Try local dumper first if valid IPA given
+    # IPA builds must use a verified local dump, never a remote version's map.
     dumped_header = None
+    expected_uuid = None
     if input_ipa and input_ipa.is_file():
-        dumped_header = run_local_dumper(input_ipa, out_dir)
+        dumped_header = hpp_path if hpp_path and hpp_path.is_file() else run_local_dumper(input_ipa, out_dir)
+        expected_uuid = verify_ipa_profile(input_ipa, dumped_header)
 
     # 2. Resolve FFlags table (dumped or remote)
     target_header = dumped_header if dumped_header else hpp_path
@@ -1820,7 +1792,7 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
         embed_flags=embed_flags,
     )
 
-    offsets_table = fetch_or_load_offsets_map(None)
+    offsets_table = fetch_or_load_offsets_map(dumped_header.parent / "Offsets.hpp" if dumped_header else None)
     offsets_entries = sorted(offsets_table.items(), key=lambda x: x[0])
     print(f"Loaded Engine Offsets: {len(offsets_entries)} functions")
 
@@ -1828,7 +1800,7 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
         with tempfile.TemporaryDirectory() as td:
             tpath = Path(td)
             dylib_path = tpath / "libmasterstrap.dylib"
-            c_src = generate_native_hook_source(verified_entries, miss_offsets, len(flags), offsets_entries, all_flags_table=table)
+            c_src = generate_native_hook_source(verified_entries, miss_offsets, len(flags), offsets_entries, all_flags_table=table, expected_uuid=expected_uuid)
             compile_dylib(c_src, dylib_path)
             dylib_bytes = dylib_path.read_bytes()
 

@@ -121,12 +121,12 @@ static void MSInitializeLevelPlay(BOOL gdprConsent, BOOL ccpaOptOut) {
     NSString *appKey = info[@"MSLevelPlayAppKey"];
     NSString *rewardedId = info[@"MSLevelPlayRewardedAdUnitId"];
     NSString *interstitialId = info[@"MSLevelPlayInterstitialAdUnitId"];
-    NSString *bannerId = info[@"MSLevelPlayBannerAdUnitId"];
-    if (appKey.length == 0 || rewardedId.length == 0 ||
-        interstitialId.length == 0 || bannerId.length == 0) {
+    if (appKey.length == 0 || rewardedId.length == 0) {
         MSLog(@"SDK disabled: missing iOS app key or ad-unit ID");
         return;
     }
+    if (interstitialId.length == 0) interstitialId = rewardedId;
+    if (bannerId.length == 0) bannerId = rewardedId;
 
     // Match Android: an explicit user choice is applied before LevelPlay init.
     [LPMPrivacySettings setGDPRConsent:gdprConsent];
@@ -197,9 +197,14 @@ static void MSPresentPrivacyChoice(void) {
 }
 
 void MSLevelPlayConfigure(void *rootViewController, void *webView) {
-    MSRootViewController = (__bridge UIViewController *)rootViewController;
-    MSWebView = (__bridge WKWebView *)webView;
+    if (rootViewController) {
+        MSRootViewController = (__bridge UIViewController *)rootViewController;
+    }
+    if (webView) {
+        MSWebView = (__bridge WKWebView *)webView;
+    }
     if (MSInitialized || MSInitializationStarted) return;
+    if (!MSRootViewController) return;
 
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
     if (![defaults boolForKey:MSPrivacyChoiceSavedKey]) {

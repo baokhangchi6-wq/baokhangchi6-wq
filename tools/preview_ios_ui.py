@@ -114,6 +114,11 @@ def inject_simulator_bridge(html_content: str) -> str:
                         }
                     }
                 },
+                saveConfig: {
+                    postMessage: function(payload) {
+                        console.log("%c[iOS Native Config Saved]", "color: #10B981;", payload);
+                    }
+                },
                 openURL: {
                     postMessage: function(url) {
                         console.log("%c[iOS Open URL]", "color: #A855F7;", url);
