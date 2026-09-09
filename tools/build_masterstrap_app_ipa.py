@@ -883,6 +883,7 @@ def compile_native_executable(
 
             framework_flags.extend([
                 "-ObjC",
+                "-lc++",
                 "-framework", "Foundation", "-framework", "UIKit",
                 "-framework", "WebKit", "-framework", "AdSupport", "-framework", "AudioToolbox",
                 "-framework", "AVFoundation", "-framework", "CoreMedia",
@@ -894,6 +895,14 @@ def compile_native_executable(
                 "-framework", "Network", "-framework", "AVFAudio",
                 "-lz",
             ])
+            # Pass -force_load for static archives to prevent linker from dead-stripping
+            # Swift type metadata sections (__swift5_types, __swift5_reflstr, etc.)
+            for fdir, fname in zip(framework_dirs, framework_names):
+                lib_file = Path(fdir) / f"{fname}.framework" / fname
+                if lib_file.is_file():
+                    framework_flags.extend(["-Wl,-force_load", str(lib_file)])
+                    print(f"[LevelPlay] Preserving Swift metadata with -force_load: {lib_file.name}")
+
             # IronSource 9.6+ and UnityAds contain Swift code — the linker needs the
             # Swift runtime compatibility libraries (libswiftCompatibility50/51/56 etc.)
             # Add the Xcode toolchain Swift stdlib directory so auto-linking resolves.

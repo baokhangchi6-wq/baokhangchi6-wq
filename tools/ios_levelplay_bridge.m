@@ -147,23 +147,35 @@ static void MSInitializeLevelPlay(BOOL gdprConsent, BOOL ccpaOptOut) {
         LPMInitRequest *request = [[[LPMInitRequestBuilder alloc] initWithAppKey:appKey] build];
         MSLog(@"initializing SDK version=%@", [LevelPlay sdkVersion]);
         [LevelPlay initWithRequest:request completion:^(LPMConfiguration *config, NSError *error) {
-            if (error) {
-                MSInitializationStarted = NO;
-                MSLog(@"init failed: %@", error);
-                MSResolve(@"failed", @"sdk_init_failed");
-                return;
+            @try {
+                if (error) {
+                    MSInitializationStarted = NO;
+                    MSLog(@"init failed: %@", error);
+                    MSResolve(@"failed", @"sdk_init_failed");
+                    return;
+                }
+                MSInitialized = YES;
+                MSRewardedAdUnitId = rewardedId;
+                MSInterstitialAdUnitId = interstitialId;
+                MSLog(@"init complete; LevelPlay SDK ready");
+                @try {
+                    MSRewarded = [[LPMRewardedAd alloc] initWithAdUnitId:rewardedId];
+                    [MSRewarded setDelegate:MSDelegate];
+                    [MSRewarded loadAd];
+                } @catch (NSException *rx) {
+                    MSLog(@"Rewarded ad pre-warm error: %@ - %@", rx.name, rx.reason);
+                }
+                @try {
+                    MSInterstitial = [[LPMInterstitialAd alloc] initWithAdUnitId:interstitialId];
+                    [MSInterstitial setDelegate:MSDelegate];
+                    [MSInterstitial loadAd];
+                } @catch (NSException *ix) {
+                    MSLog(@"Interstitial ad pre-warm error: %@ - %@", ix.name, ix.reason);
+                }
+                MSTryShowPending();
+            } @catch (NSException *e) {
+                MSLog(@"LevelPlay completion block caught exception: %@ - %@", e.name, e.reason);
             }
-            MSInitialized = YES;
-            MSRewardedAdUnitId = rewardedId;
-            MSInterstitialAdUnitId = interstitialId;
-            MSRewarded = [[LPMRewardedAd alloc] initWithAdUnitId:rewardedId];
-            MSInterstitial = [[LPMInterstitialAd alloc] initWithAdUnitId:interstitialId];
-            [MSRewarded setDelegate:MSDelegate];
-            [MSInterstitial setDelegate:MSDelegate];
-            [MSRewarded loadAd];
-            [MSInterstitial loadAd];
-            MSLog(@"init complete; fullscreen ads warming");
-            MSTryShowPending();
         }];
     } @catch (NSException *e) {
         MSInitializationStarted = NO;
@@ -262,14 +274,27 @@ void MSLevelPlayRequest(const char *format, const char *requestId) {
                   @"sdk_unavailable");
         return;
     }
-    if ([kind isEqualToString:@"rewarded"]) {
-        MSTryShowPending();
-        if (!MSAdShowing) [MSRewarded loadAd];
-    } else if ([kind isEqualToString:@"interstitial"]) {
-        MSTryShowPending();
-        if (!MSAdShowing) [MSInterstitial loadAd];
-    } else {
-        MSResolve(@"failed", @"unsupported_format");
+    @try {
+        if ([kind isEqualToString:@"rewarded"]) {
+            if (!MSRewarded && MSRewardedAdUnitId.length > 0) {
+                MSRewarded = [[LPMRewardedAd alloc] initWithAdUnitId:MSRewardedAdUnitId];
+                [MSRewarded setDelegate:MSDelegate];
+            }
+            MSTryShowPending();
+            if (!MSAdShowing && MSRewarded) [MSRewarded loadAd];
+        } else if ([kind isEqualToString:@"interstitial"]) {
+            if (!MSInterstitial && MSInterstitialAdUnitId.length > 0) {
+                MSInterstitial = [[LPMInterstitialAd alloc] initWithAdUnitId:MSInterstitialAdUnitId];
+                [MSInterstitial setDelegate:MSDelegate];
+            }
+            MSTryShowPending();
+            if (!MSAdShowing && MSInterstitial) [MSInterstitial loadAd];
+        } else {
+            MSResolve(@"failed", @"unsupported_format");
+        }
+    } @catch (NSException *e) {
+        MSLog(@"MSLevelPlayRequest exception: %@ - %@", e.name, e.reason);
+        MSResolve([kind isEqualToString:@"interstitial"] ? @"continue" : @"failed", @"exception");
     }
 }
 

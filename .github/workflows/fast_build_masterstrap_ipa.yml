@@ -1,0 +1,98 @@
+name: Fast Build Masterstrap IPA
+
+on:
+  push:
+    branches: [ master, main ]
+    paths:
+      - 'tools/**'
+      - 'Masterstrap/**'
+      - '.github/workflows/fast_build_masterstrap_ipa.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fast-build-ipa:
+    runs-on: macos-26
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install Minimal Dependencies
+        run: |
+          pip install Pillow
+
+      - name: Cache LevelPlay & UnityAds SDKs
+        id: cache-sdks
+        uses: actions/cache@v4
+        with:
+          path: /tmp/sdk-cache
+          key: levelplay-unityads-sdks-v1
+
+      - name: Download SDKs (if not cached)
+        run: |
+          mkdir -p /tmp/sdk-cache
+          if [ ! -f /tmp/sdk-cache/IronSource9.6.0.zip ]; then
+            echo "Downloading IronSource 9.6.0..."
+            curl -fL --retry 3 "https://raw.githubusercontent.com/ironsource-mobile/iOS-sdk/master/9.6.0/IronSource9.6.0.zip" -o /tmp/sdk-cache/IronSource9.6.0.zip
+          fi
+          if [ ! -f /tmp/sdk-cache/ISUnityAdsAdapter5.11.0.zip ]; then
+            echo "Downloading UnityAds Adapter 5.11.0..."
+            curl -fL --retry 3 "https://raw.githubusercontent.com/ironsource-mobile/iOS-adapters/master/unityads-adapter/5.11.0/ISUnityAdsAdapter5.11.0.zip" -o /tmp/sdk-cache/ISUnityAdsAdapter5.11.0.zip
+          fi
+          if [ ! -f /tmp/sdk-cache/UnityAds.zip ]; then
+            echo "Downloading UnityAds 4.20.0..."
+            curl -fL --retry 3 "https://github.com/Unity-Technologies/unity-ads-ios/releases/download/4.20.0/UnityAds.zip" -o /tmp/sdk-cache/UnityAds.zip
+          fi
+
+      - name: Extract SDKs
+        run: |
+          rm -rf /tmp/masterstrap-levelplay
+          mkdir -p /tmp/masterstrap-levelplay output
+          ditto -x -k /tmp/sdk-cache/IronSource9.6.0.zip /tmp/masterstrap-levelplay
+          ditto -x -k /tmp/sdk-cache/ISUnityAdsAdapter5.11.0.zip /tmp/masterstrap-levelplay
+          ditto -x -k /tmp/sdk-cache/UnityAds.zip /tmp/masterstrap-levelplay/UnityAds
+
+      - name: Build Masterstrap.ipa
+        env:
+          IOS_LEVELPLAY_APP_KEY: ${{ secrets.IOS_LEVELPLAY_APP_KEY || '28072d93d' }}
+          IOS_LEVELPLAY_REWARDED_ID: ${{ secrets.IOS_LEVELPLAY_REWARDED_ID || 'Rewarded_iOS' }}
+          IOS_LEVELPLAY_BANNER_ID: ${{ secrets.IOS_LEVELPLAY_BANNER_ID || 'Banner_iOS' }}
+          IOS_LEVELPLAY_INTERSTITIAL_ID: ${{ secrets.IOS_LEVELPLAY_INTERSTITIAL_ID || 'Interstitial_iOS' }}
+        run: |
+          LEVELPLAY_FRAMEWORK=$(find /tmp/masterstrap-levelplay -type d -name "IronSource.framework" | grep "ios-arm64/" | grep -v "simulator" | head -n 1)
+          UNITYADS_ADAPTER_FRAMEWORK=$(find /tmp/masterstrap-levelplay -type d -name "ISUnityAdsAdapter.framework" | grep "ios-arm64/" | grep -v "simulator" | head -n 1)
+          UNITYADS_FRAMEWORK=$(find /tmp/masterstrap-levelplay -type d -name "UnityAds.framework" | grep "ios-arm64/" | grep -v "simulator" | head -n 1)
+          echo "LevelPlay Framework: $LEVELPLAY_FRAMEWORK"
+          echo "UnityAds Adapter: $UNITYADS_ADAPTER_FRAMEWORK"
+          echo "UnityAds Framework: $UNITYADS_FRAMEWORK"
+          python tools/build_masterstrap_app_ipa.py \
+            --out-dir output \
+            --levelplay-framework "$LEVELPLAY_FRAMEWORK" \
+            --unityads-adapter-framework "$UNITYADS_ADAPTER_FRAMEWORK" \
+            --unityads-framework "$UNITYADS_FRAMEWORK"
+          ls -lh output/Masterstrap.ipa
+
+      - name: Publish Masterstrap.ipa to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: fast-release-ios-${{ github.run_number }}
+          name: Masterstrap iOS Fast Build (${{ github.run_number }})
+          body: |
+            ## Masterstrap iOS Fast Build (Build ${{ github.run_number }})
+            - Fast standalone build of Masterstrap iOS IPA.
+            - Includes official LevelPlay SDK & Unity Ads mediation (Swift metadata preserved via force-load).
+            - Ready to sideload via TrollStore, AltStore, Sideloadly, or Scarlet.
+          files: |
+            output/Masterstrap.ipa
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
