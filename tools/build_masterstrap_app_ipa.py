@@ -129,7 +129,7 @@ static id g_web_view = NULL;
 typedef void (*MSLevelPlayConfigureFn)(void*, void*);
 typedef void (*MSLevelPlayRequestFn)(const char*, const char*);
 typedef void (*MSLevelPlaySetBannerVisibleFn)(int);
-static void app_log(const char* fmt, ...);
+void app_log(const char* fmt, ...);
 
 static void configure_levelplay_if_available(void) {
     if (!g_root_view_controller || !g_web_view) return;
@@ -142,7 +142,7 @@ static void configure_levelplay_if_available(void) {
     app_log("[ADS] LevelPlay bridge configured");
 }
 
-static void app_log(const char* fmt, ...) {
+void app_log(const char* fmt, ...) {
     char buf[1024];
     __builtin_va_list args;
     __builtin_va_start(args, fmt);
