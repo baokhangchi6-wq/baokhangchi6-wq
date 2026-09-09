@@ -24,12 +24,15 @@ static NSString *const MSPrivacyChoiceSavedKey = @"masterstrap_ads_privacy_choic
 static NSString *const MSGDPRConsentKey = @"masterstrap_ads_gdpr_consent";
 static NSString *const MSCCPAOptOutKey = @"masterstrap_ads_ccpa_opt_out";
 
+extern void app_log(const char* fmt, ...);
+
 static void MSLog(NSString *format, ...) {
     va_list args;
     va_start(args, format);
     NSString *message = [[NSString alloc] initWithFormat:format arguments:args];
     va_end(args);
     NSLog(@"[Masterstrap-LevelPlay] %@", message);
+    app_log("[LevelPlay] %s", [message UTF8String]);
 }
 
 static void MSDeliverResult(NSString *requestId, NSString *format,
@@ -118,49 +121,55 @@ static MSLevelPlayDelegate *MSDelegate;
 static void MSInitializeLevelPlay(BOOL gdprConsent, BOOL ccpaOptOut) {
     if (MSInitialized || MSInitializationStarted) return;
 
-    NSDictionary *info = NSBundle.mainBundle.infoDictionary;
-    NSString *appKey = info[@"MSLevelPlayAppKey"];
-    NSString *rewardedId = info[@"MSLevelPlayRewardedAdUnitId"];
-    NSString *interstitialId = info[@"MSLevelPlayInterstitialAdUnitId"];
-    NSString *bannerId = info[@"MSLevelPlayBannerAdUnitId"];
-    if (appKey.length == 0 || rewardedId.length == 0) {
-        MSLog(@"SDK disabled: missing iOS app key or ad-unit ID");
-        return;
-    }
-    if (interstitialId.length == 0) interstitialId = rewardedId;
-    if (bannerId.length == 0) bannerId = rewardedId;
-    MSBannerAdUnitId = bannerId;
-
-    // Match Android: an explicit user choice is applied before LevelPlay init.
-    [LPMPrivacySettings setGDPRConsent:gdprConsent];
-    [LPMPrivacySettings setCCPA:ccpaOptOut];
-    [LPMPrivacySettings setCOPPA:NO];
-    MSLog(@"privacy applied explicitChoice=1 gdprConsent=%d ccpaOptOut=%d childDirected=0",
-          gdprConsent, ccpaOptOut);
-
-    MSInitializationStarted = YES;
-    MSDelegate = [MSLevelPlayDelegate new];
-    LPMInitRequest *request = [[[LPMInitRequestBuilder alloc] initWithAppKey:appKey] build];
-    MSLog(@"initializing SDK version=%@", [LevelPlay sdkVersion]);
-    [LevelPlay initWithRequest:request completion:^(LPMConfiguration *config, NSError *error) {
-        if (error) {
-            MSInitializationStarted = NO;
-            MSLog(@"init failed: %@", error);
-            MSResolve(@"failed", @"sdk_init_failed");
+    @try {
+        NSDictionary *info = NSBundle.mainBundle.infoDictionary;
+        NSString *appKey = info[@"MSLevelPlayAppKey"];
+        NSString *rewardedId = info[@"MSLevelPlayRewardedAdUnitId"];
+        NSString *interstitialId = info[@"MSLevelPlayInterstitialAdUnitId"];
+        NSString *bannerId = info[@"MSLevelPlayBannerAdUnitId"];
+        if (appKey.length == 0 || rewardedId.length == 0) {
+            MSLog(@"SDK disabled: missing iOS app key or ad-unit ID");
             return;
         }
-        MSInitialized = YES;
-        MSRewardedAdUnitId = rewardedId;
-        MSInterstitialAdUnitId = interstitialId;
-        MSRewarded = [[LPMRewardedAd alloc] initWithAdUnitId:rewardedId];
-        MSInterstitial = [[LPMInterstitialAd alloc] initWithAdUnitId:interstitialId];
-        [MSRewarded setDelegate:MSDelegate];
-        [MSInterstitial setDelegate:MSDelegate];
-        [MSRewarded loadAd];
-        [MSInterstitial loadAd];
-        MSLog(@"init complete; fullscreen ads warming");
-        MSTryShowPending();
-    }];
+        if (interstitialId.length == 0) interstitialId = rewardedId;
+        if (bannerId.length == 0) bannerId = rewardedId;
+        MSBannerAdUnitId = bannerId;
+
+        // Match Android: an explicit user choice is applied before LevelPlay init.
+        [LPMPrivacySettings setGDPRConsent:gdprConsent];
+        [LPMPrivacySettings setCCPA:ccpaOptOut];
+        [LPMPrivacySettings setCOPPA:NO];
+        MSLog(@"privacy applied explicitChoice=1 gdprConsent=%d ccpaOptOut=%d childDirected=0",
+              gdprConsent, ccpaOptOut);
+
+        MSInitializationStarted = YES;
+        MSDelegate = [MSLevelPlayDelegate new];
+        LPMInitRequest *request = [[[LPMInitRequestBuilder alloc] initWithAppKey:appKey] build];
+        MSLog(@"initializing SDK version=%@", [LevelPlay sdkVersion]);
+        [LevelPlay initWithRequest:request completion:^(LPMConfiguration *config, NSError *error) {
+            if (error) {
+                MSInitializationStarted = NO;
+                MSLog(@"init failed: %@", error);
+                MSResolve(@"failed", @"sdk_init_failed");
+                return;
+            }
+            MSInitialized = YES;
+            MSRewardedAdUnitId = rewardedId;
+            MSInterstitialAdUnitId = interstitialId;
+            MSRewarded = [[LPMRewardedAd alloc] initWithAdUnitId:rewardedId];
+            MSInterstitial = [[LPMInterstitialAd alloc] initWithAdUnitId:interstitialId];
+            [MSRewarded setDelegate:MSDelegate];
+            [MSInterstitial setDelegate:MSDelegate];
+            [MSRewarded loadAd];
+            [MSInterstitial loadAd];
+            MSLog(@"init complete; fullscreen ads warming");
+            MSTryShowPending();
+        }];
+    } @catch (NSException *e) {
+        MSInitializationStarted = NO;
+        MSLog(@"MSInitializeLevelPlay caught exception: %@ - %@", e.name, e.reason);
+        MSResolve(@"failed", @"init_exception");
+    }
 }
 
 static void MSSavePrivacyChoiceAndInitialize(BOOL personalized) {
@@ -178,24 +187,34 @@ static void MSPresentPrivacyChoice(void) {
     MSPrivacyPromptVisible = YES;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(500 * NSEC_PER_MSEC)),
                    dispatch_get_main_queue(), ^{
-        UIViewController *presenter = MSRootViewController;
-        while (presenter.presentedViewController) presenter = presenter.presentedViewController;
-        UIAlertController *alert = [UIAlertController
-            alertControllerWithTitle:@"Advertising privacy"
-            message:@"Choose how ads are served. Both choices keep Masterstrap usable. Privacy policy: https://masterstrap.org/privacy/"
-            preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:@"Personalized ads"
-                                                  style:UIAlertActionStyleDefault
-                                                handler:^(UIAlertAction *action) {
-            MSSavePrivacyChoiceAndInitialize(YES);
-        }]];
-        [alert addAction:[UIAlertAction actionWithTitle:@"Non-personalized ads"
-                                                  style:UIAlertActionStyleDefault
-                                                handler:^(UIAlertAction *action) {
+        @try {
+            UIViewController *presenter = MSRootViewController;
+            while (presenter.presentedViewController) presenter = presenter.presentedViewController;
+            if (!presenter.view.window) {
+                MSLog(@"Presenter view not yet in window hierarchy; initializing with safe default");
+                MSSavePrivacyChoiceAndInitialize(NO);
+                return;
+            }
+            UIAlertController *alert = [UIAlertController
+                alertControllerWithTitle:@"Advertising privacy"
+                message:@"Choose how ads are served. Both choices keep Masterstrap usable. Privacy policy: https://masterstrap.org/privacy/"
+                preferredStyle:UIAlertControllerStyleAlert];
+            [alert addAction:[UIAlertAction actionWithTitle:@"Personalized ads"
+                                                      style:UIAlertActionStyleDefault
+                                                    handler:^(UIAlertAction *action) {
+                MSSavePrivacyChoiceAndInitialize(YES);
+            }]];
+            [alert addAction:[UIAlertAction actionWithTitle:@"Non-personalized ads"
+                                                      style:UIAlertActionStyleDefault
+                                                    handler:^(UIAlertAction *action) {
+                MSSavePrivacyChoiceAndInitialize(NO);
+            }]];
+            [presenter presentViewController:alert animated:YES completion:nil];
+            MSLog(@"LevelPlay init deferred: awaiting explicit ad privacy choice");
+        } @catch (NSException *e) {
+            MSLog(@"Privacy prompt presentation caught exception: %@ - %@", e.name, e.reason);
             MSSavePrivacyChoiceAndInitialize(NO);
-        }]];
-        [presenter presentViewController:alert animated:YES completion:nil];
-        MSLog(@"LevelPlay init deferred: awaiting explicit ad privacy choice");
+        }
     });
 }
 
@@ -256,27 +275,31 @@ void MSLevelPlayRequest(const char *format, const char *requestId) {
 
 void MSLevelPlaySetBannerVisible(int visible) {
     if (!MSInitialized || !MSRootViewController) return;
-    if (!visible) {
-        [MSBanner destroy];
-        [MSBanner removeFromSuperview];
-        MSBanner = nil;
-        MSLog(@"settings banner hidden");
-        return;
+    @try {
+        if (!visible) {
+            [MSBanner destroy];
+            [MSBanner removeFromSuperview];
+            MSBanner = nil;
+            MSLog(@"settings banner hidden");
+            return;
+        }
+        if (MSBanner) return;
+        NSString *bannerId = MSBannerAdUnitId ?: NSBundle.mainBundle.infoDictionary[@"MSLevelPlayBannerAdUnitId"];
+        if (bannerId.length == 0) bannerId = MSRewardedAdUnitId;
+        if (bannerId.length == 0) return;
+        MSBanner = [[LPMBannerAdView alloc] initWithAdUnitId:bannerId];
+        [MSBanner setDelegate:MSDelegate];
+        MSBanner.translatesAutoresizingMaskIntoConstraints = NO;
+        [MSRootViewController.view addSubview:MSBanner];
+        [NSLayoutConstraint activateConstraints:@[
+            [MSBanner.centerXAnchor constraintEqualToAnchor:MSRootViewController.view.centerXAnchor],
+            [MSBanner.bottomAnchor constraintEqualToAnchor:MSRootViewController.view.safeAreaLayoutGuide.bottomAnchor constant:-68.0],
+            [MSBanner.widthAnchor constraintEqualToConstant:320.0],
+            [MSBanner.heightAnchor constraintEqualToConstant:50.0]
+        ]];
+        [MSBanner loadAdWithViewController:MSRootViewController];
+        MSLog(@"settings banner requested");
+    } @catch (NSException *e) {
+        MSLog(@"MSLevelPlaySetBannerVisible caught exception: %@ - %@", e.name, e.reason);
     }
-    if (MSBanner) return;
-    NSString *bannerId = MSBannerAdUnitId ?: NSBundle.mainBundle.infoDictionary[@"MSLevelPlayBannerAdUnitId"];
-    if (bannerId.length == 0) bannerId = MSRewardedAdUnitId;
-    if (bannerId.length == 0) return;
-    MSBanner = [[LPMBannerAdView alloc] initWithAdUnitId:bannerId];
-    [MSBanner setDelegate:MSDelegate];
-    MSBanner.translatesAutoresizingMaskIntoConstraints = NO;
-    [MSRootViewController.view addSubview:MSBanner];
-    [NSLayoutConstraint activateConstraints:@[
-        [MSBanner.centerXAnchor constraintEqualToAnchor:MSRootViewController.view.centerXAnchor],
-        [MSBanner.bottomAnchor constraintEqualToAnchor:MSRootViewController.view.safeAreaLayoutGuide.bottomAnchor constant:-68.0],
-        [MSBanner.widthAnchor constraintEqualToConstant:320.0],
-        [MSBanner.heightAnchor constraintEqualToConstant:50.0]
-    ]];
-    [MSBanner loadAdWithViewController:MSRootViewController];
-    MSLog(@"settings banner requested");
 }

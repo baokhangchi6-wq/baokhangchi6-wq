@@ -112,6 +112,9 @@ extern void object_getInstanceVariable(id obj, const char *name, void **outValue
 extern int UIApplicationMain(int argc, char *argv[], id principalClassName, id delegateClassName);
 extern void* dlopen(const char* filename, int flag);
 extern void* dlsym(void* handle, const char* symbol);
+extern int backtrace(void **buffer, int size);
+extern char **backtrace_symbols(void *const *buffer, int size);
+extern void free(void *ptr);
 #define RTLD_DEFAULT ((void*)-2)
 
 typedef struct CGRect (*CGRectGetFunc)(id, SEL);
@@ -175,6 +178,15 @@ static void app_log(const char* fmt, ...) {
 
 static void crash_handler(int sig) {
     app_log("CRITICAL FATAL: Caught signal %d! App crashed.", sig);
+    void* frames[32];
+    int nframes = backtrace(frames, 32);
+    char** syms = backtrace_symbols(frames, nframes);
+    if (syms) {
+        for (int i = 0; i < nframes; i++) {
+            app_log("  [BT #%d] %s", i, syms[i]);
+        }
+        free(syms);
+    }
     if (g_log_file) {
         fprintf(g_log_file, "=== FATAL CRASH SIGNAL: %d ===\\n", sig);
         fflush(g_log_file);
@@ -195,6 +207,21 @@ static const char* utf8str(id str) {
     if (!NSString) return "";
     if (!((bool (*)(id, SEL, id))objc_msgSend)(str, sel_registerName("isKindOfClass:"), NSString)) return "";
     return ((const char* (*)(id, SEL))objc_msgSend)(str, sel_registerName("UTF8String"));
+}
+
+static void on_uncaught_exception(id exception) {
+    if (!exception) return;
+    id name = ((id (*)(id, SEL))objc_msgSend)(exception, sel_registerName("name"));
+    id reason = ((id (*)(id, SEL))objc_msgSend)(exception, sel_registerName("reason"));
+    id stack = ((id (*)(id, SEL))objc_msgSend)(exception, sel_registerName("callStackSymbols"));
+    app_log("CRITICAL FATAL UNCAUGHT EXCEPTION: [%s] %s", utf8str(name), utf8str(reason));
+    if (stack) {
+        NSUInteger count = ((NSUInteger (*)(id, SEL))objc_msgSend)(stack, sel_registerName("count"));
+        for (NSUInteger i = 0; i < count && i < 20; i++) {
+            id line = ((id (*)(id, SEL, NSUInteger))objc_msgSend)(stack, sel_registerName("objectAtIndex:"), i);
+            app_log("  #%lu %s", (unsigned long)i, utf8str(line));
+        }
+    }
 }
 
 static void write_file(const char* path, const char* content) {
@@ -711,6 +738,16 @@ static void viewController_loadView(id self, SEL _cmd) {
     }
 }
 
+static id appDelegate_window(id self, SEL _cmd) {
+    id win = NULL;
+    object_getInstanceVariable(self, "window", (void**)&win);
+    return win;
+}
+
+static void appDelegate_setWindow(id self, SEL _cmd, id win) {
+    object_setInstanceVariable(self, "window", win);
+}
+
 static bool appDelegate_didFinishLaunching(id self, SEL _cmd, id application, id launchOptions) {
     id UIWindow = objc_getClass("UIWindow");
     id UIScreen = objc_getClass("UIScreen");
@@ -743,6 +780,13 @@ static bool appDelegate_didFinishLaunching(id self, SEL _cmd, id application, id
 int main(int argc, char *argv[]) {
     signal(11, crash_handler);
     signal(6, crash_handler);
+    signal(4, crash_handler);
+    signal(10, crash_handler);
+
+    id setUncaught = (id)dlsym(RTLD_DEFAULT, "NSSetUncaughtExceptionHandler");
+    if (setUncaught) {
+        ((void (*)(void*))setUncaught)((void*)on_uncaught_exception);
+    }
 
     app_log("==============================================");
     app_log("=== Masterstrap iOS App Started (PID %d) ===", getpid());
@@ -766,6 +810,8 @@ int main(int argc, char *argv[]) {
     id UIResponder = objc_getClass("UIResponder");
     id appDelegateCls = objc_allocateClassPair(UIResponder, "MasterstrapAppDelegate", 0);
     class_addIvar(appDelegateCls, "window", sizeof(id), 3, "@");
+    class_addMethod(appDelegateCls, sel_registerName("window"), (void(*)(void))appDelegate_window, "@@:");
+    class_addMethod(appDelegateCls, sel_registerName("setWindow:"), (void(*)(void))appDelegate_setWindow, "v@:@");
     class_addMethod(appDelegateCls, sel_registerName("application:didFinishLaunchingWithOptions:"), (void(*)(void))appDelegate_didFinishLaunching, "B@:@@");
     objc_registerClassPair(appDelegateCls);
 
