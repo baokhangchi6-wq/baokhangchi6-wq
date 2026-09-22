@@ -57,14 +57,18 @@ fi
 # force-loaded executable. Mirror its essential copy phase from the same
 # Xcode toolchain so the generated IPA remains deterministic.
 swift_binary="$(xcrun --find swift)"
-swift_library_dir="$(cd "$(dirname "$swift_binary")/../lib/swift/iphoneos" && pwd)"
+swift_library_root="$(cd "$(dirname "$swift_binary")/../lib" && pwd)"
 while IFS= read -r swift_library; do
   [[ -n "$swift_library" ]] || continue
-  source_library="$swift_library_dir/$swift_library"
-  if [[ ! -f "$source_library" ]]; then
-    echo "Swift runtime dependency not found in Xcode toolchain: $source_library" >&2
+  source_library="$(
+    find "$swift_library_root" -type f \
+      -path "*/iphoneos/$swift_library" -print -quit
+  )"
+  if [[ -z "$source_library" ]]; then
+    echo "Swift runtime dependency not found in Xcode toolchain: $swift_library" >&2
     exit 1
   fi
+  echo "Embedding $swift_library from $source_library"
   cp -f "$source_library" "$frameworks_dir/$swift_library"
   chmod 755 "$frameworks_dir/$swift_library"
 done < <(
@@ -74,8 +78,11 @@ done < <(
 )
 
 if [[ ! -f "$frameworks_dir/libswift_Concurrency.dylib" ]]; then
-  concurrency_library="$swift_library_dir/libswift_Concurrency.dylib"
-  if [[ ! -f "$concurrency_library" ]]; then
+  concurrency_library="$(
+    find "$swift_library_root" -type f \
+      -path '*/iphoneos/libswift_Concurrency.dylib' -print -quit
+  )"
+  if [[ -z "$concurrency_library" ]]; then
     echo "Xcode toolchain is missing libswift_Concurrency.dylib" >&2
     exit 1
   fi
