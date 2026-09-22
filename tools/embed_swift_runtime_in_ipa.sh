@@ -43,17 +43,44 @@ frameworks_dir="$app_dir/Frameworks"
 mkdir -p "$frameworks_dir"
 
 swift_stdlib_tool="$(xcrun --find swift-stdlib-tool)"
-"$swift_stdlib_tool" \
-  --copy \
-  --verbose \
-  --scan-executable "$app_binary" \
-  --platform iphoneos \
-  --destination "$frameworks_dir" \
-  --unsigned-destination
+if ! "$swift_stdlib_tool" \
+    --copy \
+    --verbose \
+    --scan-executable "$app_binary" \
+    --platform iphoneos \
+    --destination "$frameworks_dir" \
+    --unsigned-destination; then
+  echo "swift-stdlib-tool failed; copying the executable's Swift dependencies directly." >&2
+fi
+
+# Xcode 26.6's swift-stdlib-tool can crash while scanning this standalone
+# force-loaded executable. Mirror its essential copy phase from the same
+# Xcode toolchain so the generated IPA remains deterministic.
+swift_binary="$(xcrun --find swift)"
+swift_library_dir="$(cd "$(dirname "$swift_binary")/../lib/swift/iphoneos" && pwd)"
+while IFS= read -r swift_library; do
+  [[ -n "$swift_library" ]] || continue
+  source_library="$swift_library_dir/$swift_library"
+  if [[ ! -f "$source_library" ]]; then
+    echo "Swift runtime dependency not found in Xcode toolchain: $source_library" >&2
+    exit 1
+  fi
+  cp -f "$source_library" "$frameworks_dir/$swift_library"
+  chmod 755 "$frameworks_dir/$swift_library"
+done < <(
+  otool -L "$app_binary" |
+    awk '/@rpath\/libswift[^ ]*\.dylib/ { name=$1; sub(/^@rpath\//, "", name); print name }' |
+    sort -u
+)
 
 if [[ ! -f "$frameworks_dir/libswift_Concurrency.dylib" ]]; then
-  echo "swift-stdlib-tool did not embed libswift_Concurrency.dylib" >&2
-  exit 1
+  concurrency_library="$swift_library_dir/libswift_Concurrency.dylib"
+  if [[ ! -f "$concurrency_library" ]]; then
+    echo "Xcode toolchain is missing libswift_Concurrency.dylib" >&2
+    exit 1
+  fi
+  cp -f "$concurrency_library" "$frameworks_dir/libswift_Concurrency.dylib"
+  chmod 755 "$frameworks_dir/libswift_Concurrency.dylib"
 fi
 
 if ! otool -l "$app_binary" | grep -A2 LC_RPATH | grep -q '@executable_path/Frameworks'; then

@@ -239,11 +239,17 @@ class AppBridgeTests(unittest.TestCase):
     def test_standalone_app_packages_swift_runtime_and_unity_resources(self):
         compile_source = inspect.getsource(self.app_builder.compile_native_executable)
         package_source = inspect.getsource(self.app_builder.build_masterstrap_ipa)
+        runtime_embedder = (
+            ROOT / "tools" / "embed_swift_runtime_in_ipa.sh"
+        ).read_text(encoding="utf-8")
 
         self.assertIn("@executable_path/Frameworks", compile_source)
         self.assertIn("omsdk-v1.js", package_source)
         self.assertIn("omid-session-client-v1.js", package_source)
         self.assertIn("merge_privacy_manifests", package_source)
+        self.assertIn("swift-stdlib-tool failed", runtime_embedder)
+        self.assertIn("@rpath\\/libswift", runtime_embedder)
+        self.assertIn("libswift_Concurrency.dylib", runtime_embedder)
 
     def test_sdk_privacy_manifests_are_merged_without_losing_reasons(self):
         with tempfile.TemporaryDirectory() as temp_dir:
