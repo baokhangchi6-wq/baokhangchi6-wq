@@ -1,5 +1,8 @@
 import importlib.util
+import inspect
 from pathlib import Path
+import plistlib
+import tempfile
 import unittest
 
 
@@ -232,6 +235,49 @@ class AppBridgeTests(unittest.TestCase):
         self.assertIn("MSTryShowPending", bridge_source)
         self.assertIn("[adUnitId isEqualToString:MSRewardedAdUnitId]", bridge_source)
         self.assertIn("PrivacyInfo.xcprivacy", self.app_builder.build_masterstrap_ipa.__code__.co_consts)
+
+    def test_standalone_app_packages_swift_runtime_and_unity_resources(self):
+        compile_source = inspect.getsource(self.app_builder.compile_native_executable)
+        package_source = inspect.getsource(self.app_builder.build_masterstrap_ipa)
+
+        self.assertIn("@executable_path/Frameworks", compile_source)
+        self.assertIn("omsdk-v1.js", package_source)
+        self.assertIn("omid-session-client-v1.js", package_source)
+        self.assertIn("merge_privacy_manifests", package_source)
+
+    def test_sdk_privacy_manifests_are_merged_without_losing_reasons(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            paths = []
+            for index, reason in enumerate(("CA92.1", "1C8F.1")):
+                path = Path(temp_dir) / f"PrivacyInfo-{index}.xcprivacy"
+                path.write_bytes(
+                    plistlib.dumps(
+                        {
+                            "NSPrivacyTracking": index == 1,
+                            "NSPrivacyAccessedAPITypes": [
+                                {
+                                    "NSPrivacyAccessedAPIType": (
+                                        "NSPrivacyAccessedAPICategoryUserDefaults"
+                                    ),
+                                    "NSPrivacyAccessedAPITypeReasons": [reason],
+                                }
+                            ],
+                        }
+                    )
+                )
+                paths.append(path)
+
+            merged = plistlib.loads(
+                self.app_builder.merge_privacy_manifests(paths)
+            )
+
+        self.assertTrue(merged["NSPrivacyTracking"])
+        self.assertEqual(
+            ["CA92.1", "1C8F.1"],
+            merged["NSPrivacyAccessedAPITypes"][0][
+                "NSPrivacyAccessedAPITypeReasons"
+            ],
+        )
 
 
 if __name__ == "__main__":

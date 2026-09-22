@@ -922,7 +922,9 @@ def compile_native_executable(
         link_cmd = [
             "xcrun", "clang", "-target", "arm64-apple-ios14.0",
             "-isysroot", sdk_path, *objects, *framework_flags,
-            "-Wl,-export_dynamic", "-o", str(out_bin),
+            "-Wl,-export_dynamic",
+            "-Wl,-rpath,@executable_path/Frameworks",
+            "-o", str(out_bin),
         ]
         proc = subprocess.run(link_cmd, capture_output=True, text=True)
         if proc.returncode != 0:
@@ -2223,6 +2225,65 @@ def generate_icon_dictionary() -> dict:
     return result
 
 
+def merge_privacy_manifests(manifest_paths: list[Path]) -> bytes:
+    """Merge SDK privacy manifests into the app's single root manifest."""
+    merged: dict = {}
+    record_keys = {
+        "NSPrivacyAccessedAPITypes": "NSPrivacyAccessedAPIType",
+        "NSPrivacyCollectedDataTypes": "NSPrivacyCollectedDataType",
+    }
+
+    for manifest_path in manifest_paths:
+        manifest = plistlib.loads(manifest_path.read_bytes())
+        for key, value in manifest.items():
+            if isinstance(value, bool):
+                merged[key] = bool(merged.get(key, False) or value)
+                continue
+
+            if not isinstance(value, list):
+                merged.setdefault(key, value)
+                continue
+
+            destination = merged.setdefault(key, [])
+            identity_key = record_keys.get(key)
+            if identity_key is None:
+                for item in value:
+                    if item not in destination:
+                        destination.append(item)
+                continue
+
+            by_identity = {
+                item.get(identity_key): item
+                for item in destination
+                if isinstance(item, dict) and item.get(identity_key)
+            }
+            for item in value:
+                if not isinstance(item, dict) or not item.get(identity_key):
+                    if item not in destination:
+                        destination.append(item)
+                    continue
+
+                identity = item[identity_key]
+                current = by_identity.get(identity)
+                if current is None:
+                    destination.append(item)
+                    by_identity[identity] = item
+                    continue
+
+                for field, field_value in item.items():
+                    if isinstance(field_value, list):
+                        current_values = current.setdefault(field, [])
+                        for entry in field_value:
+                            if entry not in current_values:
+                                current_values.append(entry)
+                    elif isinstance(field_value, bool):
+                        current[field] = bool(current.get(field, False) or field_value)
+                    else:
+                        current.setdefault(field, field_value)
+
+    return plistlib.dumps(merged, sort_keys=False)
+
+
 def build_masterstrap_ipa(
         out_dir: Path, levelplay_framework: Path | None = None,
         unityads_adapter_framework: Path | None = None,
@@ -2375,11 +2436,27 @@ def build_masterstrap_ipa(
             zout.writestr(app_dir + "assets/index.html", html_ui_bytes)
             for icon_name, icon_data in icons.items():
                 zout.writestr(app_dir + icon_name, icon_data)
+            privacy_manifests = []
             if levelplay_framework is not None:
                 privacy_manifest = levelplay_framework / "PrivacyInfo.xcprivacy"
                 if not privacy_manifest.is_file():
                     raise RuntimeError(f"LevelPlay PrivacyInfo.xcprivacy missing: {privacy_manifest}")
-                zout.writestr(app_dir + "PrivacyInfo.xcprivacy", privacy_manifest.read_bytes())
+                privacy_manifests.append(privacy_manifest)
+            if unityads_framework is not None:
+                privacy_manifest = unityads_framework / "PrivacyInfo.xcprivacy"
+                if not privacy_manifest.is_file():
+                    raise RuntimeError(f"UnityAds PrivacyInfo.xcprivacy missing: {privacy_manifest}")
+                privacy_manifests.append(privacy_manifest)
+                for resource_name in ("omsdk-v1.js", "omid-session-client-v1.js"):
+                    resource = unityads_framework / resource_name
+                    if not resource.is_file():
+                        raise RuntimeError(f"UnityAds resource missing: {resource}")
+                    zout.writestr(app_dir + resource_name, resource.read_bytes())
+            if privacy_manifests:
+                zout.writestr(
+                    app_dir + "PrivacyInfo.xcprivacy",
+                    merge_privacy_manifests(privacy_manifests),
+                )
             if unityads_adapter_framework is not None and unityads_adapter_framework.is_dir():
                 for bundle in unityads_adapter_framework.glob("*.bundle"):
                     for item in bundle.rglob("*"):

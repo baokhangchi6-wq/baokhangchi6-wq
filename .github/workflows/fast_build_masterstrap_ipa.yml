@@ -82,6 +82,12 @@ jobs:
             --unityads-framework "$UNITYADS_FRAMEWORK"
           ls -lh output/Masterstrap.ipa
 
+      - name: Embed and verify Swift runtime
+        shell: bash
+        run: |
+          bash tools/embed_swift_runtime_in_ipa.sh output/Masterstrap.ipa
+          ls -lh output/Masterstrap.ipa
+
       - name: Publish Masterstrap.ipa to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -90,7 +96,8 @@ jobs:
           body: |
             ## Masterstrap iOS Fast Build (Build ${{ github.run_number }})
             - Fast standalone build of Masterstrap iOS IPA.
-            - Includes official LevelPlay SDK & Unity Ads mediation (Swift metadata preserved via force-load).
+            - Includes official LevelPlay SDK & Unity Ads mediation.
+            - Includes the Swift Concurrency back-deployment runtime and Unity Ads resources.
             - Ready to sideload via TrollStore, AltStore, Sideloadly, or Scarlet.
           files: |
             output/Masterstrap.ipa
