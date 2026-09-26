@@ -146,8 +146,7 @@ jobs:
           python tools/build_integrated_roblox_ipa.py \
             $IPA_ARG \
             $HPP_ARG \
-            --out-dir output \
-            --no-embedded-flags
+            --out-dir output
 
           # Collect IPA info emitted by builder to GITHUB_OUTPUT
           if compgen -G "output/Masterstrap-*.ipa" > /dev/null; then

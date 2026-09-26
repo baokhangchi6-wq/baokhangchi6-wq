@@ -488,7 +488,7 @@ static void open_roblox_app_channel(const char* channel, id bridge_payload,
     id empty_dict = ((id (*)(id, SEL))objc_msgSend)(NSDictionary, sel_registerName("dictionary"));
 
     const char* bundleId = "com.roblox.robloxmobile";
-    const char* urlScheme = "roblox://";
+    const char* urlScheme = "robloxmobile://";
     const char* bridgeScheme = "masterstrap-rbx-bridge-v1";
 
     if (channel && strcmp(channel, "vng") == 0) {
@@ -509,11 +509,7 @@ static void open_roblox_app_channel(const char* channel, id bridge_payload,
                  bridgeScheme, bridge_v2_request, bridge_v2_ticket);
         id bridge_url = ((id (*)(id, SEL, id))objc_msgSend)(
             NSURL, sel_registerName("URLWithString:"), nsstr(bridge_url_text));
-        bool can_open_bridge = bridge_url && ((bool (*)(id, SEL, id))objc_msgSend)(
-            app, sel_registerName("canOpenURL:"), bridge_url);
-        app_log("Bridge v2 availability: request=%s, canOpenURL=%d",
-                bridge_v2_request, can_open_bridge);
-        if (can_open_bridge) {
+        if (bridge_url) {
             bool accepted = ((bool (*)(id, SEL, id))objc_msgSend)(
                 app, sel_registerName("openURL:"), bridge_url);
             app_log("Bridge v2 dispatch result: request=%s, accepted=%d",
@@ -540,12 +536,7 @@ static void open_roblox_app_channel(const char* channel, id bridge_payload,
             NSURL,
             sel_registerName("URLWithString:"),
             bridge_url_string);
-        bool can_open_bridge = bridge_url && ((bool (*)(id, SEL, id))objc_msgSend)(
-            app,
-            sel_registerName("canOpenURL:"),
-            bridge_url);
-        app_log("Bridge availability: request=%s, canOpenURL=%d", request_id, can_open_bridge);
-        if (can_open_bridge) {
+        if (bridge_url) {
             bool accepted = ((bool (*)(id, SEL, id))objc_msgSend)(app, sel_registerName("openURL:"), bridge_url);
             app_log("Bridge dispatch result: request=%s, accepted=%d", request_id, accepted);
             if (accepted) return;
@@ -575,12 +566,6 @@ static void open_roblox_app_channel(const char* channel, id bridge_payload,
         if (url) {
             ((void (*)(id, SEL, id, id, void*))objc_msgSend)(app, sel_registerName("openURL:options:completionHandler:"), url, empty_dict, NULL);
             app_log("Triggered openURL with %s", urlScheme);
-        }
-        if (strcmp(urlScheme, "roblox://") != 0) {
-            id fallback_url = ((id (*)(id, SEL, id))objc_msgSend)(NSURL, sel_registerName("URLWithString:"), nsstr("roblox://"));
-            if (fallback_url) {
-                ((void (*)(id, SEL, id, id, void*))objc_msgSend)(app, sel_registerName("openURL:options:completionHandler:"), fallback_url, empty_dict, NULL);
-            }
         }
     }
 }
