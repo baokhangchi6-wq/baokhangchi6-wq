@@ -124,11 +124,15 @@ jobs:
             echo "ipa_path=$IPA_PATH" >> "$GITHUB_OUTPUT"
             echo "SUCCESS: Valid Roblox IPA confirmed ($(du -sh "$IPA_PATH" | cut -f1))"
           else
-            echo "WARNING: Could not obtain a valid decrypted Roblox IPA."
+            echo "::error::No valid decrypted Roblox IPA found. To build Masterstrap-<version>.ipa, please either:"
+            echo "::error::1. Trigger via 'Run workflow' and provide a direct HTTPS download URL in the ipa_url field."
+            echo "::error::2. Or add a secret named 'IOS_IPA_URL' in repository Settings -> Secrets and variables -> Actions."
             echo "available=false" >> "$GITHUB_OUTPUT"
             echo "ipa_path=" >> "$GITHUB_OUTPUT"
             rm -f "$IPA_PATH"
+            exit 1
           fi
+
 
       # ── STEP 3: Auto-dump offsets from IPA ───────────────────────────────
       - name: Auto Dump iOS Offsets & FFlags from IPA
