@@ -497,27 +497,28 @@ static void open_roblox_app_channel(const char* channel, id bridge_payload,
         bridgeScheme = "masterstrap-rbx-vng-bridge-v1";
     }
 
+    const char* appBridgeScheme = (channel && strcmp(channel, "vng") == 0) ? "roblox-vng" : "robloxmobile";
+
     app_log("Attempting launch: channel=%s, bundleId=%s, scheme=%s, bridgeV2=%d, bridgeV1=%d",
             channel ? channel : "global", bundleId, urlScheme,
             bridge_v2_request != NULL && bridge_v2_ticket != NULL,
             bridge_payload != NULL);
 
     if (bridge_v2_request && bridge_v2_ticket) {
-        char bridge_url_text[384];
+        char bridge_url_text[512];
         snprintf(bridge_url_text, sizeof(bridge_url_text),
                  "%s://apply?v=2&request=%s&ticket=%s",
-                 bridgeScheme, bridge_v2_request, bridge_v2_ticket);
+                 appBridgeScheme, bridge_v2_request, bridge_v2_ticket);
         id bridge_url = ((id (*)(id, SEL, id))objc_msgSend)(
             NSURL, sel_registerName("URLWithString:"), nsstr(bridge_url_text));
         if (bridge_url) {
-            bool accepted = ((bool (*)(id, SEL, id))objc_msgSend)(
-                app, sel_registerName("openURL:"), bridge_url);
-            app_log("Bridge v2 dispatch result: request=%s, accepted=%d",
-                    bridge_v2_request, accepted);
-            if (accepted) return;
+            ((void (*)(id, SEL, id, id, void*))objc_msgSend)(
+                app, sel_registerName("openURL:options:completionHandler:"),
+                bridge_url, empty_dict, NULL);
+            app_log("Bridge v2 dispatch sent via %s (legacy scheme=%s): request=%s",
+                    appBridgeScheme, bridgeScheme, bridge_v2_request);
+            return;
         }
-        app_log("Bridge v2 dispatch failed: request=%s; trying protocol=1 fallback",
-                bridge_v2_request);
     }
 
     if (bridge_payload) {
@@ -525,9 +526,9 @@ static void open_roblox_app_channel(const char* channel, id bridge_payload,
         char bridge_prefix[256];
         g_bridge_sequence++;
         snprintf(request_id, sizeof(request_id), "%d-%ld-%u", getpid(), time(NULL), g_bridge_sequence);
-        snprintf(bridge_prefix, sizeof(bridge_prefix), "%s://apply?v=1&request=%s&payload=", bridgeScheme, request_id);
-        app_log("Bridge request prepared: request=%s, channel=%s, bundleId=%s",
-                request_id, channel ? channel : "global", bundleId);
+        snprintf(bridge_prefix, sizeof(bridge_prefix), "%s://apply?v=1&request=%s&payload=", appBridgeScheme, request_id);
+        app_log("Bridge request prepared: request=%s, channel=%s, bundleId=%s, legacyScheme=%s",
+                request_id, channel ? channel : "global", bundleId, bridgeScheme);
         id bridge_url_string = ((id (*)(id, SEL, id))objc_msgSend)(
             nsstr(bridge_prefix),
             sel_registerName("stringByAppendingString:"),
@@ -537,11 +538,12 @@ static void open_roblox_app_channel(const char* channel, id bridge_payload,
             sel_registerName("URLWithString:"),
             bridge_url_string);
         if (bridge_url) {
-            bool accepted = ((bool (*)(id, SEL, id))objc_msgSend)(app, sel_registerName("openURL:"), bridge_url);
-            app_log("Bridge dispatch result: request=%s, accepted=%d", request_id, accepted);
-            if (accepted) return;
+            ((void (*)(id, SEL, id, id, void*))objc_msgSend)(
+                app, sel_registerName("openURL:options:completionHandler:"),
+                bridge_url, empty_dict, NULL);
+            app_log("Bridge v1 dispatch sent via %s: request=%s", appBridgeScheme, request_id);
+            return;
         }
-        app_log("Bridge dispatch failed: request=%s; falling back to Roblox URL scheme", request_id);
     }
 
     id LSApplicationWorkspace = objc_getClass("LSApplicationWorkspace");
