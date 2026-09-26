@@ -1793,6 +1793,12 @@ if (origInitAppSettings) {
     user-select: none;
     -webkit-user-select: none;
     cursor: pointer;
+    animation: splash-startup-failsafe 8s step-end forwards;
+}
+
+@keyframes splash-startup-failsafe {
+    0%, 99.9% { visibility: visible; }
+    100% { visibility: hidden; pointer-events: none; }
 }
 
 .splash-content-container {
@@ -1980,7 +1986,40 @@ if (origInitAppSettings) {
     </div>
 </div>
 '''
-    replace_required("<body>", "<body>\n" + splash_html, "splash intro html")
+    splash_watchdog = r'''<script>
+(() => {
+    const log = (message) => {
+        try {
+            const handler = window.webkit?.messageHandlers?.log;
+            if (handler) handler.postMessage("[SPLASH] " + message);
+        } catch (_) {}
+    };
+    const dismiss = (reason) => {
+        const overlay = document.getElementById("splashScreenOverlay");
+        if (!overlay || overlay.style.display === "none") return;
+        overlay.style.display = "none";
+        log("startup overlay dismissed: " + reason);
+    };
+    log("startup watchdog armed");
+    window.addEventListener("error", (event) => {
+        log("script error: " + (event.message || "unknown") + " at " +
+            (event.filename || "") + ":" + (event.lineno || "0"));
+        dismiss("script-error");
+    });
+    window.addEventListener("unhandledrejection", (event) => {
+        let reason = "unhandled promise rejection";
+        try { reason = String(event.reason || reason); } catch (_) {}
+        log(reason);
+        dismiss("unhandled-rejection");
+    });
+    window.setTimeout(() => dismiss("watchdog-timeout"), 8000);
+})();
+</script>'''
+    replace_required(
+        "<body>",
+        "<body>\n" + splash_html + "\n" + splash_watchdog,
+        "splash intro html and independent watchdog",
+    )
     replace_required(
         '<div class="brand-area">',
         '<div class="brand-area" onclick="playSplashScreenIntro()" style="cursor:pointer" title="Replay 3D Intro">',
@@ -1994,9 +2033,22 @@ if (origInitAppSettings) {
 window.splashAnimId = null;
 window.splashDismissTimer = null;
 
+function logSplash(message) {
+    try {
+        const handler = window.webkit && window.webkit.messageHandlers &&
+            window.webkit.messageHandlers.log;
+        if (handler) handler.postMessage("[SPLASH] " + message);
+    } catch (_) {}
+}
+
 function playSplashScreenIntro() {
     const overlay = document.getElementById("splashScreenOverlay");
     if (!overlay) return;
+
+    logSplash("intro started");
+    overlay.style.animation = "none";
+    void overlay.offsetHeight;
+    overlay.style.animation = "";
 
     if (window.splashDismissTimer) {
         clearTimeout(window.splashDismissTimer);
@@ -2131,6 +2183,7 @@ function playSplashScreenIntro() {
 
     // Auto dismiss after 3.4s (3400ms)
     window.splashDismissTimer = setTimeout(() => {
+        logSplash("intro timer fired");
         dismissSplashScreen();
     }, 3400);
 }
@@ -2138,6 +2191,8 @@ function playSplashScreenIntro() {
 function dismissSplashScreen() {
     const overlay = document.getElementById("splashScreenOverlay");
     if (!overlay || overlay.style.display === "none") return;
+
+    logSplash("dismiss requested");
 
     if (window.splashDismissTimer) {
         clearTimeout(window.splashDismissTimer);
