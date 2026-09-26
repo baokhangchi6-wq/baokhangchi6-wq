@@ -88,50 +88,17 @@ jobs:
           set -euo pipefail
           mkdir -p roblox_input output
 
-          IPA_PATH="roblox_input/roblox.ipa"
-          TARGET_URL="$INPUT_IPA_URL"
-
-          # Priority 1: Explicit workflow_dispatch URL
-          if [ -z "$TARGET_URL" ]; then
-            TARGET_URL="$SECRET_IPA_URL"
+          URL_ARG=""
+          if [ -n "$INPUT_IPA_URL" ]; then
+            URL_ARG="--url $INPUT_IPA_URL"
+          elif [ -n "$SECRET_IPA_URL" ]; then
+            URL_ARG="--url $SECRET_IPA_URL"
           fi
 
-          # Priority 2: Auto-search public decrypted mirrors
-          if [ -z "$TARGET_URL" ]; then
-            echo "Searching public verified decrypted mirrors for Roblox iOS IPA..."
-            MIRROR=$(curl -s "https://api.github.com/repos/ipahub/roblox/releases/latest" | python -c "import sys, json; assets=[a['browser_download_url'] for a in json.load(sys.stdin).get('assets', []) if a.get('name', '').endswith('.ipa')]; print(assets[0] if assets else '')" 2>/dev/null || echo "")
-            if [ -n "$MIRROR" ]; then
-              TARGET_URL="$MIRROR"
-              echo "Found public mirror: $TARGET_URL"
-            fi
-          fi
+          python tools/fetch_roblox_ios_ipa.py \
+            $URL_ARG \
+            --output roblox_input/roblox.ipa
 
-          if [ -n "$TARGET_URL" ]; then
-            echo "Downloading IPA from: $TARGET_URL"
-            curl -L \
-              -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" \
-              --retry 3 --retry-delay 5 \
-              -o "$IPA_PATH" "$TARGET_URL" || true
-          fi
-
-          # Validate the downloaded file is a valid IPA (ZIP with Payload/)
-          IS_VALID=$(python -c "import zipfile, sys, pathlib; p = pathlib.Path('$IPA_PATH'); sys.exit(0 if p.is_file() and p.stat().st_size > 1024*1024 and any('Payload/' in n for n in zipfile.ZipFile(p).namelist()[:20]) else 1)" 2>/dev/null && echo "true" || echo "false")
-
-
-
-          if [ "$IS_VALID" = "true" ]; then
-            echo "available=true" >> "$GITHUB_OUTPUT"
-            echo "ipa_path=$IPA_PATH" >> "$GITHUB_OUTPUT"
-            echo "SUCCESS: Valid Roblox IPA confirmed ($(du -sh "$IPA_PATH" | cut -f1))"
-          else
-            echo "::error::No valid decrypted Roblox IPA found. To build Masterstrap-<version>.ipa, please either:"
-            echo "::error::1. Trigger via 'Run workflow' and provide a direct HTTPS download URL in the ipa_url field."
-            echo "::error::2. Or add a secret named 'IOS_IPA_URL' in repository Settings -> Secrets and variables -> Actions."
-            echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "ipa_path=" >> "$GITHUB_OUTPUT"
-            rm -f "$IPA_PATH"
-            exit 1
-          fi
 
 
       # ── STEP 3: Auto-dump offsets from IPA ───────────────────────────────

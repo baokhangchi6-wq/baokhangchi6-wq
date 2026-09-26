@@ -1920,6 +1920,20 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         if not embed_flags and name in embedded_settings_entries:
                             print(f"Removed embedded settings entry -> {name}")
                             continue
+
+                        # ── Delta / Third-Party Sanitization Purge Filter ──
+                        # 1. Skip Delta script package, injector UI, and old signatures
+                        if any(k in name.lower() for k in ["/gloop/", "dlt.zip", "_codesignature", "embedded.mobileprovision"]):
+                            print(f"[PURGE] Removed third-party file -> {name}")
+                            continue
+
+                        # 2. If Delta injected libgloop.dylib, replace it with Masterstrap dylib
+                        if name in ("Payload/Roblox.app/libgloop.dylib", "Payload/Roblox.app/Delta.dylib"):
+                            print(f"[PURGE] Replaced third-party injector dylib -> {name} with Masterstrap dylib")
+                            zout.writestr(name, dylib_bytes)
+                            seen_entries.add(name)
+                            continue
+
                         data = zin.read(name)
 
                         if name == "Payload/Roblox.app/Roblox":
@@ -1931,18 +1945,21 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                                 pl = plistlib.loads(data)
                                 pl["UIFileSharingEnabled"] = True
                                 pl["LSSupportsOpeningDocumentsInPlace"] = True
+                                pl["CFBundleDisplayName"] = "Masterstrap"
+                                pl["CFBundleName"] = "Masterstrap"
                                 configure_ios_runtime_plist(pl)
                                 bridge_scheme = register_bridge_url_scheme(pl)
                                 data = plistlib.dumps(pl)
                                 print(
-                                    "Enabled file sharing, high-refresh presentation, and "
-                                    f"registered bridge URL scheme '{bridge_scheme}' in Info.plist"
+                                    "Purified Info.plist: renamed to Masterstrap, enabled file sharing, "
+                                    f"high-refresh, and registered bridge scheme '{bridge_scheme}'"
                                 )
                             except Exception as e:
                                 print(f"Warning: Failed to update Info.plist: {e}")
 
                         zout.writestr(item, data)
                         seen_entries.add(name)
+
 
                     # Embed dylib
                     dylib_entry = "Payload/Roblox.app/Frameworks/libmasterstrap.dylib"
