@@ -1594,6 +1594,26 @@
       "offset": 0,
       "max_function_scan": 4096,
       "required": false
+    },
+    {
+      "name": "telemetrybuffer",
+      "string": null,
+      "hex_pattern": "E8 03 00 AA ?? ?? ?? 91 ?? ?? ?? F9 ?? ?? ?? F9 08 03 00 F9",
+      "xref_index": 0,
+      "offset": 384,
+      "max_function_scan": 4096,
+      "required": false,
+      "_comment": "TelemetryBuffer struct field at +0x180 (384). Zero-out to suppress telemetry packet data. Android parity: TelemetryBuffer offset 0x180."
+    },
+    {
+      "name": "telemetrysize",
+      "string": null,
+      "hex_pattern": "E8 03 00 AA ?? ?? ?? 91 ?? ?? ?? F9 ?? ?? ?? F9 08 07 00 F9",
+      "xref_index": 0,
+      "offset": 448,
+      "max_function_scan": 4096,
+      "required": false,
+      "_comment": "TelemetrySize struct field at +0x1C0 (448). Zero-out alongside TelemetryBuffer to suppress telemetry packet size reporting. Android parity: TelemetrySize offset 0x1C0."
     }
   ]
 }

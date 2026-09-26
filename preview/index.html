@@ -1669,27 +1669,13 @@ input:checked + .slider:before { transform: translateX(22px); }
 
     <div class="section-header" data-i18n="sec_ffs_network">Network</div>
     <div class="card">
-        <div class="setting-row">
+        <div class="setting-row" style="border-bottom:none">
             <div class="setting-info">
                 <div class="setting-label" data-i18n="ffs_batch_net_title">Faster game asset loading</div>
                 <div class="setting-desc" data-i18n="ffs_batch_net_desc">Groups game asset requests to reduce repeated network work while joining and loading a game.</div>
             </div>
             <label class="switch">
                 <input type="checkbox" id="sw-ffs-batch-net" checked onchange="updateFlagState()">
-                <span class="slider"></span>
-            </label>
-        </div>
-
-        <div class="setting-row">
-            <div class="setting-info">
-                <div class="setting-label">
-                    <span data-i18n="ffs_desync_title">Desync</span>
-                    <svg class="crown-svg-icon" viewBox="0 0 24 24"><path d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5zm14 3c0 .6-.4 1-1 1H6c-.6 0-1-.4-1-1v-1h14v1z"/></svg>
-                </div>
-                <div class="setting-desc" data-i18n="ffs_desync_desc">Applies an experimental high-rate movement and physics network profile. Results depend on the game and connection.</div>
-            </div>
-            <label class="switch">
-                <input type="checkbox" id="sw-ffs-desync" onchange="toggleDesyncVIP(this)">
                 <span class="slider"></span>
             </label>
         </div>
@@ -1995,6 +1981,26 @@ input:checked + .slider:before { transform: translateX(22px); }
             </div>
         </div>
     </div>
+
+    <div class="section-header" style="display:flex;align-items:center;gap:6px">
+        <span data-i18n="section_turbo_ultra">Turbo Ultra</span>
+        <svg class="crown-svg-icon" viewBox="0 0 24 24"><path d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5zm14 3c0 .6-.4 1-1 1H6c-.6 0-1-.4-1-1v-1h14v1z"/></svg>
+    </div>
+    <div class="card">
+        <div class="setting-row" style="border-bottom:none">
+            <div class="setting-info">
+                <div class="setting-label">
+                    <span data-i18n="gm_turbo_ultra_title">Turbo Ultra</span>
+                    <svg class="crown-svg-icon" viewBox="0 0 24 24"><path d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5zm14 3c0 .6-.4 1-1 1H6c-.6 0-1-.4-1-1v-1h14v1z"/></svg>
+                </div>
+                <div class="setting-desc" data-i18n="gm_turbo_ultra_desc">Chế độ giảm đồ họa tối đa giúp tăng FPS và mượt game vượt trội trên mọi máy yếu. Tinh gọn texture, hiệu ứng và bóng đổ (Shader và Sàn ướt sẽ tạm thời tắt). Tắt Turbo Ultra rồi Save &amp; Launch lại để khôi phục đồ họa gốc.</div>
+            </div>
+            <label class="switch">
+                <input type="checkbox" id="sw-gm-turbo-ultra" onchange="if(typeof updateFlagState==='function')updateFlagState();updateTurboProfileState()">
+                <span class="slider"></span>
+            </label>
+        </div>
+    </div>
 </div>
 
 <!-- TAB 4: PRESET -->
@@ -2124,6 +2130,19 @@ input:checked + .slider:before { transform: translateX(22px); }
                     <div style="font-size:11px;color:var(--text-sub);margin-top:2px" data-i18n="desc_app_settings">Configure launch-only display behavior for Roblox patched</div>
                 </div>
                 <div style="color:var(--brand-blue);font-size:22px;font-weight:700">›</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+                <div style="max-width:76%">
+                    <div style="font-size:14px;font-weight:700;color:var(--text-main)" data-i18n="title_allow_blacklist_flags">Allow Blacklist Flags</div>
+                    <div style="font-size:11px;color:var(--text-sub);margin-top:2px" data-i18n="desc_allow_blacklist_flags">Cho phép sử dụng toàn bộ flag mà Masterstrap đã đưa vào blacklist để tránh ban tài khoản, nếu bạn muốn tiếp tục sử dụng thì tôi sẽ từ chối chịu trách nhiệm.</div>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" id="sw-allow-blacklist-flags" onchange="onToggleAllowBlacklistFlags(this.checked)">
+                    <span class="slider"></span>
+                </label>
             </div>
         </div>
 
@@ -2444,6 +2463,11 @@ const TRANSLATIONS = {
         "warning_shader_conflicts": "Cài đặt Shader & Phản chiếu có thể xung đột với một số cấu hình đồ họa FastFlag.",
         "ffs_no_vfx_title": "NO VFX",
         "ffs_no_vfx_desc": "Tắt các hiệu ứng chói sáng và làm mờ phức tạp giúp giảm lag, tăng độ mượt (FPS) tối đa cho máy yếu. Lưu ý: sẽ làm mất hiệu ứng ánh sáng nếu đang bật Gói Shader.",
+        "section_turbo_ultra": "Turbo Ultra",
+        "gm_turbo_ultra_title": "Turbo Ultra",
+        "gm_turbo_ultra_desc": "Chế độ giảm đồ họa tối đa giúp tăng FPS và mượt game vượt trội trên mọi máy yếu. Tinh gọn texture, hiệu ứng và bóng đổ (Shader và Sàn ướt sẽ tạm thời tắt). Tắt Turbo Ultra rồi Save & Launch lại để khôi phục đồ họa gốc.",
+        "title_allow_blacklist_flags": "Cho phép dùng cờ Blacklist",
+        "desc_allow_blacklist_flags": "Cho phép sử dụng toàn bộ flag mà Masterstrap đã đưa vào blacklist để tránh ban tài khoản, nếu bạn muốn tiếp tục sử dụng thì tôi sẽ từ chối chịu trách nhiệm.",
         "app_title": "Masterstrap",
         "app_sub": "FastFlag & Tối ưu trò chơi",
         "tab_fastflag": "FastFlag",
@@ -2542,8 +2566,6 @@ const TRANSLATIONS = {
         "sec_ffs_network": "Mạng & Băng thông",
         "ffs_batch_net_title": "Tải tài nguyên game nhanh hơn",
         "ffs_batch_net_desc": "Gộp các yêu cầu tải tài nguyên để giảm tải mạng khi vào game.",
-        "ffs_desync_title": "Desync",
-        "ffs_desync_desc": "Áp dụng cấu hình thử nghiệm với tần suất cập nhật chuyển động và vật lý cao. Hiệu quả phụ thuộc vào game và kết nối.",
         "sec_ffs_power": "Nguồn điện & Phiên chơi",
         "ffs_power_mgr_title": "Giảm hao pin khi chạy ngầm",
         "ffs_power_mgr_desc": "Hỗ trợ quản lý nguồn điện Android khi game đang ở chế độ nền.",
@@ -2650,6 +2672,11 @@ const TRANSLATIONS = {
         "warning_shader_conflicts": "Shader & Reflection settings might conflict with some FastFlag graphics configs.",
         "ffs_no_vfx_title": "NO VFX",
         "ffs_no_vfx_desc": "Turns off glowing, blur, and heavy visual effects to boost FPS and reduce lag on weaker devices. Note: may disable Shader Package lighting.",
+        "section_turbo_ultra": "Turbo Ultra",
+        "gm_turbo_ultra_title": "Turbo Ultra",
+        "gm_turbo_ultra_desc": "Maximum visual reduction mode to boost FPS and eliminate lag on all weak devices. Lowers textures, shadows and effects to the bare minimum (Shader Package and Wet Floor are temporarily disabled). Turn Turbo Ultra off and launch again to restore normal visuals.",
+        "title_allow_blacklist_flags": "Allow Blacklist Flags",
+        "desc_allow_blacklist_flags": "Allows using all FastFlags that Masterstrap blacklisted to prevent account bans. If you proceed to use them, Masterstrap disclaims all responsibility.",
         "app_title": "Masterstrap",
         "app_sub": "FastFlag & Game Boost",
         "tab_fastflag": "FastFlag",
@@ -2748,8 +2775,6 @@ const TRANSLATIONS = {
         "sec_ffs_network": "Network",
         "ffs_batch_net_title": "Faster game asset loading",
         "ffs_batch_net_desc": "Groups game asset requests to reduce repeated network work while joining and loading a game.",
-        "ffs_desync_title": "Desync",
-        "ffs_desync_desc": "Applies an experimental high-rate movement and physics network profile. Results depend on the game and connection.",
         "sec_ffs_power": "Power & game session",
         "ffs_power_mgr_title": "Reduce background battery use",
         "ffs_power_mgr_desc": "Lets Roblox cooperate with power management when the game is running in the background.",
@@ -2856,6 +2881,11 @@ const TRANSLATIONS = {
         "warning_shader_conflicts": "La configuración de sombreado y reflejos puede entrar en conflicto con algunas configuraciones de FastFlag.",
         "ffs_no_vfx_title": "NO VFX (Sin Efectos)",
         "ffs_no_vfx_desc": "Desactiva brillos intensos, desenfoques y efectos pesados para reducir el lag y aumentar los FPS en dispositivos lentos. Nota: puede desactivar la iluminación del Shader Package.",
+        "section_turbo_ultra": "Turbo Ultra",
+        "gm_turbo_ultra_title": "Turbo Ultra",
+        "gm_turbo_ultra_desc": "Modo de reducción visual máxima para aumentar los FPS y eliminar el lag en dispositivos de gama baja. Reduce al mínimo texturas, sombras y efectos (el paquete de shaders y el suelo mojado se desactivarán temporalmente). Desactiva Turbo Ultra y vuelve a iniciar para restaurar los gráficos normales.",
+        "title_allow_blacklist_flags": "Permitir FastFlags de la lista negra",
+        "desc_allow_blacklist_flags": "Permite usar todos los FastFlags que Masterstrap puso en la lista negra para evitar baneos de cuenta. Si decides usarlos, Masterstrap no se hace responsable.",
         "app_title": "Masterstrap",
         "app_sub": "FastFlag y Optimización de Juegos",
         "tab_fastflag": "FastFlag",
@@ -2954,8 +2984,6 @@ const TRANSLATIONS = {
         "sec_ffs_network": "Red y ancho de banda",
         "ffs_batch_net_title": "Carga más rápida de recursos",
         "ffs_batch_net_desc": "Agrupa solicitudes de recursos para reducir el trabajo de red repetitivo al unirse al juego.",
-        "ffs_desync_title": "Desync",
-        "ffs_desync_desc": "Aplica un perfil de red experimental de alta frecuencia para movimiento y física. Los resultados dependen del juego y conexión.",
         "sec_ffs_power": "Energía y sesión de juego",
         "ffs_power_mgr_title": "Reducir uso de batería en segundo plano",
         "ffs_power_mgr_desc": "Permite a Roblox cooperar con la gestión de energía cuando el juego está en segundo plano.",
@@ -3062,6 +3090,11 @@ const TRANSLATIONS = {
         "warning_shader_conflicts": "As configurações de Shaders e Reflexos podem entrar em conflito com algumas configurações do FastFlag.",
         "ffs_no_vfx_title": "NO VFX (Sem Efeitos)",
         "ffs_no_vfx_desc": "Desativa brilhos excessivos, desfoques e efeitos visuais pesados para reduzir o lag e aumentar o FPS em aparelhos fracos. Nota: pode desativar a iluminação do Shader Package.",
+        "section_turbo_ultra": "Turbo Ultra",
+        "gm_turbo_ultra_title": "Turbo Ultra",
+        "gm_turbo_ultra_desc": "Modo de redução visual máxima para aumentar o FPS e eliminar o lag em aparelhos fracos. Reduz texturas, sombras e efeitos ao mínimo (Pacote Shader e Chão Molhado ficam temporariamente desativados). Desative o Turbo Ultra e inicie novamente para restaurar os gráficos normais.",
+        "title_allow_blacklist_flags": "Permitir Flags da Blacklist",
+        "desc_allow_blacklist_flags": "Permite usar todas as FastFlags que o Masterstrap colocou na blacklist para evitar banimentos de conta. Se você optar por usar, o Masterstrap não se responsabiliza.",
         "app_title": "Masterstrap",
         "app_sub": "FastFlag e Otimização de Jogos",
         "tab_fastflag": "FastFlag",
@@ -3146,8 +3179,6 @@ const TRANSLATIONS = {
         "sec_ffs_network": "Rede",
         "ffs_batch_net_title": "Carregamento rápido de recursos",
         "ffs_batch_net_desc": "Agrupa pacotes para entrar nos jogos mais rápido.",
-        "ffs_desync_title": "Sincronização de movimento",
-        "ffs_desync_desc": "Ajusta a frequência de envio de dados de física.",
         "sec_ffs_power": "Energia e sessão",
         "ffs_power_mgr_title": "Economia de bateria em segundo plano",
         "ffs_power_mgr_desc": "Adapta-se ao gerenciador de energia do Android.",
@@ -3256,6 +3287,11 @@ const TRANSLATIONS = {
         "warning_shader_conflicts": "Настройки шейдеров и отражений могут конфликтовать с некоторыми конфигурациями графики FastFlag.",
         "ffs_no_vfx_title": "NO VFX (Без лишних эффектов)",
         "ffs_no_vfx_desc": "Отключает яркое свечение, размытие и тяжелые спецэффекты для устранения лагов и максимального повышения FPS на слабых устройствах. Примечание: может отключить освещение Shader Package.",
+        "section_turbo_ultra": "Turbo Ultra",
+        "gm_turbo_ultra_title": "Turbo Ultra",
+        "gm_turbo_ultra_desc": "Режим максимального снижения графики для повышения FPS и устранения лагов на слабых устройствах. Уменьшает текстуры, тени и эффекты до минимума (шейдеры и мокрый пол временно отключаются). Выключите Turbo Ultra и перезапустите игру для возврата обычной графики.",
+        "title_allow_blacklist_flags": "Разрешить флаги из черного списка",
+        "desc_allow_blacklist_flags": "Разрешает использование всех FastFlags, внесенных Masterstrap в черный список для защиты от бана аккаунта. При включении Masterstrap снимает с себя всю ответственность.",
         "app_title": "Masterstrap",
         "app_sub": "FastFlag и Оптимизация игр",
         "tab_fastflag": "FastFlag",
@@ -3340,8 +3376,6 @@ const TRANSLATIONS = {
         "sec_ffs_network": "Сеть",
         "ffs_batch_net_title": "Быстрая загрузка ресурсов",
         "ffs_batch_net_desc": "Объединяет сетевые запросы для ускорения входа.",
-        "ffs_desync_title": "Синхронизация движения",
-        "ffs_desync_desc": "Оптимизирует частоту отправки данных физики.",
         "sec_ffs_power": "Питание и сессия",
         "ffs_power_mgr_title": "Экономия батареи в фоне",
         "ffs_power_mgr_desc": "Интегрируется с управлением питанием Android.",
@@ -3450,6 +3484,11 @@ const TRANSLATIONS = {
         "warning_shader_conflicts": "シェーダーと反射の設定は、一部の FastFlag グラフィックス構成と競合する可能性があります。",
         "ffs_no_vfx_title": "NO VFX (視覚効果オフ)",
         "ffs_no_vfx_desc": "眩しい光やぼかし、負荷の高い視覚効果をオフにしてラグを減らし、低スペック端末のFPSを最大化します。注意: Shader Packageの照明効果が無効になる場合があります。",
+        "section_turbo_ultra": "Turbo Ultra",
+        "gm_turbo_ultra_title": "Turbo Ultra",
+        "gm_turbo_ultra_desc": "低スペック端末向けの極限グラフィック軽量化モード。テクスチャ、影、エフェクトを最小限に抑えてラグを解消しFPSを最大化します（シェーダーと濡れた床は一時的に無効化されます）。通常画質に戻すにはTurbo Ultraをオフにして再起動してください。",
+        "title_allow_blacklist_flags": "ブラックリストのフラグを許可",
+        "desc_allow_blacklist_flags": "アカウントBANを防ぐためにMasterstrapがブラックリストに登録したすべてのFastFlagの使用を許可します。有効にして使用を継続する場合、一切の責任を負いません。",
         "app_title": "Masterstrap",
         "app_sub": "FastFlag & ゲームブースト",
         "tab_fastflag": "FastFlag",
@@ -3534,8 +3573,6 @@ const TRANSLATIONS = {
         "sec_ffs_network": "ネットワーク",
         "ffs_batch_net_title": "ゲームアセットの読み込み高速化",
         "ffs_batch_net_desc": "ネットワークリクエストをまとめて高速にロードします。",
-        "ffs_desync_title": "移動同期の調整",
-        "ffs_desync_desc": "物理データの送信頻度を最適化します。",
         "sec_ffs_power": "電源とセッション",
         "ffs_power_mgr_title": "バックグラウンドバッテリー節約",
         "ffs_power_mgr_desc": "バックグラウンド実行時のバッテリー消費を抑えます。",
@@ -3644,6 +3681,11 @@ const TRANSLATIONS = {
         "warning_shader_conflicts": "셰이더 및 반사 설정은 일부 FastFlag 그래픽 설정과 충돌할 수 있습니다.",
         "ffs_no_vfx_title": "NO VFX (불필요한 효과 끄기)",
         "ffs_no_vfx_desc": "눈부심, 블러 및 무거운 시각 효과를 꺼서 렉을 줄이고 저사양 기기의 프레임(FPS)을 극대화합니다. 참고: Shader Package 조명 효과가 사라질 수 있습니다.",
+        "section_turbo_ultra": "Turbo Ultra",
+        "gm_turbo_ultra_title": "터보 울트라 (Turbo Ultra)",
+        "gm_turbo_ultra_desc": "저사양 기기에서 렉을 없애고 프레임(FPS)을 극대화하는 그래픽 최소화 모드입니다. 텍스처, 그림자 및 시각 효과를 대폭 낮춥니다(셰이더 및 젖은 바닥 효과는 일시 중단됨). 원래 그래픽으로 복원하려면 터보 울트라를 끄고 다시 시작하세요.",
+        "title_allow_blacklist_flags": "블랙리스트 플래그 허용",
+        "desc_allow_blacklist_flags": "계정 정지를 방지하기 위해 Masterstrap이 블랙리스트에 등록한 모든 FastFlag의 사용을 허용합니다. 계속 사용할 경우 발생하는 모든 문제에 대해 책임지지 않습니다.",
         "app_title": "Masterstrap",
         "app_sub": "FastFlag & 게임 부스트",
         "tab_fastflag": "FastFlag",
@@ -3728,8 +3770,6 @@ const TRANSLATIONS = {
         "sec_ffs_network": "네트워크",
         "ffs_batch_net_title": "게임 리소스 로딩 가속",
         "ffs_batch_net_desc": "요청을 병합하여 로딩 시간을 줄입니다.",
-        "ffs_desync_title": "이동 동기화 튜닝",
-        "ffs_desync_desc": "물리 데이터 전송 빈도를 조절합니다.",
         "sec_ffs_power": "전원 및 세션",
         "ffs_power_mgr_title": "백그라운드 배터리 절약",
         "ffs_power_mgr_desc": "백그라운드 실행 시 배터리 소모를 억제합니다.",
@@ -3838,6 +3878,11 @@ const TRANSLATIONS = {
         "warning_shader_conflicts": "光影着色器与倒影设置可能与部分 FastFlag 图形配置发生冲突。",
         "ffs_no_vfx_title": "NO VFX (关闭多余特效)",
         "ffs_no_vfx_desc": "关闭刺眼光晕、模糊及重度视觉特效，大幅降低卡顿并提升低端设备帧率 (FPS)。注意：开启后将自动禁用 Shader Package 光影效果。",
+        "section_turbo_ultra": "Turbo Ultra",
+        "gm_turbo_ultra_title": "Turbo Ultra 极致性能",
+        "gm_turbo_ultra_desc": "专为低端设备打造的极致画质精简模式，消除卡顿并大幅提升帧率 (FPS)。将纹理、阴影与特效降至最低（光影包与潮湿地面将临时停用）。关闭 Turbo Ultra 并重新启动即可恢复正常画质。",
+        "title_allow_blacklist_flags": "允许使用黑名单 FastFlags",
+        "desc_allow_blacklist_flags": "允许使用已被 Masterstrap 列入黑名单以防止封号的所有 FastFlags。如您选择继续使用，Masterstrap 将不承担任何责任。",
         "app_title": "Masterstrap",
         "app_sub": "FastFlag 与 游戏加速",
         "tab_fastflag": "FastFlag",
@@ -3922,8 +3967,6 @@ const TRANSLATIONS = {
         "sec_ffs_network": "网络与传输",
         "ffs_batch_net_title": "加速游戏资源加载",
         "ffs_batch_net_desc": "合并网络资源请求以加快加载速度。",
-        "ffs_desync_title": "调整移动同步频率",
-        "ffs_desync_desc": "调节移动与物理数据的网络发送频率。",
         "sec_ffs_power": "电源与会话",
         "ffs_power_mgr_title": "减少后台耗电",
         "ffs_power_mgr_desc": "在后台运行时适配 Android 电源管理。",
@@ -4173,13 +4216,6 @@ function onStretchScreenSlider(val) {
     updateFlagState();
 }
 
-function toggleDesyncVIP(checkbox) {
-    if (checkbox.checked) {
-        showToast("Desync 38760 Hz Physics Mode Enabled!");
-    }
-    updateFlagState();
-}
-
 function onToggleTurboMaster(isChecked) {
     const subContainer = document.getElementById("turbo-sub-toggles-container");
     if (subContainer) {
@@ -4365,24 +4401,6 @@ function updateFlagState() {
     if (document.getElementById("sw-ffs-batch-net").checked) activeFlags["FFlagBatchNetAssetJoinBlobEnable"] = "true";
     else delete activeFlags["FFlagBatchNetAssetJoinBlobEnable"];
 
-    if (document.getElementById("sw-ffs-desync").checked) {
-        activeFlags["DFFlagClampIncomingReplicationLag"] = "true";
-        activeFlags["DFIntReplicationLagCompensation"] = "1";
-        activeFlags["DFIntClientPacketMaxDelayMs"] = "1";
-        activeFlags["DFIntNetworkLatencyTolerance"] = "1";
-        activeFlags["DFIntDataSenderRate"] = "38760";
-        activeFlags["DFIntS2PhysicsSenderRate"] = "38760";
-        activeFlags["DFIntDataSenderMaxBandwidthBps"] = "100000000";
-    } else {
-        delete activeFlags["DFFlagClampIncomingReplicationLag"];
-        delete activeFlags["DFIntReplicationLagCompensation"];
-        delete activeFlags["DFIntClientPacketMaxDelayMs"];
-        delete activeFlags["DFIntNetworkLatencyTolerance"];
-        delete activeFlags["DFIntDataSenderRate"];
-        delete activeFlags["DFIntS2PhysicsSenderRate"];
-        delete activeFlags["DFIntDataSenderMaxBandwidthBps"];
-    }
-
     if (document.getElementById("sw-ffs-power-mgr").checked) activeFlags["FFlagEnableAndroidPowerManager"] = "true";
     else delete activeFlags["FFlagEnableAndroidPowerManager"];
 
@@ -4411,6 +4429,18 @@ function updateFlagState() {
         activeFlags["FFlagDebugEnablePBRReflection"] = "True";
     } else {
         delete activeFlags["FFlagDebugEnablePBRReflection"];
+    }
+
+    const turboUltra = document.getElementById("sw-gm-turbo-ultra")?.checked;
+    if (turboUltra) {
+        activeFlags["DFIntRenderPostFxBasePixelCount"] = "0";
+        activeFlags["FFlagDisablePostFx"] = "true";
+        activeFlags["FFlagDebugForceDisableShadows"] = "true";
+        activeFlags["FIntRenderShadowIntensity"] = "0";
+        activeFlags["FIntFRMMinGrassDistance"] = "0";
+        activeFlags["FIntFRMMaxGrassDistance"] = "0";
+        activeFlags["FIntRenderGrassDetailStrands"] = "0";
+        activeFlags["FIntRenderGrassHeightScaler"] = "0";
     }
 }
 
@@ -4885,8 +4915,7 @@ function parseAndAddFlags(rawText) {
         }
 
         if (rawText.includes("=") || rawText.includes(":")) {
-            const lines = rawText.split("
-");
+            const lines = rawText.split(String.fromCharCode(10));
             let count = 0;
             for (const line of lines) {
                 let trimmed = line.trim();
@@ -5054,6 +5083,11 @@ function switchLanguage(lang) {
     showToast("Language: " + lang.toUpperCase());
 }
 
+function onToggleAllowBlacklistFlags(checked) {
+    localStorage.setItem("masterstrap_allow_blacklist_flags", checked ? "true" : "false");
+    showToast(checked ? "⚠️ Warning: Blacklist flags enabled (Use at your own risk)" : "Blacklist flags protected");
+}
+
 function checkLicenseExpired(plan, expiration) {
     if (!plan || typeof plan !== "string") return false;
     const normalizedPlan = plan.trim().toLowerCase();
@@ -5102,7 +5136,7 @@ async function activateLicenseKey() {
     localStorage.setItem("masterstrap_device_id", deviceId);
 
     try {
-        const res = await fetch("https://liscence-key-t0n3.onrender.com/api/mobile-licenses/validate", {
+        const res = await fetch("https://license.masterstrap.org/api/ios-licenses/validate", {
             method: "POST",
             headers: { "Content-Type": "application/json", "Accept": "application/json" },
             body: JSON.stringify({
@@ -5284,6 +5318,10 @@ function initAppSettings() {
         masterSw.checked = savedTurboMaster;
         onToggleTurboMaster(savedTurboMaster);
     }
+
+    const savedAllowBlacklist = localStorage.getItem("masterstrap_allow_blacklist_flags") === "true";
+    const allowBlacklistSw = document.getElementById("sw-allow-blacklist-flags");
+    if (allowBlacklistSw) allowBlacklistSw.checked = savedAllowBlacklist;
 }
 
 // =========================================================================
@@ -5687,6 +5725,8 @@ function saveAndLaunch() {
         turbo_thermal_guard: document.getElementById("sw-gm-turbo-thermal").checked,
         turbo_refresh_contract: document.getElementById("sw-gm-turbo-refresh").checked,
         turbo_sustained_performance: document.getElementById("sw-gm-turbo-sustained").checked,
+        turbo_ultra_visual_reduction: document.getElementById("sw-gm-turbo-ultra")?.checked ?? false,
+        ultraVisualReduction: document.getElementById("sw-gm-turbo-ultra")?.checked ?? false,
 
         display_shader_package: document.getElementById("display-shader-pkg").value,
         display_shader_wet_floor: document.getElementById("sw-display-wet-floor").checked,
@@ -5731,7 +5771,8 @@ function saveAndLaunch() {
         shaderProfile: shaderProfile,
         fontProfile: fontProfile,
         globalSettings: globalSettingsXml,
-        targetChannel: targetChan
+        targetChannel: targetChan,
+        allowBlacklistFlags: document.getElementById("sw-allow-blacklist-flags")?.checked ?? false
     };
 
     if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.log) {
@@ -5860,6 +5901,8 @@ function playSplashScreenIntro() {
     const startTime = performance.now();
 
     function renderSplashFrame(now) {
+        const overlay = document.getElementById("splashScreenOverlay");
+        if (!overlay || overlay.style.display === "none") return;
         const elapsed = now - startTime;
 
         // 1. Entrance Stage on Logo (850ms, DecelerateInterpolator(2f))
@@ -5961,23 +6004,34 @@ function dismissSplashScreen() {
     const overlay = document.getElementById("splashScreenOverlay");
     if (!overlay || overlay.style.display === "none") return;
 
+    overlay.style.pointerEvents = "none";
+
     if (window.splashDismissTimer) {
         clearTimeout(window.splashDismissTimer);
         window.splashDismissTimer = null;
     }
+    if (window.splashAnimId) {
+        cancelAnimationFrame(window.splashAnimId);
+        window.splashAnimId = null;
+    }
 
-    overlay.style.transition = "opacity 0.45s cubic-bezier(0.16, 1, 0.3, 1), transform 0.45s cubic-bezier(0.16, 1, 0.3, 1)";
+    overlay.style.transition = "opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1), transform 0.35s cubic-bezier(0.16, 1, 0.3, 1)";
     overlay.style.opacity = "0";
-    overlay.style.transform = "scale(1.05)";
+    overlay.style.transform = "scale(1.04)";
 
     setTimeout(() => {
         overlay.style.display = "none";
-        if (window.splashAnimId) {
-            cancelAnimationFrame(window.splashAnimId);
-            window.splashAnimId = null;
-        }
-    }, 450);
+    }, 350);
 }
+
+// Fail-safe: if any script error occurs, ensure splash overlay does not trap the user
+window.addEventListener("error", function(e) {
+    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.log) {
+        window.webkit.messageHandlers.log.postMessage("[JS-ERR] " + (e.message || "error") + " at " + (e.filename || "") + ":" + (e.lineno || ""));
+    }
+    const overlay = document.getElementById("splashScreenOverlay");
+    if (overlay) overlay.style.display = "none";
+});
 
 
 // Native LevelPlay parity contract. Rewarded actions fail closed; the optional
@@ -6049,29 +6103,6 @@ const msOpenFastFlagEditor = openFastFlagEditorSubpage;
 openFastFlagEditorSubpage = function() {
     if (!MasterstrapAds.isFree()) return msOpenFastFlagEditor();
     MasterstrapAds.request("interstitial", "fastflag_editor", true).then(() => msOpenFastFlagEditor());
-};
-
-const msToggleDesyncVIP = toggleDesyncVIP;
-toggleDesyncVIP = function(checkbox) {
-    if (!checkbox) return;
-    if (!checkbox.checked) {
-        return msToggleDesyncVIP(checkbox);
-    }
-    if (!MasterstrapAds.isFree()) {
-        return msToggleDesyncVIP(checkbox);
-    }
-    checkbox.checked = false;
-    updateFlagState();
-    MasterstrapAds.request("rewarded", "desync", false).then(ok => {
-        if (ok) {
-            checkbox.checked = true;
-            msToggleDesyncVIP(checkbox);
-        } else {
-            checkbox.checked = false;
-            updateFlagState();
-            showToast("Rewarded ad required to enable Desync.");
-        }
-    });
 };
 
 const msOnToggleTurboMaster = onToggleTurboMaster;
@@ -6171,6 +6202,9 @@ function syncConfigToNative() {
             turbo_thermal_guard: document.getElementById("sw-gm-turbo-thermal")?.checked ?? true,
             turbo_refresh_contract: document.getElementById("sw-gm-turbo-refresh")?.checked ?? true,
             turbo_sustained_performance: document.getElementById("sw-gm-turbo-sustained")?.checked ?? false,
+            turbo_ultra_visual_reduction: document.getElementById("sw-gm-turbo-ultra")?.checked ?? false,
+            ultraVisualReduction: document.getElementById("sw-gm-turbo-ultra")?.checked ?? false,
+            allow_blacklist_flags: document.getElementById("sw-allow-blacklist-flags")?.checked ?? false,
             display_shader_package: document.getElementById("display-shader-pkg")?.value || "none",
             display_shader_wet_floor: document.getElementById("sw-display-wet-floor")?.checked ?? false,
             display_stretch_screen: parseInt(document.getElementById("slider-stretch-screen")?.value) || 100,
@@ -6190,7 +6224,8 @@ function syncConfigToNative() {
             wetFloorMaxParts: 1024,
             wetFloorRadiusStuds: 384,
             allowWorkspaceMaterialScan: false,
-            allowPeriodicWorker: false
+            allowPeriodicWorker: false,
+            turboUltraCoexistence: "preserve_masterstrap_visuals"
         }, null, 2);
 
         const selectedFont = document.getElementById("display-font-family")?.value || "Default";

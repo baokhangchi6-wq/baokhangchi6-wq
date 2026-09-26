@@ -1582,6 +1582,87 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        }",
         "    }",
         "",
+        "    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        "    // [10/10 FEATURE DIAGNOSTIC LOG] masterstrap_ios.log",
+        "    // Grep each FEATURE_XX tag to instantly identify failing features.",
+        "    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        "    if (log_file) {",
+        "        fprintf(log_file, \"\\n=== [10/10 FEATURE DIAGNOSTIC MATRIX] ===\\n\");",
+        "        // FEATURE_01: FPS Unlock",
+        "        fprintf(log_file, \"[FEATURE_01_FPS] status=%s backend=%s targetFps=%d gate=ProfileLoaded(%d)&&Auth(%d) blockedReason=%s\\n\",",
+        "                g_target_fps != 60 ? \"ACTIVE\" : \"DEFAULT_60\", kFpsRuntimeBackend, g_target_fps,",
+        "                g_profile_loaded, launch_authorized,",
+        "                !launch_authorized ? \"NO_AUTH\" : !g_profile_loaded ? \"NO_TURBO_PROFILE\" : \"none\");",
+        "        // FEATURE_02: Game Mode",
+        "        fprintf(log_file, \"[FEATURE_02_GAME_MODE] status=%s enabled=%d verifiedFlags=%d/%zu gate=Auth(%d) blockedReason=%s\\n\",",
+        "                launch_authorized && g_game_mode_enabled ? \"ACTIVE\" : \"INACTIVE\",",
+        "                g_game_mode_enabled, success_count, kVerifiedCount, launch_authorized,",
+        "                !launch_authorized ? \"NO_AUTH\" : !g_game_mode_enabled ? \"GAME_MODE_OFF_IN_PROFILE\" : \"none\");",
+        "        // FEATURE_03: Dynamic FFlag Editor",
+        "        fprintf(log_file, \"[FEATURE_03_FFLAG_EDITOR] status=%s dynamicApplied=%d baselineApplied=%d totalMapped=%zu gate=Auth(%d) blockedReason=%s\\n\",",
+        "                launch_authorized && dynamic_count > 0 ? \"ACTIVE\" : launch_authorized ? \"ACTIVE_BASELINE_ONLY\" : \"BLOCKED\",",
+        "                dynamic_count, success_count, kMasterFlagsCount, launch_authorized,",
+        "                !launch_authorized ? \"NO_AUTH\" : dynamic_count == 0 ? \"NO_DYNAMIC_JSON\" : \"none\");",
+        "        // FEATURE_04: Cloud Bridge Protocol v2",
+        "        fprintf(log_file, \"[FEATURE_04_BRIDGE_V2] status=%s hookInstalled=%d scheme=masterstrap-rbx-bridge-v1 lastRequest=%s blockedReason=%s\\n\",",
+        "                bridge_hooked ? \"ACTIVE\" : \"BLOCKED\", bridge_hooked,",
+        "                g_last_bridge_request[0] ? g_last_bridge_request : \"(none)\",",
+        "                !bridge_hooked ? \"DELEGATE_HOOK_FAILED_30_ATTEMPTS\" : \"none\");",
+        "        // FEATURE_05: Renderer Mode",
+        "        fprintf(log_file, \"[FEATURE_05_RENDERER] status=%s mode=%s gate=Auth(%d)&&Profile(%d) backend=%s blockedReason=%s\\n\",",
+        "                launch_authorized && g_profile_loaded ? \"ACTIVE\" : \"BLOCKED\", g_renderer_mode,",
+        "                launch_authorized, g_profile_loaded, kShaderRuntimeBackend,",
+        "                !launch_authorized ? \"NO_AUTH\" : !g_profile_loaded ? \"NO_PROFILE\" : \"none\");",
+        "        // FEATURE_06: Shader / Wet Floor",
+        "        fprintf(log_file, \"[FEATURE_06_SHADER] status=%s package=%s wetFloor=%d gate=Auth(%d)&&Profile(%d) blockedReason=%s\\n\",",
+        "                launch_authorized && g_profile_loaded && g_shader_wet_floor ? \"ACTIVE\" :",
+        "                launch_authorized && g_profile_loaded ? \"INACTIVE_IN_PROFILE\" : \"BLOCKED\",",
+        "                g_shader_package, g_shader_wet_floor, launch_authorized, g_profile_loaded,",
+        "                !launch_authorized ? \"NO_AUTH\" : !g_profile_loaded ? \"NO_PROFILE\" : !g_shader_wet_floor ? \"WET_FLOOR_DISABLED\" : \"none\");",
+        "        // FEATURE_07: Font Override",
+        "        fprintf(log_file, \"[FEATURE_07_FONT] status=%s family=%s sizeStep=%d backend=%s gate=Auth(%d)&&Profile(%d) blockedReason=%s\\n\",",
+        "                launch_authorized && g_profile_loaded ? \"ACTIVE\" : \"BLOCKED\",",
+        "                g_font_family, g_font_size_step, kFontRuntimeBackend,",
+        "                launch_authorized, g_profile_loaded,",
+        "                !launch_authorized ? \"NO_AUTH\" : !g_profile_loaded ? \"NO_PROFILE\" : \"none\");",
+        "        // FEATURE_08: Stretch / Aspect-Ratio",
+        "        fprintf(log_file, \"[FEATURE_08_STRETCH] status=%s stretchPct=%d backend=%s gate=Auth(%d)&&Profile(%d) blockedReason=%s\\n\",",
+        "                launch_authorized && g_profile_loaded && g_stretch_percent != 100 ? \"ACTIVE\" :",
+        "                launch_authorized && g_profile_loaded ? \"INACTIVE_100PCT\" : \"BLOCKED\",",
+        "                g_stretch_percent, kStretchRuntimeBackend, launch_authorized, g_profile_loaded,",
+        "                !launch_authorized ? \"NO_AUTH\" : !g_profile_loaded ? \"NO_PROFILE\" : g_stretch_percent == 100 ? \"STRETCH_100PCT_NOOP\" : \"none\");",
+        "        // FEATURE_09: Display Keep-Alive",
+        "        fprintf(log_file, \"[FEATURE_09_KEEPALIVE] status=%s keepActive=%d refreshReq=%d gate=Auth(%d)&&Profile(%d) blockedReason=%s\\n\",",
+        "                launch_authorized && g_keep_display_active ? \"ACTIVE\" : \"INACTIVE\",",
+        "                g_keep_display_active, g_refresh_requested,",
+        "                launch_authorized, g_profile_loaded,",
+        "                !launch_authorized ? \"NO_AUTH\" : !g_keep_display_active ? \"DISABLED_IN_PROFILE\" : \"none\");",
+        "        // FEATURE_10: Stealth (7 offsets: AbortLogger, ReportBytecode, ValidateHeader, ScriptTimeout, ValidateCaller, ValidateAndSetupCaps, Telemetry)",
+        "        {",
+        "            int stl_abort=0,stl_rbc=0,stl_vh=0,stl_st=0,stl_vc=0,stl_vc2=0,stl_tel=0;",
+        "            for (size_t si = 0; si < kOffsetsCount; si++) {",
+        "                const char* sn = kVerifiedOffsets[si].name;",
+        "                if (strcmp(sn,\"rbx_abortlogger\")==0) stl_abort=1;",
+        "                else if (strcmp(sn,\"rbx_reportbytecode\")==0) stl_rbc=1;",
+        "                else if (strcmp(sn,\"luau_validateheader\")==0) stl_vh=1;",
+        "                else if (strcmp(sn,\"scripttimeoutcheck\")==0) stl_st=1;",
+        "                else if (strcmp(sn,\"validatecaller\")==0) stl_vc=1;",
+        "                else if (strcmp(sn,\"validateandsetupcaps\")==0) stl_vc2=1;",
+        "                else if (strcmp(sn,\"telemetrybuffer\")==0||strcmp(sn,\"telemetrysize\")==0) stl_tel=1;",
+        "            }",
+        "            int stl_total = stl_abort+stl_rbc+stl_vh+stl_st+stl_vc+stl_vc2+stl_tel;",
+        "            fprintf(log_file, \"[FEATURE_10_STEALTH] status=%s offsetsLoaded=%d/7 \"",
+        "                    \"abortLogger=%d reportBytecode=%d validateHeader=%d \"",
+        "                    \"scriptTimeout=%d validateCaller=%d validateAndSetupCaps=%d telemetry=%d \"",
+        "                    \"gate=EngineBase(%d) blockedReason=%s\\n\",",
+        "                    base != 0 && stl_total==7 ? \"ACTIVE_ALL\" : base != 0 && stl_total>0 ? \"ACTIVE_PARTIAL\" : \"BLOCKED\",",
+        "                    stl_total, stl_abort, stl_rbc, stl_vh, stl_st, stl_vc, stl_vc2, stl_tel,",
+        "                    (base != 0),",
+        "                    base == 0 ? \"ENGINE_BASE_NOT_FOUND\" : stl_total < 7 ? \"SOME_OFFSETS_NOT_DUMPED\" : \"none\");",
+        "        }",
+        "        fprintf(log_file, \"=== [END FEATURE DIAGNOSTIC MATRIX] ===\\n\\n\");",
+        "    }",
+        "",
         "    if (log_file) {",
         "        fprintf(log_file, \"\\nFinal Result: authorized=%d, %d baseline verified + %d dynamic flags active (Status: %s)\\n\",",
         "                launch_authorized, success_count, dynamic_count, !launch_authorized ? \"DIRECT_LAUNCH_NO_CONFIG\" : (success_count == (int)kVerifiedCount) ? \"SUCCESS\" : \"PARTIAL\");",
@@ -1589,6 +1670,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        fclose(log_file);",
         "    }",
         "",
+
         "    syslog(LOG_NOTICE, \"[Masterstrap-iOS] Patch finished: %d baseline + %d dynamic active. Starting persistence loop...\", success_count, dynamic_count);",
         "",
         "    // Persistence uses the in-memory cache only; consumed files are never read again.",
@@ -1804,7 +1886,25 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
             compile_dylib(c_src, dylib_path)
             dylib_bytes = dylib_path.read_bytes()
 
-            out_ipa = out_dir / "Masterstrap-Roblox-Patched.ipa"
+            # ── Extract version from Info.plist for canonical IPA filename ──
+            roblox_version = "unknown"
+            try:
+                with zipfile.ZipFile(input_ipa, "r") as _z_ver:
+                    for _name in _z_ver.namelist():
+                        if _name.endswith("Roblox.app/Info.plist"):
+                            _pl = plistlib.loads(_z_ver.read(_name))
+                            roblox_version = (
+                                _pl.get("CFBundleShortVersionString")
+                                or _pl.get("CFBundleVersion")
+                                or "unknown"
+                            )
+                            break
+            except Exception as _e:
+                print(f"Warning: Could not read version from Info.plist: {_e}")
+
+            out_ipa = out_dir / f"Masterstrap-{roblox_version}.ipa"
+            print(f"[BUILD] Roblox version detected from Info.plist: {roblox_version}")
+            print(f"[BUILD] Output IPA: {out_ipa.name}")
 
             with zipfile.ZipFile(input_ipa, "r") as zin:
                 with zipfile.ZipFile(out_ipa, "w", compression=zipfile.ZIP_DEFLATED) as zout:
@@ -1856,13 +1956,24 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                             zout.writestr(jp, json_bytes)
 
             print(f"\nSUCCESS -> {out_ipa} ({out_ipa.stat().st_size / (1024*1024):.1f} MB)")
-            
+
+            # Emit version to GitHub Actions output if in CI environment
+            import os as _os
+            _gho = _os.environ.get("GITHUB_OUTPUT", "")
+            if _gho:
+                with open(_gho, "a", encoding="utf-8") as _f:
+                    _f.write(f"ipa_version={roblox_version}\n")
+                    _f.write(f"ipa_name={out_ipa.name}\n")
+                print(f"[CI] GITHUB_OUTPUT: ipa_version={roblox_version}, ipa_name={out_ipa.name}")
+
             mumu_dir = Path(r"C:\Users\Administrator\Documents\MuMuSharedFolder\Download\Masterstrap")
             if mumu_dir.is_dir():
-                dest = mumu_dir / "Masterstrap-Roblox-Patched.ipa"
+                dest = mumu_dir / out_ipa.name
                 import shutil
                 shutil.copy2(out_ipa, dest)
                 print(f"Copied to MuMu Shared Folder -> {dest}")
+
+
 
 
 def main() -> int:

@@ -1,0 +1,311 @@
+name: Build Global IPA
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Immediate threshold = 0: build as soon as ANY new App Store version appears.
+# No 2-version distance or 21-day age gate (unlike Android global-arm64 lane).
+# Mirrors the structure of Android's build_global_arm64.yml for consistency.
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  schedule:
+    # Check every 3 hours (at :17 past the hour) — Roblox iOS releases are faster
+    # than Android, so we poll more frequently to catch updates immediately.
+    - cron: '17 */3 * * *'
+  workflow_dispatch:
+    inputs:
+      ipa_url:
+        description: 'Direct HTTPS URL to decrypted Roblox .ipa (overrides auto-detect)'
+        required: false
+        type: string
+        default: ''
+      force_rebuild:
+        description: 'Force rebuild even if version was already built'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: roblox-ios-arm64-dedicated
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout iOS lane
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyyaml capstone Pillow requests
+
+      # ── STEP 1: Version Gate (threshold = 0, IMMEDIATE) ──────────────────
+      - name: Check Roblox iOS App Store version (threshold=0)
+        id: version_gate
+        shell: bash
+        run: |
+          FORCE="${{ inputs.force_rebuild || 'false' }}"
+          FORCE_ARG=""
+          if [ "$FORCE" = "true" ]; then
+            FORCE_ARG="--force"
+          fi
+          python tools/check_roblox_ios_version.py \
+            --checkpoint-file last_built_roblox_ios_version.json \
+            $FORCE_ARG
+          # Output: should_build, store_version, last_version
+
+      # ── STEP 2: Resolve & Download Decrypted Roblox IPA ─────────────────
+      - name: Resolve & Download Decrypted Roblox iOS IPA
+        if: steps.version_gate.outputs.should_build == 'true'
+        id: prepare_ipa
+        shell: bash
+        env:
+          INPUT_IPA_URL: ${{ github.event.inputs.ipa_url }}
+          SECRET_IPA_URL: ${{ secrets.IOS_IPA_URL }}
+          STORE_VERSION: ${{ steps.version_gate.outputs.store_version }}
+        run: |
+          set -euo pipefail
+          mkdir -p roblox_input output
+
+          IPA_PATH="roblox_input/roblox.ipa"
+          TARGET_URL="$INPUT_IPA_URL"
+
+          # Priority 1: Explicit workflow_dispatch URL
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="$SECRET_IPA_URL"
+          fi
+
+          # Priority 2: Auto-search public decrypted mirrors
+          if [ -z "$TARGET_URL" ]; then
+            echo "Searching public verified decrypted mirrors for Roblox iOS IPA..."
+            MIRROR=$(curl -s \
+              "https://api.github.com/repos/ipahub/roblox/releases/latest" \
+              | python -c "
+import sys, json
+data = json.load(sys.stdin)
+assets = data.get('assets', [])
+for a in assets:
+    if a['name'].endswith('.ipa'):
+        print(a['browser_download_url'])
+        break
+" 2>/dev/null || echo "")
+            if [ -n "$MIRROR" ]; then
+              TARGET_URL="$MIRROR"
+              echo "Found public mirror: $TARGET_URL"
+            fi
+          fi
+
+          if [ -n "$TARGET_URL" ]; then
+            echo "Downloading IPA from: $TARGET_URL"
+            curl -L \
+              -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" \
+              --retry 3 --retry-delay 5 \
+              -o "$IPA_PATH" "$TARGET_URL" || true
+          fi
+
+          # Validate the downloaded file is a valid IPA (ZIP with Payload/)
+          IS_VALID=$(python -c "
+import zipfile, sys
+from pathlib import Path
+p = Path('$IPA_PATH')
+if p.is_file() and p.stat().st_size > 1024 * 1024:
+    try:
+        with zipfile.ZipFile(p, 'r') as z:
+            if any('Payload/' in n for n in z.namelist()[:20]):
+                print('true')
+                sys.exit(0)
+    except Exception:
+        pass
+print('false')
+" 2>/dev/null || echo "false")
+
+          if [ "$IS_VALID" = "true" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "ipa_path=$IPA_PATH" >> "$GITHUB_OUTPUT"
+            echo "SUCCESS: Valid Roblox IPA confirmed ($(du -sh "$IPA_PATH" | cut -f1))"
+          else
+            echo "WARNING: Could not obtain a valid decrypted Roblox IPA."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "ipa_path=" >> "$GITHUB_OUTPUT"
+            rm -f "$IPA_PATH"
+          fi
+
+      # ── STEP 3: Auto-dump offsets from IPA ───────────────────────────────
+      - name: Auto Dump iOS Offsets & FFlags from IPA
+        if: steps.version_gate.outputs.should_build == 'true'
+        shell: bash
+        run: |
+          echo "=== [1/4] Running iOS Dumper ==="
+          mkdir -p output
+
+          if [ "${{ steps.prepare_ipa.outputs.available }}" = "true" ]; then
+            PYTHONPATH=roblox python -m roblox_ios_dumper dump \
+              "${{ steps.prepare_ipa.outputs.ipa_path }}" \
+              --patterns patterns.ios.json \
+              -o output \
+              --verbose || true
+            echo "Dumper complete. Checking output..."
+            ls -la output/ || true
+          else
+            echo "IPA not available; fetching latest verified headers from masterstrap.org CDN..."
+            curl -fsSL "https://masterstrap.org/Data/IOS/IOS_FFlags.hpp" \
+              -o output/FFlags.hpp || true
+            curl -fsSL "https://masterstrap.org/Data/IOS/IOS_Offsets.hpp" \
+              -o output/Offsets.hpp || true
+          fi
+
+      # ── STEP 4: Build Masterstrap iOS Native Hook & IPA ──────────────────
+      - name: Build Masterstrap iOS Native Hook & Integrate IPA
+        if: steps.version_gate.outputs.should_build == 'true'
+        id: build_ipa
+        shell: bash
+        run: |
+          echo "=== [2/4] Compiling Native Hook & Packaging IPA ==="
+
+          IPA_ARG=""
+          if [ "${{ steps.prepare_ipa.outputs.available }}" = "true" ]; then
+            IPA_ARG="--input-ipa ${{ steps.prepare_ipa.outputs.ipa_path }}"
+          fi
+
+          HPP_ARG=""
+          if [ -f "output/FFlags.hpp" ]; then
+            HPP_ARG="--hpp output/FFlags.hpp"
+          fi
+
+          python tools/build_integrated_roblox_ipa.py \
+            $IPA_ARG \
+            $HPP_ARG \
+            --out-dir output \
+            --no-embedded-flags
+
+          # Collect IPA info emitted by builder to GITHUB_OUTPUT
+          if compgen -G "output/Masterstrap-*.ipa" > /dev/null; then
+            IPA_FILE=$(ls output/Masterstrap-*.ipa | head -n 1)
+            IPA_NAME=$(basename "$IPA_FILE")
+            # Extract version from filename: Masterstrap-2.740.1234.ipa -> 2.740.1234
+            IPA_VERSION=$(echo "$IPA_NAME" | sed 's/^Masterstrap-//' | sed 's/\.ipa$//')
+            echo "ipa_name=$IPA_NAME" >> "$GITHUB_OUTPUT"
+            echo "ipa_version=$IPA_VERSION" >> "$GITHUB_OUTPUT"
+            echo "has_ipa=true" >> "$GITHUB_OUTPUT"
+            echo "SUCCESS: Built $IPA_NAME ($(du -sh "$IPA_FILE" | cut -f1))"
+          else
+            echo "has_ipa=false" >> "$GITHUB_OUTPUT"
+            echo "ipa_name=" >> "$GITHUB_OUTPUT"
+            echo "ipa_version=${{ steps.version_gate.outputs.store_version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ── STEP 5: Print Diagnostic Log ─────────────────────────────────────
+      - name: Inspect Feature Diagnostic Log
+        if: steps.version_gate.outputs.should_build == 'true'
+        shell: bash
+        run: |
+          echo "=== [3/4] Feature Diagnostic Report ==="
+          if [ -f "output/flag_inject_report.log" ]; then
+            cat output/flag_inject_report.log
+          fi
+          echo ""
+          echo "=== Offset Map Summary ==="
+          if [ -f "output/Offsets.hpp" ]; then
+            echo "Offsets.hpp line count: $(wc -l < output/Offsets.hpp)"
+            grep "constexpr" output/Offsets.hpp | wc -l | xargs echo "Exported offsets count:"
+          fi
+          echo ""
+          echo "=== FFlags Map Summary ==="
+          if [ -f "output/FFlags.hpp" ]; then
+            grep "constexpr" output/FFlags.hpp | wc -l | xargs echo "FFlags count:"
+          fi
+
+      # ── STEP 6: Publish to GitHub Release ────────────────────────────────
+      - name: Publish Masterstrap iOS IPA to GitHub Release
+        if: steps.version_gate.outputs.should_build == 'true' && steps.build_ipa.outputs.has_ipa == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ios-arm64-${{ steps.build_ipa.outputs.ipa_version }}-run-${{ github.run_number }}
+          name: Masterstrap ${{ steps.build_ipa.outputs.ipa_version }} (iOS ARM64)
+          make_latest: true
+          prerelease: false
+          body: |
+            ## Masterstrap iOS ARM64 — ${{ steps.build_ipa.outputs.ipa_version }}
+
+            - **Platform:** iOS ARM64
+            - **Roblox Version:** `${{ steps.build_ipa.outputs.ipa_version }}`
+            - **App Store Version:** `${{ steps.version_gate.outputs.store_version }}`
+            - **Build Run:** `#${{ github.run_number }}`
+            - **Trigger Policy:** Immediate (threshold=0 — builds on any new App Store version)
+
+            ### Ready to sideload via:
+            - TrollStore (recommended)
+            - AltStore / AltServer
+            - Sideloadly
+            - Scarlet
+
+            ### What's included:
+            - ✅ Cloud Bridge Protocol v2 (`masterstrap-rbx-bridge-v1://`)
+            - ✅ CADisplayLink FPS range policy (up to 120fps on ProMotion)
+            - ✅ Direct-RVA FastFlag write engine
+            - ✅ Stealth hooks: AbortLogger, ReportBytecode, ValidateHeader, ScriptTimeout, ValidateCaller, ValidateAndSetupCaps, Telemetry
+            - ✅ Dynamic JSON config (ClientAppSettings.json + TurboProfile)
+            - ✅ Full diagnostic log: `masterstrap_ios.log` (10/10 feature matrix)
+
+            > **Note:** Open Masterstrap app first to get the launch authorization token, then open Roblox.
+          files: |
+            output/Masterstrap-*.ipa
+            output/flag_inject_report.log
+            output/FFlags.hpp
+            output/Offsets.hpp
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── STEP 7: Advance iOS checkpoint ───────────────────────────────────
+      - name: Advance iOS version checkpoint
+        if: steps.version_gate.outputs.should_build == 'true' && steps.build_ipa.outputs.has_ipa == 'true'
+        shell: bash
+        env:
+          BUILT_VERSION: ${{ steps.build_ipa.outputs.ipa_version }}
+          STORE_VERSION: ${{ steps.version_gate.outputs.store_version }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import datetime as dt, json, os, re
+          from pathlib import Path
+
+          def version_key(v: str):
+              return tuple(int(p) for p in re.findall(r'\d+', v))
+
+          path = Path('last_built_roblox_ios_version.json')
+          data = json.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}
+          current_v = data.get('version', '')
+          built_v = os.environ.get('BUILT_VERSION') or os.environ.get('STORE_VERSION', 'unknown')
+
+          if not current_v or version_key(built_v) >= version_key(current_v):
+              data['version'] = built_v
+              data['updated_at'] = dt.datetime.now(dt.timezone.utc).isoformat()
+              data['platform'] = 'ios'
+              data['channel'] = 'global-appstore'
+              path.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
+              print(f"Checkpoint advanced to {built_v}")
+          else:
+              print(f"Preserving existing checkpoint {current_v}; built {built_v} is older.")
+              os.system("git checkout HEAD -- last_built_roblox_ios_version.json")
+          PY
+
+          git config user.name 'Masterstrap-Bot'
+          git config user.email 'bot@masterstrap.org'
+          git add last_built_roblox_ios_version.json
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: update iOS ARM64 checkpoint $BUILT_VERSION"
+            git push origin HEAD
+          fi
