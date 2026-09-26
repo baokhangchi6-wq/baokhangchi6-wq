@@ -221,10 +221,8 @@ jobs:
             > **Note:** Open Masterstrap app first to get the launch authorization token, then open Roblox.
           files: |
             output/Masterstrap-*.ipa
-            output/flag_inject_report.log
-            output/FFlags.hpp
-            output/Offsets.hpp
         env:
+
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # ── STEP 7: Advance iOS checkpoint ───────────────────────────────────
