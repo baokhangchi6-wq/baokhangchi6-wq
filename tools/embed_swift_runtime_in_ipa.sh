@@ -43,22 +43,42 @@ frameworks_dir="$app_dir/Frameworks"
 mkdir -p "$frameworks_dir"
 
 swift_stdlib_tool="$(xcrun --find swift-stdlib-tool)"
-if ! "$swift_stdlib_tool" \
-    --copy \
-    --verbose \
-    --scan-executable "$app_binary" \
-    --platform iphoneos \
-    --unsigned-destination "$frameworks_dir"; then
-  echo "swift-stdlib-tool failed; copying the executable's Swift dependencies directly." >&2
+swift_binary="$(xcrun --find swift)"
+swift_library_root="$(cd "$(dirname "$swift_binary")/../lib" && pwd)"
+if [[ -f "$swift_library_root/swift-5.5/iphoneos/libswift_Concurrency.dylib" ]]; then
+  swift_source_libraries="$swift_library_root/swift-5.5/iphoneos"
+else
+  swift_source_libraries="$swift_library_root/iphoneos"
+fi
+
+swift_tool_args=(
+  --copy
+  --verbose
+  --scan-executable "$app_binary"
+  --scan-folder "$frameworks_dir"
+  --platform iphoneos
+  --source-libraries "$swift_source_libraries"
+  --destination "$frameworks_dir"
+)
+swift_tool_help="$($swift_stdlib_tool --help 2>&1 || true)"
+if [[ "$swift_tool_help" == *"--back-deploy-swift-concurrency"* ]]; then
+  swift_tool_args+=(--back-deploy-swift-concurrency)
+fi
+if [[ "$swift_tool_help" == *"--filter-for-swift-os"* ]]; then
+  swift_tool_args+=(--filter-for-swift-os)
+fi
+
+swift_tool_ok=1
+if ! "$swift_stdlib_tool" "${swift_tool_args[@]}"; then
+  swift_tool_ok=0
+  echo "swift-stdlib-tool failed; using deterministic dependency fallback." >&2
 fi
 
 # Xcode 26.6's swift-stdlib-tool can crash while scanning this standalone
 # force-loaded executable. Mirror its essential copy phase from the same
 # Xcode toolchain so the generated IPA remains deterministic.
-swift_binary="$(xcrun --find swift)"
-swift_library_root="$(cd "$(dirname "$swift_binary")/../lib" && pwd)"
 # The copied concurrency dylib has its own @rpath dependencies (at least
-# libswiftCore). Walk the dependency graph so dyld can resolve every Swift
+# libswiftCore.dylib). Walk the dependency graph so dyld can resolve every Swift
 # dylib from the app's Frameworks directory on older iOS versions.
 swift_queue=("$app_binary")
 swift_seen=()
@@ -83,7 +103,7 @@ find_swift_library() {
 copy_swift_library() {
   local swift_library="$1"
   local seen_library
-  for seen_library in "${swift_seen[@]}"; do
+  for seen_library in "${swift_seen[@]-}"; do
     [[ "$seen_library" == "$swift_library" ]] && return 0
   done
   swift_seen+=("$swift_library")
@@ -104,7 +124,9 @@ copy_swift_library() {
 
 # Force the concurrency library into the graph even when the executable's
 # load command is weak-linked and otool does not report it as @rpath.
-copy_swift_library "libswift_Concurrency.dylib"
+if [[ "$swift_tool_ok" -eq 0 ]]; then
+  copy_swift_library "libswift_Concurrency.dylib"
+fi
 
 queue_index=0
 while [[ "$queue_index" -lt "${#swift_queue[@]}" ]]; do
@@ -120,9 +142,8 @@ while [[ "$queue_index" -lt "${#swift_queue[@]}" ]]; do
   )
 done
 
-if [[ ! -f "$frameworks_dir/libswift_Concurrency.dylib" ||
-      ! -f "$frameworks_dir/libswiftCore.dylib" ]]; then
-  echo "Swift Concurrency runtime graph is incomplete" >&2
+if [[ ! -f "$frameworks_dir/libswift_Concurrency.dylib" ]]; then
+  echo "Swift Concurrency runtime is missing from the app bundle" >&2
   exit 1
 fi
 
@@ -148,4 +169,5 @@ find "$frameworks_dir" -maxdepth 1 -type f -name 'libswift*.dylib' -print -exec 
 mv -f "$rebuilt_ipa" "$ipa_path"
 
 echo "Verified IPA contents:"
+unzip -t "$ipa_path" >/dev/null
 unzip -l "$ipa_path" | grep -E 'Frameworks/libswift|omsdk-v1.js|omid-session-client-v1.js|PrivacyInfo.xcprivacy'

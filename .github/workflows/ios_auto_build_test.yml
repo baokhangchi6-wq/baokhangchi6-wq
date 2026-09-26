@@ -75,7 +75,9 @@ jobs:
             --levelplay-framework "$LEVELPLAY_FRAMEWORK" \
             --unityads-adapter-framework "$UNITYADS_ADAPTER_FRAMEWORK" \
             --unityads-framework "$UNITYADS_FRAMEWORK"
+          set -euo pipefail
           bash tools/embed_swift_runtime_in_ipa.sh output/Masterstrap.ipa
+          test -s output/Masterstrap.ipa
           echo "enabled=true" >> "$GITHUB_OUTPUT"
 
       - name: Resolve & Download Decrypted Roblox iOS IPA

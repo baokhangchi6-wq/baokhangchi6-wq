@@ -252,7 +252,7 @@ class AppBridgeTests(unittest.TestCase):
         self.assertIn("libswift_Concurrency.dylib", runtime_embedder)
         self.assertIn("libswiftCore.dylib", runtime_embedder)
         self.assertIn("swift-5.5/iphoneos", runtime_embedder)
-        self.assertIn('--unsigned-destination "$frameworks_dir"', runtime_embedder)
+        self.assertIn('--destination "$frameworks_dir"', runtime_embedder)
 
     def test_sdk_privacy_manifests_are_merged_without_losing_reasons(self):
         with tempfile.TemporaryDirectory() as temp_dir:

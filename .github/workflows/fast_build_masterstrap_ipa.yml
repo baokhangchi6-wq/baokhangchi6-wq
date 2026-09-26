@@ -86,7 +86,9 @@ jobs:
       - name: Embed and verify Swift runtime
         shell: bash
         run: |
+          set -euo pipefail
           bash tools/embed_swift_runtime_in_ipa.sh output/Masterstrap.ipa
+          test -s output/Masterstrap.ipa
           ls -lh output/Masterstrap.ipa
 
       - name: Publish Masterstrap.ipa to GitHub Release
