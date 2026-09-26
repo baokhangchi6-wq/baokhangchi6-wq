@@ -1712,6 +1712,32 @@ def compile_dylib(c_source: str, out_dylib: Path) -> Path:
     obj_file = work_dir / "masterstrap_ios.o"
     c_file.write_text(c_source, encoding="utf-8")
 
+    if sys.platform == "darwin":
+        isysroot = []
+        try:
+            sdk_proc = subprocess.run(["xcrun", "--sdk", "iphoneos", "--show-sdk-path"], capture_output=True, text=True)
+            if sdk_proc.returncode == 0 and sdk_proc.stdout.strip():
+                isysroot = ["-isysroot", sdk_proc.stdout.strip()]
+        except Exception:
+            pass
+
+        compile_cmd = [
+            "clang",
+            "-target", "arm64-apple-ios14.0",
+            "-dynamiclib",
+            "-O3",
+            "-undefined", "dynamic_lookup",
+            "-install_name", "@rpath/libmasterstrap.dylib",
+            *isysroot,
+            str(c_file),
+            "-o", str(out_dylib)
+        ]
+        proc = subprocess.run(compile_cmd, capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise RuntimeError(f"Clang dynamiclib compilation failed:\n{proc.stderr}")
+        print(f"Compiled native iOS dylib -> {out_dylib} ({out_dylib.stat().st_size} bytes)")
+        return out_dylib
+
     clang_bin, lld_bin = find_clang_lld()
 
     compile_cmd = [
@@ -1742,6 +1768,7 @@ def compile_dylib(c_source: str, out_dylib: Path) -> Path:
 
     print(f"Compiled native iOS dylib -> {out_dylib} ({out_dylib.stat().st_size} bytes)")
     return out_dylib
+
 
 
 def insert_load_dylib(macho_bytes: bytes, dylib_path: str) -> bytes:
