@@ -48,8 +48,7 @@ if ! "$swift_stdlib_tool" \
     --verbose \
     --scan-executable "$app_binary" \
     --platform iphoneos \
-    --destination "$frameworks_dir" \
-    --unsigned-destination; then
+    --unsigned-destination "$frameworks_dir"; then
   echo "swift-stdlib-tool failed; copying the executable's Swift dependencies directly." >&2
 fi
 

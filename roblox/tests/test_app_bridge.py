@@ -250,6 +250,7 @@ class AppBridgeTests(unittest.TestCase):
         self.assertIn("swift-stdlib-tool failed", runtime_embedder)
         self.assertIn("@rpath\\/libswift", runtime_embedder)
         self.assertIn("libswift_Concurrency.dylib", runtime_embedder)
+        self.assertIn('--unsigned-destination "$frameworks_dir"', runtime_embedder)
 
     def test_sdk_privacy_manifests_are_merged_without_losing_reasons(self):
         with tempfile.TemporaryDirectory() as temp_dir:
