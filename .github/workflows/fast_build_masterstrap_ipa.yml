@@ -5,6 +5,7 @@ on:
     branches: [ master, main ]
     paths:
       - 'tools/build_masterstrap_app_ipa.py'
+      - 'tools/ios_levelplay_bridge.m'
       - 'tools/embed_swift_runtime_in_ipa.sh'
       - 'Masterstrap/**'
       - '.github/workflows/fast_build_masterstrap_ipa.yml'

@@ -19,6 +19,11 @@ static BOOL MSInitialized;
 static BOOL MSInitializationStarted;
 static BOOL MSPrivacyPromptVisible;
 static BOOL MSAdShowing;
+static BOOL MSRewardedLoadInFlight;
+static BOOL MSInterstitialLoadInFlight;
+static BOOL MSRewardedLoadFailed;
+static BOOL MSInterstitialLoadFailed;
+static BOOL MSPendingUsingInterstitialFallback;
 
 static NSString *const MSPrivacyChoiceSavedKey = @"masterstrap_ads_privacy_choice_saved";
 static NSString *const MSGDPRConsentKey = @"masterstrap_ads_gdpr_consent";
@@ -61,16 +66,39 @@ static void MSResolve(NSString *outcome, NSString *detail) {
     MSPendingRequest = nil;
     MSPendingFormat = nil;
     MSAdShowing = NO;
+    MSPendingUsingInterstitialFallback = NO;
 }
 
 static void MSTryShowPending(void) {
     if (!MSInitialized || !MSPendingRequest || MSAdShowing || !MSRootViewController) return;
-    if ([MSPendingFormat isEqualToString:@"rewarded"] && [MSRewarded isAdReady]) {
-        MSAdShowing = YES;
-        [MSRewarded showAdWithViewController:MSRootViewController placementName:nil];
-    } else if ([MSPendingFormat isEqualToString:@"interstitial"] && [MSInterstitial isAdReady]) {
-        MSAdShowing = YES;
-        [MSInterstitial showAdWithViewController:MSRootViewController placementName:nil];
+    if ([MSPendingFormat isEqualToString:@"rewarded"]) {
+        if ([MSRewarded isAdReady]) {
+            MSAdShowing = YES;
+            MSPendingUsingInterstitialFallback = NO;
+            MSLog(@"showing preloaded rewarded request=%@", MSPendingRequest);
+            [MSRewarded showAdWithViewController:MSRootViewController placementName:nil];
+            return;
+        }
+        if ([MSInterstitial isAdReady]) {
+            MSAdShowing = YES;
+            MSPendingUsingInterstitialFallback = YES;
+            MSLog(@"showing preloaded interstitial fallback for rewarded request=%@", MSPendingRequest);
+            [MSInterstitial showAdWithViewController:MSRootViewController placementName:nil];
+            return;
+        }
+        if (MSRewardedLoadFailed && MSInterstitialLoadFailed &&
+            !MSRewardedLoadInFlight && !MSInterstitialLoadInFlight) {
+            MSResolve(@"failed", @"rewarded_and_interstitial_unavailable");
+        }
+    } else if ([MSPendingFormat isEqualToString:@"interstitial"]) {
+        if ([MSInterstitial isAdReady]) {
+            MSAdShowing = YES;
+            MSPendingUsingInterstitialFallback = NO;
+            MSLog(@"showing preloaded interstitial request=%@", MSPendingRequest);
+            [MSInterstitial showAdWithViewController:MSRootViewController placementName:nil];
+        } else if (MSInterstitialLoadFailed && !MSInterstitialLoadInFlight) {
+            MSResolve(@"continue", @"interstitial_unavailable");
+        }
     }
 }
 
@@ -80,18 +108,25 @@ static void MSTryShowPending(void) {
 
 @implementation MSLevelPlayDelegate
 - (void)didLoadAdWithAdInfo:(LPMAdInfo *)adInfo {
+    // The delegate callback is shared by rewarded/interstitial ad objects.
+    // Clearing both flags is safe because a successful callback means at
+    // least one object is ready; readiness checks select the right object.
+    MSRewardedLoadInFlight = NO;
+    MSInterstitialLoadInFlight = NO;
     MSLog(@"ad loaded: %@", adInfo);
     MSTryShowPending();
 }
 - (void)didFailToLoadAdWithAdUnitId:(NSString *)adUnitId error:(NSError *)error {
     MSLog(@"ad load failed unit=%@ error=%@", adUnitId, error);
-    if ([MSPendingFormat isEqualToString:@"interstitial"] &&
-        [adUnitId isEqualToString:MSInterstitialAdUnitId]) {
-        MSResolve(@"continue", @"interstitial_unavailable");
-    } else if ([MSPendingFormat isEqualToString:@"rewarded"] &&
-               [adUnitId isEqualToString:MSRewardedAdUnitId]) {
-        MSResolve(@"failed", @"rewarded_unavailable");
+    if ([adUnitId isEqualToString:MSRewardedAdUnitId]) {
+        MSRewardedLoadInFlight = NO;
+        MSRewardedLoadFailed = YES;
     }
+    if ([adUnitId isEqualToString:MSInterstitialAdUnitId]) {
+        MSInterstitialLoadInFlight = NO;
+        MSInterstitialLoadFailed = YES;
+    }
+    MSTryShowPending();
 }
 - (void)didDisplayAdWithAdInfo:(LPMAdInfo *)adInfo {
     MSLog(@"ad displayed: %@", adInfo);
@@ -102,21 +137,57 @@ static void MSTryShowPending(void) {
 }
 - (void)didFailToDisplayAdWithAdInfo:(LPMAdInfo *)adInfo error:(NSError *)error {
     MSLog(@"ad display failed: %@", error);
-    MSResolve([MSPendingFormat isEqualToString:@"interstitial"] ? @"continue" : @"failed",
-              @"display_failed");
+    BOOL fallback = MSPendingUsingInterstitialFallback;
+    MSResolve([MSPendingFormat isEqualToString:@"interstitial"] || fallback ? @"continue" : @"failed",
+              fallback ? @"interstitial_fallback_display_failed" : @"display_failed");
+    MSLoadRewardedAd();
+    MSLoadInterstitialAd();
 }
 - (void)didCloseAdWithAdInfo:(LPMAdInfo *)adInfo {
     BOOL rewarded = [MSPendingFormat isEqualToString:@"rewarded"];
-    MSResolve(rewarded ? (MSRewardEarned ? @"rewarded" : @"failed") : @"continue",
-              rewarded ? (MSRewardEarned ? @"completed" : @"incomplete") : @"closed");
+    BOOL fallback = MSPendingUsingInterstitialFallback;
+    MSResolve(rewarded ? (fallback || MSRewardEarned ? @"rewarded" : @"failed") : @"continue",
+              rewarded ? (fallback ? @"interstitial_fallback_completed" : (MSRewardEarned ? @"completed" : @"incomplete")) : @"closed");
     MSRewardEarned = NO;
-    [MSRewarded loadAd];
-    [MSInterstitial loadAd];
+    MSLoadRewardedAd();
+    MSLoadInterstitialAd();
 }
 - (void)didClickAdWithAdInfo:(LPMAdInfo *)adInfo { MSLog(@"ad clicked: %@", adInfo); }
 @end
 
 static MSLevelPlayDelegate *MSDelegate;
+static void MSLoadRewardedAd(void);
+static void MSLoadInterstitialAd(void);
+
+static void MSLoadRewardedAd(void) {
+    if (!MSRewarded || MSRewardedLoadInFlight || [MSRewarded isAdReady]) return;
+    MSRewardedLoadInFlight = YES;
+    MSRewardedLoadFailed = NO;
+    MSLog(@"preloading rewarded ad unit=%@", MSRewardedAdUnitId);
+    [MSRewarded loadAd];
+}
+
+static void MSLoadInterstitialAd(void) {
+    if (!MSInterstitial || MSInterstitialLoadInFlight || [MSInterstitial isAdReady]) return;
+    MSInterstitialLoadInFlight = YES;
+    MSInterstitialLoadFailed = NO;
+    MSLog(@"preloading interstitial ad unit=%@", MSInterstitialAdUnitId);
+    [MSInterstitial loadAd];
+}
+
+static void MSPrepareAdObjects(void) {
+    if (!MSDelegate) return;
+    if (!MSRewarded && MSRewardedAdUnitId.length > 0) {
+        MSRewarded = [[LPMRewardedAd alloc] initWithAdUnitId:MSRewardedAdUnitId];
+        [MSRewarded setDelegate:MSDelegate];
+    }
+    if (!MSInterstitial && MSInterstitialAdUnitId.length > 0) {
+        MSInterstitial = [[LPMInterstitialAd alloc] initWithAdUnitId:MSInterstitialAdUnitId];
+        [MSInterstitial setDelegate:MSDelegate];
+    }
+    MSLoadRewardedAd();
+    MSLoadInterstitialAd();
+}
 
 static void MSInitializeLevelPlay(BOOL gdprConsent, BOOL ccpaOptOut) {
     if (MSInitialized || MSInitializationStarted) return;
@@ -158,6 +229,7 @@ static void MSInitializeLevelPlay(BOOL gdprConsent, BOOL ccpaOptOut) {
                 MSRewardedAdUnitId = rewardedId;
                 MSInterstitialAdUnitId = interstitialId;
                 MSLog(@"init complete; LevelPlay SDK ready");
+                MSPrepareAdObjects();
                 MSTryShowPending();
             } @catch (NSException *e) {
                 MSLog(@"LevelPlay completion block caught exception: %@ - %@", e.name, e.reason);
@@ -251,6 +323,7 @@ void MSLevelPlayRequest(const char *format, const char *requestId) {
     MSPendingRequest = rid;
     MSPendingFormat = kind;
     MSRewardEarned = NO;
+    MSPendingUsingInterstitialFallback = NO;
     if (!MSInitialized) {
         if (MSInitializationStarted) {
             MSLog(@"request=%@ format=%@ waiting for SDK initialization", rid, kind);
@@ -261,20 +334,11 @@ void MSLevelPlayRequest(const char *format, const char *requestId) {
         return;
     }
     @try {
+        MSPrepareAdObjects();
         if ([kind isEqualToString:@"rewarded"]) {
-            if (!MSRewarded && MSRewardedAdUnitId.length > 0) {
-                MSRewarded = [[LPMRewardedAd alloc] initWithAdUnitId:MSRewardedAdUnitId];
-                [MSRewarded setDelegate:MSDelegate];
-            }
             MSTryShowPending();
-            if (!MSAdShowing && MSRewarded) [MSRewarded loadAd];
         } else if ([kind isEqualToString:@"interstitial"]) {
-            if (!MSInterstitial && MSInterstitialAdUnitId.length > 0) {
-                MSInterstitial = [[LPMInterstitialAd alloc] initWithAdUnitId:MSInterstitialAdUnitId];
-                [MSInterstitial setDelegate:MSDelegate];
-            }
             MSTryShowPending();
-            if (!MSAdShowing && MSInterstitial) [MSInterstitial loadAd];
         } else {
             MSResolve(@"failed", @"unsupported_format");
         }

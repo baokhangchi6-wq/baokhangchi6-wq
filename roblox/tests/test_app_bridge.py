@@ -233,6 +233,10 @@ class AppBridgeTests(unittest.TestCase):
         self.assertIn("LevelPlay init deferred: awaiting explicit ad privacy choice", bridge_source)
         self.assertIn("MSInitializationStarted", bridge_source)
         self.assertIn("MSTryShowPending", bridge_source)
+        self.assertIn("MSPrepareAdObjects", bridge_source)
+        self.assertIn("preloading rewarded ad unit", bridge_source)
+        self.assertIn("interstitial_fallback_completed", bridge_source)
+        self.assertIn("rewarded_and_interstitial_unavailable", bridge_source)
         self.assertIn("[adUnitId isEqualToString:MSRewardedAdUnitId]", bridge_source)
         self.assertIn("PrivacyInfo.xcprivacy", self.app_builder.build_masterstrap_ipa.__code__.co_consts)
 
