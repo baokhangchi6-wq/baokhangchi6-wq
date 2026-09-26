@@ -6038,6 +6038,7 @@ window.addEventListener("error", function(e) {
 // editor interstitial fails open, matching the Android policy.
 window.MasterstrapAds = (() => {
     const pending = new Map();
+    const inFlightByFormat = new Map();
     const grants = { preset: new Set() };
     const interstitialCooldownMs = 5 * 60 * 1000;
     const interstitialLastShownKey = "masterstrap_ads_last_interstitial_ms";
@@ -6059,29 +6060,47 @@ window.MasterstrapAds = (() => {
                 return Promise.resolve(true);
             }
         }
-        return new Promise(resolve => {
-            const requestId = "ad-" + Date.now() + "-" + (++sequence);
-            const timer = setTimeout(() => {
-                pending.delete(requestId);
-                log("timeout format=" + format + " placement=" + placement);
-                resolve(!!failOpen);
-            }, 15000);
-            pending.set(requestId, { resolve, timer, format, placement, failOpen: !!failOpen });
-            log("request format=" + format + " placement=" + placement + " id=" + requestId);
+        const existing = inFlightByFormat.get(format);
+        if (existing) {
+            log("coalesced format=" + format + " placement=" + placement);
+            return existing;
+        }
+        let resolveRequest;
+        const promise = new Promise(resolve => {
+            resolveRequest = resolve;
+        });
+        const requestId = "ad-" + Date.now() + "-" + (++sequence);
+        const timeoutMs = format === "rewarded" ? 120000 : 60000;
+        const timer = setTimeout(() => {
+            pending.delete(requestId);
+            if (inFlightByFormat.get(format) === promise) inFlightByFormat.delete(format);
+            log("timeout format=" + format + " placement=" + placement);
+            resolveRequest(!!failOpen);
+        }, timeoutMs);
+        pending.set(requestId, { resolve: resolveRequest, promise, timer, format, placement, failOpen: !!failOpen });
+        inFlightByFormat.set(format, promise);
+        log("request format=" + format + " placement=" + placement + " id=" + requestId);
+        try {
             if (window.webkit?.messageHandlers?.requestLevelPlayAd) {
                 window.webkit.messageHandlers.requestLevelPlayAd.postMessage({ format, placement, requestId });
             } else {
-                clearTimeout(timer);
-                pending.delete(requestId);
-                resolve(!!failOpen);
+                throw new Error("requestLevelPlayAd bridge unavailable");
             }
-        });
+        } catch (error) {
+            clearTimeout(timer);
+            pending.delete(requestId);
+            if (inFlightByFormat.get(format) === promise) inFlightByFormat.delete(format);
+            log("request dispatch failed format=" + format + " error=" + error);
+            resolveRequest(!!failOpen);
+        }
+        return promise;
     }
     function nativeResult(event) {
         const item = event && pending.get(event.requestId);
         if (!item) return;
         clearTimeout(item.timer);
         pending.delete(event.requestId);
+        if (inFlightByFormat.get(item.format) === item.promise) inFlightByFormat.delete(item.format);
         const allowed = event.outcome === "rewarded" || event.outcome === "continue";
         if (item.format === "interstitial" && event.detail === "closed") {
             localStorage.setItem(interstitialLastShownKey, String(Date.now()));
