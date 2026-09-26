@@ -58,6 +58,60 @@ def configure_ios_runtime_plist(plist: dict) -> dict:
     return plist
 
 
+def sanitize_and_configure_roblox_plist(plist: dict) -> str:
+    """Purge third-party modifications, restore canonical bundle id & URL schemes."""
+    orig_bundle_id = str(plist.get("CFBundleIdentifier", ""))
+    is_vng = "vng" in orig_bundle_id.lower() or "vng" in str(plist.get("CFBundleName", "")).lower()
+
+    # 1. Restore canonical Roblox bundle identifier
+    canonical_bundle_id = "com.vng.roblox" if is_vng else "com.roblox.robloxmobile"
+    plist["CFBundleIdentifier"] = canonical_bundle_id
+
+    # 2. Presentation and metadata
+    plist["CFBundleDisplayName"] = "Masterstrap"
+    plist["CFBundleName"] = "Masterstrap"
+
+    # 3. Enable file sharing & high-refresh presentation
+    plist["UIFileSharingEnabled"] = True
+    plist["LSSupportsOpeningDocumentsInPlace"] = True
+    configure_ios_runtime_plist(plist)
+
+    # 4. Clean third-party / delta schemes and register canonical schemes
+    bridge_scheme = register_bridge_url_scheme(plist)
+    required_schemes = (
+        ["roblox-vng", "robloxmobile", "roblox", bridge_scheme]
+        if is_vng
+        else ["robloxmobile", "roblox", bridge_scheme]
+    )
+
+    clean_url_types = []
+    existing_schemes = set()
+    for entry in plist.get("CFBundleURLTypes", []):
+        if not isinstance(entry, dict):
+            continue
+        schemes = entry.get("CFBundleURLSchemes", [])
+        # Purge third-party/delta schemes
+        purged = [s for s in schemes if "delta" not in str(s).lower()]
+        if purged:
+            entry["CFBundleURLSchemes"] = purged
+            for s in purged:
+                if isinstance(s, str):
+                    existing_schemes.add(s.lower())
+            clean_url_types.append(entry)
+
+    for req in required_schemes:
+        if req.lower() not in existing_schemes:
+            clean_url_types.append({
+                "CFBundleTypeRole": "Editor",
+                "CFBundleURLName": f"com.masterstrap.{req}",
+                "CFBundleURLSchemes": [req],
+            })
+            existing_schemes.add(req.lower())
+
+    plist["CFBundleURLTypes"] = clean_url_types
+    return bridge_scheme
+
+
 def find_clang_lld():
     clang = shutil_which("clang")
     lld = shutil_which("ld.lld") or shutil_which("lld") or shutil_which("ld64.lld")
@@ -1970,15 +2024,11 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         elif name.endswith("Roblox.app/Info.plist"):
                             try:
                                 pl = plistlib.loads(data)
-                                pl["UIFileSharingEnabled"] = True
-                                pl["LSSupportsOpeningDocumentsInPlace"] = True
-                                pl["CFBundleDisplayName"] = "Masterstrap"
-                                pl["CFBundleName"] = "Masterstrap"
-                                configure_ios_runtime_plist(pl)
-                                bridge_scheme = register_bridge_url_scheme(pl)
+                                bridge_scheme = sanitize_and_configure_roblox_plist(pl)
                                 data = plistlib.dumps(pl)
                                 print(
-                                    "Purified Info.plist: renamed to Masterstrap, enabled file sharing, "
+                                    f"[PURIFY] Info.plist: restored bundle id '{pl['CFBundleIdentifier']}', "
+                                    f"renamed to Masterstrap, enabled file sharing, "
                                     f"high-refresh, and registered bridge scheme '{bridge_scheme}'"
                                 )
                             except Exception as e:

@@ -54,6 +54,58 @@ class AppBridgeTests(unittest.TestCase):
         self.roblox_builder.configure_ios_runtime_plist(plist)
         self.assertIs(True, plist["CADisableMinimumFrameDurationOnPhone"])
 
+    def test_sanitize_and_configure_roblox_plist_restores_global_bundle_and_purges_delta(self):
+        plist = {
+            "CFBundleIdentifier": "com.delta.client",
+            "CFBundleDisplayName": "Delta",
+            "CFBundleName": "Delta",
+            "CFBundleURLTypes": [
+                {
+                    "CFBundleTypeRole": "Editor",
+                    "CFBundleURLName": "delta-scheme",
+                    "CFBundleURLSchemes": ["delta", "deltaclient"],
+                }
+            ],
+        }
+        scheme = self.roblox_builder.sanitize_and_configure_roblox_plist(plist)
+        self.assertEqual("masterstrap-rbx-bridge-v1", scheme)
+        self.assertEqual("com.roblox.robloxmobile", plist["CFBundleIdentifier"])
+        self.assertEqual("Masterstrap", plist["CFBundleDisplayName"])
+        self.assertEqual("Masterstrap", plist["CFBundleName"])
+        self.assertIs(True, plist["UIFileSharingEnabled"])
+        self.assertIs(True, plist["LSSupportsOpeningDocumentsInPlace"])
+        self.assertIs(True, plist["CADisableMinimumFrameDurationOnPhone"])
+
+        all_schemes = []
+        for entry in plist["CFBundleURLTypes"]:
+            for s in entry.get("CFBundleURLSchemes", []):
+                all_schemes.append(s)
+
+        self.assertNotIn("delta", all_schemes)
+        self.assertNotIn("deltaclient", all_schemes)
+        self.assertIn("roblox", all_schemes)
+        self.assertIn("robloxmobile", all_schemes)
+        self.assertIn("masterstrap-rbx-bridge-v1", all_schemes)
+
+    def test_sanitize_and_configure_roblox_plist_handles_vng(self):
+        plist = {
+            "CFBundleIdentifier": "com.vng.roblox",
+            "CFBundleName": "Roblox VNG",
+        }
+        scheme = self.roblox_builder.sanitize_and_configure_roblox_plist(plist)
+        self.assertEqual("masterstrap-rbx-vng-bridge-v1", scheme)
+        self.assertEqual("com.vng.roblox", plist["CFBundleIdentifier"])
+
+        all_schemes = []
+        for entry in plist["CFBundleURLTypes"]:
+            for s in entry.get("CFBundleURLSchemes", []):
+                all_schemes.append(s)
+
+        self.assertIn("roblox-vng", all_schemes)
+        self.assertIn("robloxmobile", all_schemes)
+        self.assertIn("roblox", all_schemes)
+        self.assertIn("masterstrap-rbx-vng-bridge-v1", all_schemes)
+
     def test_both_native_sides_use_server_bridge_v2_with_v1_fallback(self):
         app_source = self.app_builder.generate_native_app_objc_source()
         hook_source = self.roblox_builder.generate_native_hook_source(

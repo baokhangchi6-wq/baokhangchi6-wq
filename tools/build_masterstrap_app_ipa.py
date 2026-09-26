@@ -559,7 +559,14 @@ static void open_roblox_app_channel(const char* channel, id bridge_payload,
         id workspace = ((id (*)(id, SEL))objc_msgSend)(LSApplicationWorkspace, sel_registerName("defaultWorkspace"));
         if (workspace) {
             opened = ((bool (*)(id, SEL, id))objc_msgSend)(workspace, sel_registerName("openApplicationWithBundleID:"), nsstr(bundleId));
-            app_log("LSApplicationWorkspace openApplicationWithBundleID returned: %d", opened);
+            app_log("LSApplicationWorkspace openApplicationWithBundleID (%s) returned: %d", bundleId, opened);
+            if (!opened && (!channel || strcmp(channel, "vng") != 0)) {
+                const char* fallback_ids[] = {"com.roblox.client", "com.delta.client", NULL};
+                for (int i = 0; fallback_ids[i] && !opened; i++) {
+                    opened = ((bool (*)(id, SEL, id))objc_msgSend)(workspace, sel_registerName("openApplicationWithBundleID:"), nsstr(fallback_ids[i]));
+                    app_log("LSApplicationWorkspace fallback bundleId (%s) returned: %d", fallback_ids[i], opened);
+                }
+            }
         }
     }
 
