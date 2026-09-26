@@ -980,6 +980,16 @@ HTML_TEMPLATE_RAW = "<!DOCTYPE html>\n<html lang=\"vi\" data-theme=\"dark\">\n<h
 def configure_ios_runtime_html(html: str) -> str:
     """Adapt the shared UI to iOS and fail the build if its structure drifts."""
 
+    # HTML_TEMPLATE_RAW is a generated Python string. A JavaScript escape such
+    # as `"\n"` can become a literal newline between the quotes when Python
+    # evaluates the template, which makes the whole WebView script fail to
+    # parse. Keep the generated iOS script valid by using a numeric newline
+    # expression instead.
+    html = html.replace(
+        'rawText.split("' + chr(10) + '");',
+        'rawText.split(String.fromCharCode(10));',
+    )
+
     def replace_required(old: str, new: str, label: str) -> None:
         nonlocal html
         count = html.count(old)

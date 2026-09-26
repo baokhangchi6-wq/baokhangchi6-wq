@@ -239,6 +239,9 @@ class AppBridgeTests(unittest.TestCase):
     def test_standalone_app_packages_swift_runtime_and_unity_resources(self):
         compile_source = inspect.getsource(self.app_builder.compile_native_executable)
         package_source = inspect.getsource(self.app_builder.build_masterstrap_ipa)
+        ios_html = self.app_builder.configure_ios_runtime_html(
+            self.app_builder.HTML_TEMPLATE_RAW
+        )
         runtime_embedder = (
             ROOT / "tools" / "embed_swift_runtime_in_ipa.sh"
         ).read_text(encoding="utf-8")
@@ -247,6 +250,8 @@ class AppBridgeTests(unittest.TestCase):
         self.assertIn("omsdk-v1.js", package_source)
         self.assertIn("omid-session-client-v1.js", package_source)
         self.assertIn("merge_privacy_manifests", package_source)
+        self.assertIn("rawText.split(String.fromCharCode(10))", ios_html)
+        self.assertNotIn('rawText.split("\n");', ios_html)
         self.assertIn("swift-stdlib-tool failed", runtime_embedder)
         self.assertIn("@rpath\\/libswift", runtime_embedder)
         self.assertIn("libswift_Concurrency.dylib", runtime_embedder)
