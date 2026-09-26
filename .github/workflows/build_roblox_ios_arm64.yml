@@ -7,10 +7,18 @@ name: Build Global IPA
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
+  push:
+    branches: [ master, main ]
+    paths:
+      - 'tools/build_integrated_roblox_ipa.py'
+      - 'tools/check_roblox_ios_version.py'
+      - 'patterns.ios.json'
+      - '.github/workflows/build_roblox_ios_arm64.yml'
   schedule:
     # Check every 3 hours (at :17 past the hour) — Roblox iOS releases are faster
     # than Android, so we poll more frequently to catch updates immediately.
     - cron: '17 */3 * * *'
+
   workflow_dispatch:
     inputs:
       ipa_url:
@@ -91,17 +99,7 @@ jobs:
           # Priority 2: Auto-search public decrypted mirrors
           if [ -z "$TARGET_URL" ]; then
             echo "Searching public verified decrypted mirrors for Roblox iOS IPA..."
-            MIRROR=$(curl -s \
-              "https://api.github.com/repos/ipahub/roblox/releases/latest" \
-              | python -c "
-import sys, json
-data = json.load(sys.stdin)
-assets = data.get('assets', [])
-for a in assets:
-    if a['name'].endswith('.ipa'):
-        print(a['browser_download_url'])
-        break
-" 2>/dev/null || echo "")
+            MIRROR=$(curl -s "https://api.github.com/repos/ipahub/roblox/releases/latest" | python -c "import sys, json; assets=[a['browser_download_url'] for a in json.load(sys.stdin).get('assets', []) if a.get('name', '').endswith('.ipa')]; print(assets[0] if assets else '')" 2>/dev/null || echo "")
             if [ -n "$MIRROR" ]; then
               TARGET_URL="$MIRROR"
               echo "Found public mirror: $TARGET_URL"
@@ -117,20 +115,9 @@ for a in assets:
           fi
 
           # Validate the downloaded file is a valid IPA (ZIP with Payload/)
-          IS_VALID=$(python -c "
-import zipfile, sys
-from pathlib import Path
-p = Path('$IPA_PATH')
-if p.is_file() and p.stat().st_size > 1024 * 1024:
-    try:
-        with zipfile.ZipFile(p, 'r') as z:
-            if any('Payload/' in n for n in z.namelist()[:20]):
-                print('true')
-                sys.exit(0)
-    except Exception:
-        pass
-print('false')
-" 2>/dev/null || echo "false")
+          IS_VALID=$(python -c "import zipfile, sys, pathlib; p = pathlib.Path('$IPA_PATH'); sys.exit(0 if p.is_file() and p.stat().st_size > 1024*1024 and any('Payload/' in n for n in zipfile.ZipFile(p).namelist()[:20]) else 1)" 2>/dev/null && echo "true" || echo "false")
+
+
 
           if [ "$IS_VALID" = "true" ]; then
             echo "available=true" >> "$GITHUB_OUTPUT"
@@ -278,29 +265,13 @@ print('false')
           STORE_VERSION: ${{ steps.version_gate.outputs.store_version }}
         run: |
           set -euo pipefail
-          python - <<'PY'
-          import datetime as dt, json, os, re
-          from pathlib import Path
+          TARGET_VER="${BUILT_VERSION:-$STORE_VERSION}"
+          python tools/check_roblox_ios_version.py \
+            --checkpoint-file last_built_roblox_ios_version.json \
+            --expected-version "$TARGET_VER" \
+            --advance-checkpoint \
+            --force
 
-          def version_key(v: str):
-              return tuple(int(p) for p in re.findall(r'\d+', v))
-
-          path = Path('last_built_roblox_ios_version.json')
-          data = json.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}
-          current_v = data.get('version', '')
-          built_v = os.environ.get('BUILT_VERSION') or os.environ.get('STORE_VERSION', 'unknown')
-
-          if not current_v or version_key(built_v) >= version_key(current_v):
-              data['version'] = built_v
-              data['updated_at'] = dt.datetime.now(dt.timezone.utc).isoformat()
-              data['platform'] = 'ios'
-              data['channel'] = 'global-appstore'
-              path.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
-              print(f"Checkpoint advanced to {built_v}")
-          else:
-              print(f"Preserving existing checkpoint {current_v}; built {built_v} is older.")
-              os.system("git checkout HEAD -- last_built_roblox_ios_version.json")
-          PY
 
           git config user.name 'Masterstrap-Bot'
           git config user.email 'bot@masterstrap.org'

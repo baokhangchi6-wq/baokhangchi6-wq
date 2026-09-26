@@ -4,7 +4,8 @@ on:
   push:
     branches: [ master, main ]
     paths:
-      - 'tools/**'
+      - 'tools/build_masterstrap_app_ipa.py'
+      - 'tools/embed_swift_runtime_in_ipa.sh'
       - 'Masterstrap/**'
       - '.github/workflows/fast_build_masterstrap_ipa.yml'
   workflow_dispatch:

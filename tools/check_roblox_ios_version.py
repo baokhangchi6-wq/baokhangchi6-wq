@@ -87,7 +87,8 @@ def write_checkpoint(checkpoint_file: Path, version: str) -> None:
         "channel": "global-appstore",
     }
     checkpoint_file.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-    print(f"[CHECKPOINT] Written → {checkpoint_file}: {version}")
+    print(f"[CHECKPOINT] Written -> {checkpoint_file}: {version}")
+
 
 
 def emit_github_output(key: str, value: str) -> None:
@@ -153,28 +154,28 @@ def check_version(
 
     # 4. Force flag overrides all gates
     if force:
-        print("[GATE] --force passed → unconditional rebuild.")
+        print("[GATE] --force passed -> unconditional rebuild.")
         emit_github_output("should_build", "true")
         if advance:
-            write_checkpoint(checkpoint_file, store_version)
+            write_checkpoint(checkpoint_file, expected_version or store_version)
         return 0
 
     # 5. Threshold = 0: build whenever store_version > last_version
     if not last_version:
-        print("[GATE] No prior build found → first build, triggering.")
+        print("[GATE] No prior build found -> first build, triggering.")
         emit_github_output("should_build", "true")
         if advance:
-            write_checkpoint(checkpoint_file, store_version)
+            write_checkpoint(checkpoint_file, expected_version or store_version)
         return 0
 
     if version_tuple(store_version) > version_tuple(last_version):
         print(
-            f"[GATE] New version detected: {last_version} → {store_version}. "
+            f"[GATE] New version detected: {last_version} -> {store_version}. "
             f"Triggering build (threshold=0, IMMEDIATE)."
         )
         emit_github_output("should_build", "true")
         if advance:
-            write_checkpoint(checkpoint_file, store_version)
+            write_checkpoint(checkpoint_file, expected_version or store_version)
         return 0
 
     # Same or older version
