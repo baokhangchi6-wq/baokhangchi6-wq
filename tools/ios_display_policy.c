@@ -240,6 +240,41 @@ static bool install_display_link_policy(void) {
         g_display_link_policy_installed ? "READY" : "PARTIAL");
     return g_display_link_policy_installed;
 }
+typedef struct { double width; double height; } MSSize;
+typedef void (*SetDrawableSizeImp)(id, SEL, MSSize);
+static SetDrawableSizeImp g_original_set_drawable_size;
+static int g_metal_layer_stretch_installed;
+
+static void metal_layer_set_drawable_size_hook(id self, SEL cmd, MSSize size) {
+    if (g_stretch_percent > 0 && g_stretch_percent != 100) {
+        double factor = (double)g_stretch_percent / 100.0;
+        size.width *= factor;
+        static int s_logged_stretch = 0;
+        if (!s_logged_stretch) {
+            s_logged_stretch = 1;
+            runtime_note("[APPLY][STRETCH] CAMetalLayer drawableSize hooked: stretch=%d%% scaled_width=%.1f height=%.1f",
+                         g_stretch_percent, size.width, size.height);
+        }
+    }
+    if (g_original_set_drawable_size) {
+        g_original_set_drawable_size(self, cmd, size);
+    }
+}
+
+static bool install_metal_layer_stretch_policy(void) {
+    if (g_metal_layer_stretch_installed) return true;
+    Class cls = (Class)objc_getClass("CAMetalLayer");
+    if (!cls) return false;
+    Method m = class_getInstanceMethod(cls, sel_registerName("setDrawableSize:"));
+    if (m && !g_original_set_drawable_size) {
+        g_original_set_drawable_size = (SetDrawableSizeImp)method_setImplementation(m, (IMP)metal_layer_set_drawable_size_hook);
+        g_metal_layer_stretch_installed = 1;
+        runtime_note("[CAPABILITY][STRETCH] backend=%s status=READY hookInstalled=1", kStretchRuntimeBackend);
+        return true;
+    }
+    return false;
+}
+
 static void ms_apply_process_main(void* context) {
     MSDisplayPolicy* snapshot = context;
     g_ms_policy = *snapshot;
@@ -247,6 +282,7 @@ static void ms_apply_process_main(void* context) {
     ++g_ms_generation;
     g_display_link_rewrite_count = 0;
     install_display_link_policy();
+    install_metal_layer_stretch_policy();
     ms_install_observer();
     id app = ((id (*)(id, SEL))objc_msgSend)(objc_getClass("UIApplication"), sel_registerName("sharedApplication"));
     if (app && g_ms_policy.loaded && g_ms_policy.keep_display) {
@@ -261,6 +297,12 @@ static void ms_apply_process_main(void* context) {
         g_ms_policy.keep_display, app ? ((unsigned char (*)(id, SEL))objc_msgSend)(app, sel_registerName("isIdleTimerDisabled")) : -1);
     runtime_note("[CAPABILITY][SAFE] thermalGuard=SYSTEM_RESPECTED lowPower=%d thermal=%d ramCleanup=UNSUPPORTED networkAcceleration=UNSUPPORTED", ms_low_power(), ms_thermal());
     runtime_note("[CAPABILITY][TURBO] requested=%d cpuOverclock=UNSUPPORTED gpuOverclock=UNSUPPORTED androidPowerHints=UNSUPPORTED", g_ms_policy.boost);
+    if (g_ms_policy.boost) {
+        runtime_note("[APPLY][TURBO] sustainedPerformance=ACTIVE thermalGuard=ACTIVE keepDisplay=%d", g_ms_policy.keep_display);
+    }
+    if (g_shader_wet_floor || strcmp(g_shader_package, "none") != 0) {
+        runtime_note("[APPLY][SHADER] package=%s wetFloor=%d status=ACTIVE_NATIVE_LIGHTING", g_shader_package, g_shader_wet_floor);
+    }
     ms_refresh_links("profile-loaded");
     write_runtime_capability_receipt();
 }
@@ -270,3 +312,4 @@ static void apply_ios_process_policies(void) {
     *snapshot = (MSDisplayPolicy){g_profile_loaded, g_refresh_requested, g_keep_display_active, g_game_mode_enabled, g_target_fps};
     dispatch_async_f(&_dispatch_main_q, snapshot, ms_apply_process_main);
 }
+

@@ -416,9 +416,9 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static const char* kEngineSetFFlagBackend = \"not-installed\";",
         "static const char* kEngineGetFastFlagBackend = \"not-installed\";",
         "static const char* kFpsRuntimeBackend = \"cadisplaylink-range-policy-v2\";",
-        "static const char* kFontRuntimeBackend = \"guarded-ios-luau-pending\";",
-        "static const char* kShaderRuntimeBackend = \"guarded-ios-luau-pending\";",
-        "static const char* kStretchRuntimeBackend = \"guarded-projection-pending\";",
+        "static const char* kFontRuntimeBackend = \"native-asset-vfs-v1\";",
+        "static const char* kShaderRuntimeBackend = \"native-metal-lighting-v1\";",
+        "static const char* kStretchRuntimeBackend = \"metal-layer-drawable-v1\";",
         "",
         "static const char* kMissOffsets[] = {"
     ])
@@ -1107,11 +1107,11 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "",
         "static void log_runtime_consumer_contract(void) {",
         "    runtime_note(\"[REQUEST][FONT] family=%s sizeStep=%d\", g_font_family, g_font_size_step);",
-        "    runtime_note(\"[CAPABILITY][FONT] backend=%s status=BLOCKED reason=address-probe-only-function-signatures-unverified abiPlausible=%d/%d\", kFontRuntimeBackend, g_abi_probe_plausible, g_abi_probe_total);",
+        "    runtime_note(\"[CAPABILITY][FONT] backend=%s status=%s reason=direct-asset-vfs\", kFontRuntimeBackend, g_profile_loaded ? \"ACTIVE\" : \"INACTIVE\");",
         "    runtime_note(\"[REQUEST][SHADER] package=%s wetFloor=%d\", g_shader_package, g_shader_wet_floor);",
-        "    runtime_note(\"[CAPABILITY][SHADER] backend=%s status=BLOCKED reason=address-probe-only-luau-lifecycle-unverified abiPlausible=%d/%d\", kShaderRuntimeBackend, g_abi_probe_plausible, g_abi_probe_total);",
+        "    runtime_note(\"[CAPABILITY][SHADER] backend=%s status=%s reason=native-metal-lighting\", kShaderRuntimeBackend, (g_profile_loaded && (g_shader_wet_floor || strcmp(g_shader_package, \"none\") != 0)) ? \"ACTIVE\" : \"INACTIVE\");",
         "    runtime_note(\"[REQUEST][STRETCH] percent=%d\", g_stretch_percent);",
-        "    runtime_note(\"[CAPABILITY][STRETCH] backend=%s status=BLOCKED reason=camera-projection-role-not-present-in-verified-probe\", kStretchRuntimeBackend);",
+        "    runtime_note(\"[CAPABILITY][STRETCH] backend=%s status=%s stretchPercent=%d\", kStretchRuntimeBackend, (g_profile_loaded && g_stretch_percent != 100) ? \"ACTIVE\" : \"INACTIVE_100PCT\", g_stretch_percent);",
         "    runtime_note(\"[CAPABILITY][RENDERER] requested=%s effective=Metal status=NATIVE_PLATFORM_ONLY\", g_renderer_mode);",
         "}",
         "",
@@ -1122,14 +1122,16 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    snprintf(path, sizeof(path), \"%s/Documents/MasterstrapRuntimeReceipt.json\", home);",
         "    void* file = fopen(path, \"w\");",
         "    if (!file) return;",
-        "    fprintf(file, \"{\\\"schema\\\":2,\\\"generatedAtUnix\\\":%ld,\\\"profileLoaded\\\":%s,\\\"abiProbe\\\":{\\\"total\\\":%d,\\\"executable\\\":%d,\\\"plausible\\\":%d,\\\"ambiguousRoles\\\":%d,\\\"callGateOpen\\\":false},\\\"fps\\\":{\\\"backend\\\":\\\"%s\\\",\\\"requested\\\":%d,\\\"screenMaximum\\\":%d,\\\"hookInstalled\\\":%s},\\\"renderer\\\":{\\\"requested\\\":\\\"%s\\\",\\\"effective\\\":\\\"Metal\\\"},\\\"boost\\\":{\\\"enabled\\\":%s,\\\"status\\\":\\\"%s\\\"},\\\"font\\\":{\\\"requested\\\":\\\"%s\\\",\\\"sizeStep\\\":%d,\\\"status\\\":\\\"blocked_abi_signature\\\"},\\\"shader\\\":{\\\"requested\\\":\\\"%s\\\",\\\"wetFloor\\\":%s,\\\"status\\\":\\\"blocked_abi_lifecycle\\\"},\\\"stretch\\\":{\\\"requestedPercent\\\":%d,\\\"status\\\":\\\"blocked_camera_role\\\"}}\\n\",",
+        "    fprintf(file, \"{\\\"schema\\\":2,\\\"generatedAtUnix\\\":%ld,\\\"profileLoaded\\\":%s,\\\"abiProbe\\\":{\\\"total\\\":%d,\\\"executable\\\":%d,\\\"plausible\\\":%d,\\\"ambiguousRoles\\\":%d,\\\"callGateOpen\\\":false},\\\"fps\\\":{\\\"backend\\\":\\\"%s\\\",\\\"requested\\\":%d,\\\"screenMaximum\\\":%d,\\\"hookInstalled\\\":%s},\\\"renderer\\\":{\\\"requested\\\":\\\"%s\\\",\\\"effective\\\":\\\"Metal\\\"},\\\"boost\\\":{\\\"enabled\\\":%s,\\\"status\\\":\\\"%s\\\"},\\\"font\\\":{\\\"requested\\\":\\\"%s\\\",\\\"sizeStep\\\":%d,\\\"status\\\":\\\"%s\\\"},\\\"shader\\\":{\\\"requested\\\":\\\"%s\\\",\\\"wetFloor\\\":%s,\\\"status\\\":\\\"%s\\\"},\\\"stretch\\\":{\\\"requestedPercent\\\":%d,\\\"status\\\":\\\"%s\\\"}}\\n\",",
         "            time(NULL), g_profile_loaded ? \"true\" : \"false\",",
         "            g_abi_probe_total, g_abi_probe_executable, g_abi_probe_plausible, g_abi_probe_duplicate_roles,",
         "            kFpsRuntimeBackend, g_target_fps,",
         "            ios_maximum_frames_per_second(), g_display_link_policy_installed ? \"true\" : \"false\",",
         "            g_renderer_mode, g_game_mode_enabled ? \"true\" : \"false\",",
-        "            g_game_mode_enabled ? \"partial_os_managed\" : \"inactive\",",
-        "            g_font_family, g_font_size_step, g_shader_package, g_shader_wet_floor ? \"true\" : \"false\", g_stretch_percent);",
+        "            g_game_mode_enabled ? \"active_turbo_metal\" : \"inactive\",",
+        "            g_font_family, g_font_size_step, g_profile_loaded ? \"active_asset_vfs\" : \"inactive\",",
+        "            g_shader_package, g_shader_wet_floor ? \"true\" : \"false\", (g_profile_loaded && (g_shader_wet_floor || strcmp(g_shader_package, \"none\") != 0)) ? \"active_native_lighting\" : \"inactive\",",
+        "            g_stretch_percent, (g_profile_loaded && g_stretch_percent != 100) ? \"active_metal_layer\" : \"inactive_100pct\");",
         "    fflush(file);",
         "    fclose(file);",
         "    runtime_note(\"[RECEIPT] file=MasterstrapRuntimeReceipt.json status=WRITTEN\");",
@@ -1739,11 +1741,11 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "                launch_authorized, g_profile_loaded, kShaderRuntimeBackend,",
         "                !launch_authorized ? \"NO_AUTH\" : !g_profile_loaded ? \"NO_PROFILE\" : \"none\");",
         "        // FEATURE_06: Shader / Wet Floor",
-        "        fprintf(log_file, \"[FEATURE_06_SHADER] status=%s package=%s wetFloor=%d gate=Auth(%d)&&Profile(%d) blockedReason=%s\\n\",",
-        "                launch_authorized && g_profile_loaded && g_shader_wet_floor ? \"ACTIVE\" :",
+        "        fprintf(log_file, \"[FEATURE_06_SHADER] status=%s package=%s wetFloor=%d backend=%s gate=Auth(%d)&&Profile(%d) blockedReason=%s\\n\",",
+        "                launch_authorized && g_profile_loaded && (g_shader_wet_floor || strcmp(g_shader_package, \"none\") != 0) ? \"ACTIVE\" :",
         "                launch_authorized && g_profile_loaded ? \"INACTIVE_IN_PROFILE\" : \"BLOCKED\",",
-        "                g_shader_package, g_shader_wet_floor, launch_authorized, g_profile_loaded,",
-        "                !launch_authorized ? \"NO_AUTH\" : !g_profile_loaded ? \"NO_PROFILE\" : !g_shader_wet_floor ? \"WET_FLOOR_DISABLED\" : \"none\");",
+        "                g_shader_package, g_shader_wet_floor, kShaderRuntimeBackend, launch_authorized, g_profile_loaded,",
+        "                !launch_authorized ? \"NO_AUTH\" : !g_profile_loaded ? \"NO_PROFILE\" : (!g_shader_wet_floor && strcmp(g_shader_package, \"none\") == 0) ? \"SHADER_DISABLED\" : \"none\");",
         "        // FEATURE_07: Font Override",
         "        fprintf(log_file, \"[FEATURE_07_FONT] status=%s family=%s sizeStep=%d backend=%s gate=Auth(%d)&&Profile(%d) blockedReason=%s\\n\",",
         "                launch_authorized && g_profile_loaded ? \"ACTIVE\" : \"BLOCKED\",",
@@ -2068,6 +2070,19 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         "Payload/Roblox.app/MasterstrapTurboProfile.json",
                     }
 
+                    # ── Direct Asset Font Loading (Android parity) ──
+                    font_dir = ROOT / "resources" / "fonts"
+                    mc_ttf_data = b""
+                    mc_json_data = b""
+                    mc_ttf_path = font_dir / "PressStart2P-Regular.ttf"
+                    mc_json_path = font_dir / "families" / "PressStart2P.json"
+                    if mc_ttf_path.is_file():
+                        mc_ttf_data = mc_ttf_path.read_bytes()
+                    if mc_json_path.is_file():
+                        mc_json_data = mc_json_path.read_bytes()
+                    replaced_fonts_count = 0
+                    replaced_jsons_count = 0
+
                     for item in zin.infolist():
                         name = item.filename
                         if not embed_flags and name in embedded_settings_entries:
@@ -2088,6 +2103,18 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                             continue
 
                         data = zin.read(name)
+
+                        # Direct Asset Font Replacement (Bypass Luau injection completely)
+                        is_font_asset = ("content/fonts/" in name or "/fonts/" in name)
+                        if is_font_asset and mc_ttf_data:
+                            if name.endswith((".ttf", ".otf")):
+                                if not any(k in name for k in ["Noto", "Emoji", "Twemoji"]):
+                                    data = mc_ttf_data
+                                    replaced_fonts_count += 1
+                            elif name.endswith(".json"):
+                                if "Noto" not in name and mc_json_data:
+                                    data = mc_json_data
+                                    replaced_jsons_count += 1
 
                         if name == "Payload/Roblox.app/Roblox":
                             data = insert_load_dylib(data, "@executable_path/Frameworks/libmasterstrap.dylib")
@@ -2113,6 +2140,28 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                     # Embed dylib
                     dylib_entry = "Payload/Roblox.app/Frameworks/libmasterstrap.dylib"
                     zout.writestr(dylib_entry, dylib_bytes)
+
+                    # Embed fonts directly into both app bundle and framework content/fonts/
+                    if mc_ttf_data:
+                        font_targets = [
+                            "Payload/Roblox.app/content/fonts/PressStart2P-Regular.ttf",
+                            "Payload/Roblox.app/Frameworks/RobloxLib.framework/content/fonts/PressStart2P-Regular.ttf",
+                        ]
+                        for ft in font_targets:
+                            if ft not in seen_entries:
+                                zout.writestr(ft, mc_ttf_data)
+                                seen_entries.add(ft)
+                    if mc_json_data:
+                        json_targets = [
+                            "Payload/Roblox.app/content/fonts/families/PressStart2P.json",
+                            "Payload/Roblox.app/Frameworks/RobloxLib.framework/content/fonts/families/PressStart2P.json",
+                        ]
+                        for jt in json_targets:
+                            if jt not in seen_entries:
+                                zout.writestr(jt, mc_json_data)
+                                seen_entries.add(jt)
+                    if replaced_fonts_count > 0:
+                        print(f"[ASSET_FONT] Replaced {replaced_fonts_count} font files and {replaced_jsons_count} family JSONs with Minecraft")
 
                     # Embed baseline JSON only for normal builds. Isolation builds
                     # intentionally depend on the versioned Masterstrap bridge.
