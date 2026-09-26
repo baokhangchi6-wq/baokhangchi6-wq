@@ -25,6 +25,9 @@ static BOOL MSRewardedLoadFailed;
 static BOOL MSInterstitialLoadFailed;
 static BOOL MSPendingUsingInterstitialFallback;
 
+static void MSLoadRewardedAd(void);
+static void MSLoadInterstitialAd(void);
+
 static NSString *const MSPrivacyChoiceSavedKey = @"masterstrap_ads_privacy_choice_saved";
 static NSString *const MSGDPRConsentKey = @"masterstrap_ads_gdpr_consent";
 static NSString *const MSCCPAOptOutKey = @"masterstrap_ads_ccpa_opt_out";
@@ -156,8 +159,6 @@ static void MSTryShowPending(void) {
 @end
 
 static MSLevelPlayDelegate *MSDelegate;
-static void MSLoadRewardedAd(void);
-static void MSLoadInterstitialAd(void);
 
 static void MSLoadRewardedAd(void) {
     if (!MSRewarded || MSRewardedLoadInFlight || [MSRewarded isAdReady]) return;
