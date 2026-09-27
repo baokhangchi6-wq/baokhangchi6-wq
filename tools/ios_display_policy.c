@@ -51,10 +51,11 @@ static int ms_thermal(void) {
     return (int)((long (*)(id, SEL))objc_msgSend)(ms_process_info(), sel_registerName("thermalState"));
 }
 static bool fps_runtime_requested(void) {
-    return g_ms_policy.loaded && (g_ms_policy.refresh || g_ms_policy.target > 60);
+    return (g_ms_policy.loaded && (g_ms_policy.refresh || g_ms_policy.target > 60)) || g_target_fps > 60;
 }
 static long fps_runtime_target(void) {
-    return ms_ios_target_fps(g_ms_policy.target, ios_maximum_frames_per_second(), ms_low_power(), ms_thermal());
+    int target = (g_ms_policy.target > 0) ? g_ms_policy.target : (g_target_fps > 0 ? g_target_fps : 60);
+    return ms_ios_target_fps(target, ios_maximum_frames_per_second(), ms_low_power(), ms_thermal());
 }
 static MSFrameRateRange ms_target_range(void) {
     float target = (float)fps_runtime_target();
@@ -162,7 +163,19 @@ static id display_link_create_hook(id self, SEL cmd, id target, SEL selector) {
 static void display_link_add_hook(id self, SEL cmd, id loop, id mode) {
     ms_track_link(self);
     apply_display_link_policy(self, "addToRunLoop");
-    if (g_original_display_link_add) g_original_display_link_add(self, cmd, loop, mode);
+    if (g_original_display_link_add) {
+        g_original_display_link_add(self, cmd, loop, mode);
+        id commonMode = ms_string("kCFRunLoopCommonModes");
+        if (commonMode && loop) {
+            bool is_same = false;
+            if (mode) {
+                is_same = ((bool (*)(id, SEL, id))objc_msgSend)(mode, sel_registerName("isEqual:"), commonMode);
+            }
+            if (!is_same) {
+                g_original_display_link_add(self, cmd, loop, commonMode);
+            }
+        }
+    }
 }
 static void ms_write_display_receipt(unsigned long links) {
     const char* home = getenv("HOME");
@@ -312,6 +325,41 @@ static bool install_metal_layer_stretch_policy(void) {
     return false;
 }
 
+static void ms_apply_stretch_to_layer_tree(id layer, Class metalClass) {
+    if (!layer || !metalClass) return;
+    if (((bool (*)(id, SEL, id))objc_msgSend)(layer, sel_registerName("isKindOfClass:"), (id)metalClass)) {
+        MSSize current = ((MSSize (*)(id, SEL))objc_msgSend)(layer, sel_registerName("drawableSize"));
+        if (current.width > 0 && current.height > 0) {
+            metal_layer_set_drawable_size_hook(layer, sel_registerName("setDrawableSize:"), current);
+        }
+    }
+    id sublayers = ((id (*)(id, SEL))objc_msgSend)(layer, sel_registerName("sublayers"));
+    if (sublayers) {
+        unsigned long count = ((unsigned long (*)(id, SEL))objc_msgSend)(sublayers, sel_registerName("count"));
+        for (unsigned long i = 0; i < count; i++) {
+            id sub = ((id (*)(id, SEL, unsigned long))objc_msgSend)(sublayers, sel_registerName("objectAtIndex:"), i);
+            ms_apply_stretch_to_layer_tree(sub, metalClass);
+        }
+    }
+}
+
+static void ms_refresh_metal_layers(void) {
+    if (!pthread_main_np()) return;
+    Class metalClass = (Class)objc_getClass("CAMetalLayer");
+    if (!metalClass) return;
+    id app = ((id (*)(id, SEL))objc_msgSend)(objc_getClass("UIApplication"), sel_registerName("sharedApplication"));
+    if (!app) return;
+    id windows = ((id (*)(id, SEL))objc_msgSend)(app, sel_registerName("windows"));
+    if (!windows) return;
+    unsigned long count = ((unsigned long (*)(id, SEL))objc_msgSend)(windows, sel_registerName("count"));
+    for (unsigned long i = 0; i < count; i++) {
+        id win = ((id (*)(id, SEL, unsigned long))objc_msgSend)(windows, sel_registerName("objectAtIndex:"), i);
+        if (!win) continue;
+        id layer = ((id (*)(id, SEL))objc_msgSend)(win, sel_registerName("layer"));
+        ms_apply_stretch_to_layer_tree(layer, metalClass);
+    }
+}
+
 static void ms_apply_process_main(void* context) {
     MSDisplayPolicy* snapshot = context;
     g_ms_policy = *snapshot;
@@ -341,6 +389,7 @@ static void ms_apply_process_main(void* context) {
         runtime_note("[APPLY][SHADER] package=%s wetFloor=%d status=ACTIVE_NATIVE_LIGHTING", g_shader_package, g_shader_wet_floor);
     }
     ms_refresh_links("profile-loaded");
+    ms_refresh_metal_layers();
     write_runtime_capability_receipt();
 }
 static void apply_ios_process_policies(void) {

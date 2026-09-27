@@ -881,18 +881,6 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    const char* home = getenv(\"HOME\");",
         "    if (!home) return 0;",
         "    const char* paths[] = {",
-        "        \"/Documents/ClientAppSettings.json\",",
-        "        \"/Documents/ClientSettings/ClientAppSettings.json\",",
-        "        \"/Documents/masterstrap_flags.json\",",
-        "        \"/Documents/masterstrap_baked_flags.json\",",
-        "        \"/Documents/MasterstrapTurboProfile.json\",",
-        "        \"/Documents/MasterstrapShaderProfile.json\",",
-        "        \"/Documents/MasterstrapFontProfile.json\",",
-        "        \"/Documents/GlobalBasicSettings_13.xml\",",
-        "        \"/Documents/ClientSettings/MasterstrapTurboProfile.json\",",
-        "        \"/Documents/ClientSettings/MasterstrapShaderProfile.json\",",
-        "        \"/Documents/ClientSettings/MasterstrapFontProfile.json\",",
-        "        \"/Documents/ClientSettings/GlobalBasicSettings_13.xml\",",
         "        \"/Documents/MasterstrapLaunchAuthorization.json\",",
         "        \"/Documents/ClientSettings/MasterstrapLaunchAuthorization.json\",",
         "        NULL",
@@ -1821,7 +1809,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    }",
         "    runtime_note(\"Persistence initial 30s completed. Starting continuous watchdog: pid=%d\", getpid());",
         "    int watchdog_ticks = 0;",
-        "    while (launch_authorized) {",
+        "    while (1) {",
         "        usleep(1000000); // 1s heartbeat",
         "        watchdog_ticks++;",
         "        if (base == 0) { base = get_robloxlib_base(); if (!engine_identity_matches(base)) base = 0; g_engine_base = base; }",
@@ -1854,6 +1842,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "__attribute__((constructor)) static void masterstrap_ios_init(void) {",
         "    install_bridge_hooks_for_class((Class)objc_getClass(\"EXAppDelegateWrapper\"));",
         "    install_display_link_policy();",
+        "    install_metal_layer_stretch_policy();",
         "    void* thread = NULL;",
         "    pthread_create(&thread, NULL, worker_thread, NULL);",
         "    if (thread) pthread_detach(thread);",
@@ -2017,7 +2006,6 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
             "FFlagDebugDisplayFPS": True,
             "FFlagDebugSkyGray": True,
             "DFIntTaskSchedulerTargetFps": 2000,
-            "DFIntDebugFRMQualityLevelOverride": 1,
             "DFIntDebugTextureManagerSkipMips": 12,
             "FIntDebugForceMSAASamples": 1,
             "DFIntDebugDynamicRenderKiloPixels": 922,
@@ -2029,11 +2017,10 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
             "FIntFRMMinGrassDistance": 0,
             "FIntRobloxGuiBlurIntensity": 0,
             "FFlagDRSBasicManagement": True,
-            "DFIntRenderPostFxBasePixelCount": 0,
             "DFIntDebugLimitMinTextureResolutionWhenSkipMips": 64,
             "FFlagAnimationClipMemCacheEnabled": True,
             "FFlagAnimationLodBoneEnabled": True,
-            "FFlagEnableAndroidPowerManager": True,
+            "FFlagEnableAndroidPowerManager": False,
             "FFlagUnifiedMeshCacheSizeComputation": True,
             "FFlagAdaptiveMeshCacheSizeForAndroid": True,
             "DFIntCSGLevelOfDetailSwitchingDistanceL12": 0,
@@ -2099,6 +2086,9 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         "Payload/Roblox.app/Frameworks/RobloxLib.framework/ClientSettings/ClientAppSettings.json",
                         "Payload/Roblox.app/masterstrap_baked_flags.json",
                         "Payload/Roblox.app/MasterstrapTurboProfile.json",
+                        "Payload/Roblox.app/ClientSettings/MasterstrapTurboProfile.json",
+                        "Payload/Roblox.app/MasterstrapShaderProfile.json",
+                        "Payload/Roblox.app/ClientSettings/MasterstrapShaderProfile.json",
                     }
 
                     # ── Direct Asset Font Loading (Android parity) ──
@@ -2234,16 +2224,32 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         turbo_default = {
                             "schema": 1,
                             "enabled": True,
-                            "targetFrameRate": 120,
+                            "targetFrameRate": 240,
                             "displayRefreshContract": True,
                             "keepDisplayActive": True,
-                            "stretchScreenPercent": 100,
+                            "stretchScreenPercent": 80,
                             "rendererMode": "Automatic"
                         }
                         turbo_bytes = json.dumps(turbo_default, indent=4).encode("utf-8")
+                        shader_default = {
+                            "schema": 1,
+                            "enabled": True,
+                            "package": "ultra",
+                            "applyMode": "once_after_datamodel",
+                            "maxPostEffects": 5,
+                            "wetFloor": True,
+                            "wetFloorStrategy": "bounded_nearby_once",
+                            "wetFloorMaxParts": 1024,
+                            "wetFloorRadiusStuds": 384,
+                            "allowWorkspaceMaterialScan": False,
+                            "allowPeriodicWorker": False
+                        }
+                        shader_bytes = json.dumps(shader_default, indent=4).encode("utf-8")
                         for jp in embedded_settings_entries:
                             if jp.endswith("MasterstrapTurboProfile.json"):
                                 zout.writestr(jp, turbo_bytes)
+                            elif jp.endswith("MasterstrapShaderProfile.json"):
+                                zout.writestr(jp, shader_bytes)
                             else:
                                 zout.writestr(jp, json_bytes)
 
