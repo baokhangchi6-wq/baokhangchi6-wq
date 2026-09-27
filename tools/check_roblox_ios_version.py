@@ -184,7 +184,7 @@ def check_version(
         "Skipping build."
     )
     emit_github_output("should_build", "false")
-    return 1
+    return 0
 
 
 def main() -> int:

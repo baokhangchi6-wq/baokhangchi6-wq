@@ -10,8 +10,9 @@ on:
   push:
     branches: [ master, main ]
     paths:
-      - 'tools/build_integrated_roblox_ipa.py'
-      - 'tools/check_roblox_ios_version.py'
+      - 'tools/**'
+      - 'resources/**'
+      - 'roblox/**'
       - 'patterns.ios.json'
       - '.github/workflows/build_roblox_ios_arm64.yml'
   schedule:
@@ -66,6 +67,9 @@ jobs:
         shell: bash
         run: |
           FORCE="${{ inputs.force_rebuild || 'false' }}"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            FORCE="true"
+          fi
           FORCE_ARG=""
           if [ "$FORCE" = "true" ]; then
             FORCE_ARG="--force"
