@@ -434,7 +434,11 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    NULL",
         "};",
         "",
+        "static bool macho_rva_is_executable(uintptr_t base, uintptr_t rva);",
+        "",
         "static bool SetFastFlag(uintptr_t base, const FFlagPatchEntry* entry) {",
+        "    if (!base || !entry || !entry->rva) return false;",
+        "    if (macho_rva_is_executable(base, entry->rva)) return false;",
         "    uintptr_t target = base + entry->rva;",
         "    uintptr_t page_size = 16384;",
         "    uintptr_t page_start = target & ~(page_size - 1);",
@@ -442,7 +446,9 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    if (mprotect((void*)page_start, page_len, PROT_READ | PROT_WRITE) != 0) {",
         "        page_size = 4096;",
         "        page_start = target & ~(page_size - 1);",
-        "        mprotect((void*)page_start, page_size * 2, PROT_READ | PROT_WRITE);",
+        "        if (mprotect((void*)page_start, page_size * 2, PROT_READ | PROT_WRITE) != 0) {",
+        "            return false;",
+        "        }",
         "    }",
         "",
         "    if (entry->kind == 0) {",
@@ -1710,30 +1716,16 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "                uintptr_t fps_slot = base + 0x6a58de8;",
         "                *(volatile int32_t*)fps_slot = g_target_fps;",
         "",
-        "                uintptr_t cap_func = base + 0x4625698;",
-        "                uintptr_t page_size = 16384;",
-        "                uintptr_t page_start = cap_func & ~(page_size - 1);",
-        "                if (mprotect((void*)page_start, page_size * 2, PROT_READ | PROT_WRITE | PROT_EXEC) == 0) {",
-        "                    uint32_t mov_w0 = 0x52800000 | ((g_target_fps & 0xFFFF) << 5);",
-        "                    uint32_t ret_op = 0xd65f03c0;",
-        "                    *(volatile uint32_t*)cap_func = mov_w0;",
-        "                    *(volatile uint32_t*)(cap_func + 4) = ret_op;",
-        "                    uintptr_t clamp_site = base + 0x46256c4;",
-        "                    *(volatile uint32_t*)clamp_site = 0x2a0803e9;",
-        "                    __builtin___clear_cache((char*)cap_func, (char*)cap_func + 64);",
-        "                    mprotect((void*)page_start, page_size * 2, PROT_READ | PROT_EXEC);",
-        "                }",
-        "",
         "                void* th = NULL;",
         "                pthread_create(&th, NULL, fps_slot_guard_thread, (void*)base);",
         "                if (th) pthread_detach(th);",
         "",
         "                if (log_file) {",
-        "                    fprintf(log_file, \"[FPS_CEILING] Uncapped TaskScheduler targetFps=%d slot=0x%lx func=0x%lx (Status: VERIFIED)\\n\",",
-        "                            g_target_fps, (unsigned long)fps_slot, (unsigned long)cap_func);",
+        "                    fprintf(log_file, \"[FPS_CEILING] Uncapped TaskScheduler targetFps=%d slot=0x%lx (Status: VERIFIED)\\n\",",
+        "                            g_target_fps, (unsigned long)fps_slot);",
         "                }",
-        "                runtime_note(\"[FPS_CEILING] Uncapped TaskScheduler targetFps=%d slot=0x%lx func=0x%lx status=VERIFIED\",",
-        "                             g_target_fps, (unsigned long)fps_slot, (unsigned long)cap_func);",
+        "                runtime_note(\"[FPS_CEILING] Uncapped TaskScheduler targetFps=%d slot=0x%lx status=VERIFIED\",",
+        "                             g_target_fps, (unsigned long)fps_slot);",
         "            }",
         "            purge_local_launch_configuration(\"cold_launch_applied\", true);",
         "        }",
@@ -1966,6 +1958,33 @@ def compile_dylib(c_source: str, out_dylib: Path) -> Path:
 
 
 
+def remove_load_dylib(macho_bytes: bytes, target_substrings: list) -> bytes:
+    data = bytearray(macho_bytes)
+    magic, cputype, cpusubtype, filetype, ncmds, sizeofcmds, flags, reserved = struct.unpack('<IIIIIIII', data[:32])
+    if magic != 0xFEEDFACF:
+        return macho_bytes
+
+    offset = 32
+    cmd_index = 0
+    while cmd_index < ncmds:
+        cmd, cmdsize = struct.unpack('<II', data[offset:offset+8])
+        if cmd in (0x0C, 0x80000018):  # LC_LOAD_DYLIB, LC_LOAD_WEAK_DYLIB
+            name_offset = struct.unpack('<I', data[offset+8:offset+12])[0]
+            name = data[offset+name_offset:offset+cmdsize].split(b'\x00')[0].decode('utf-8', errors='ignore')
+            if any(target.lower() in name.lower() for target in target_substrings):
+                print(f"[PURGE] Removed load command {cmd_index}: {name} (size {cmdsize})")
+                rem_len = (32 + sizeofcmds) - (offset + cmdsize)
+                data[offset:offset+rem_len] = data[offset+cmdsize:offset+cmdsize+rem_len]
+                data[offset+rem_len:offset+rem_len+cmdsize] = b'\x00' * cmdsize
+                sizeofcmds -= cmdsize
+                ncmds -= 1
+                struct.pack_into('<II', data, 16, ncmds, sizeofcmds)
+                continue
+        offset += cmdsize
+        cmd_index += 1
+    return bytes(data)
+
+
 def insert_load_dylib(macho_bytes: bytes, dylib_path: str) -> bytes:
     data = bytearray(macho_bytes)
     magic, cputype, cpusubtype, filetype, ncmds, sizeofcmds, flags, reserved = struct.unpack('<IIIIIIII', data[:32])
@@ -2159,22 +2178,14 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                     replaced_jsons_count = 0
 
                     for item in zin.infolist():
-                        name = item.filename
-                        if not embed_flags and name in embedded_settings_entries:
-                            print(f"Removed embedded settings entry -> {name}")
+                        # Skip embedded settings and dylib from input IPA so they are cleanly re-embedded afresh without duplicate entries
+                        if name in embedded_settings_entries or name == "Payload/Roblox.app/Frameworks/libmasterstrap.dylib":
                             continue
 
                         # ── Delta / Third-Party Sanitization Purge Filter ──
-                        # 1. Skip Delta script package, injector UI, app extensions/plugins, and old signatures
-                        if any(k in name.lower() for k in ["/gloop/", "dlt.zip", "_codesignature", "embedded.mobileprovision", "/plugins/", ".appex"]):
+                        # 1. Skip Delta script package, injector UI, app extensions/plugins, old signatures, and third-party injector dylibs
+                        if any(k in name.lower() for k in ["/gloop/", "dlt.zip", "_codesignature", "embedded.mobileprovision", "/plugins/", ".appex", "libgloop.dylib", "delta.dylib"]):
                             print(f"[PURGE] Removed third-party file -> {name}")
-                            continue
-
-                        # 2. If Delta injected libgloop.dylib, replace it with Masterstrap dylib
-                        if name in ("Payload/Roblox.app/libgloop.dylib", "Payload/Roblox.app/Delta.dylib"):
-                            print(f"[PURGE] Replaced third-party injector dylib -> {name} with Masterstrap dylib")
-                            zout.writestr(name, dylib_bytes)
-                            seen_entries.add(name)
                             continue
 
                         data = zin.read(name)
@@ -2225,8 +2236,10 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                                     pass
 
                         if name == "Payload/Roblox.app/Roblox":
+                            data = remove_load_dylib(data, ["libgloop", "delta.dylib"])
                             data = insert_load_dylib(data, "@executable_path/Frameworks/libmasterstrap.dylib")
                         elif name == "Payload/Roblox.app/Frameworks/RobloxLib.framework/RobloxLib":
+                            data = remove_load_dylib(data, ["libgloop", "delta.dylib"])
                             data = bytearray(data)
                             # Android parity: Bypass 240 FPS clamp in GetDefaultFramerateCap (csel w9, w8, w9, lt -> mov w9, w8)
                             clamp_offset = 0x46256c4
