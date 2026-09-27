@@ -59,7 +59,8 @@ static long fps_runtime_target(void) {
 }
 static MSFrameRateRange ms_target_range(void) {
     float target = (float)fps_runtime_target();
-    return (MSFrameRateRange){target, target, target};
+    float min_fps = target < 60.0f ? target : 60.0f;
+    return (MSFrameRateRange){min_fps, target, target};
 }
 static bool ms_get_link_request(id link, MSLinkRequest* request) {
     id value = objc_getAssociatedObject(link, &g_ms_link_request_key);
@@ -255,59 +256,55 @@ static bool install_display_link_policy(void) {
 }
 typedef struct { double width; double height; } MSSize;
 typedef void (*SetDrawableSizeImp)(id, SEL, MSSize);
+typedef void (*SetDisplaySyncImp)(id, SEL, bool);
 static SetDrawableSizeImp g_original_set_drawable_size;
+static SetDisplaySyncImp g_original_set_display_sync;
 static int g_metal_layer_stretch_installed;
-static char g_ms_stretch_source_size_key;
-typedef struct { double src_w, src_h, dst_w, dst_h; int applied; } MSLayerStretchState;
 
-static void metal_layer_set_drawable_size_hook(id self, SEL cmd, MSSize size) {
-    if (g_stretch_percent > 0 && g_stretch_percent != 100 && size.width > 0 && size.height > 0) {
-        MSLayerStretchState st = {0};
-        id val = objc_getAssociatedObject(self, &g_ms_stretch_source_size_key);
-        if (val) {
-            ((void (*)(id, SEL, void*))objc_msgSend)(val, sel_registerName("getValue:"), &st);
-        }
+static void ms_apply_metal_layer_policies(id layer) {
+    if (!layer) return;
 
-        double src_w = size.width;
-        double src_h = size.height;
-        if (st.applied && size.width == st.dst_w && size.height == st.dst_h) {
-            src_w = st.src_w;
-            src_h = st.src_h;
-        }
-
-        // Android parity: Only stretch in landscape mode (in-game), never in portrait (homepage/login)
-        if (src_w > src_h) {
-            double factor = (double)g_stretch_percent / 100.0;
-            double target_w = (double)((long long)(src_w * factor + 0.5));
-            if (target_w < 64.0) target_w = 64.0;
-
-            st.src_w = src_w;
-            st.src_h = src_h;
-            st.dst_w = target_w;
-            st.dst_h = src_h;
-            st.applied = 1;
-
-            id new_val = ((id (*)(id, SEL, const void*, const char*))objc_msgSend)(objc_getClass("NSValue"),
-                sel_registerName("valueWithBytes:objCType:"), &st, "{MSLayerStretchState=ddddi}");
-            objc_setAssociatedObject(self, &g_ms_stretch_source_size_key, new_val, 1);
-
-            // Crucial: Set CALayer contentsGravity to kCAGravityResize so the stretched drawable fills screen
-            id gravity = ms_string("kCAGravityResize");
-            ((void (*)(id, SEL, id))objc_msgSend)(self, sel_registerName("setContentsGravity:"), gravity);
-
-            size.width = target_w;
-            size.height = src_h;
-
-            static int s_logged_stretch = 0;
-            if (!s_logged_stretch) {
-                s_logged_stretch = 1;
-                runtime_note("[APPLY][STRETCH] CAMetalLayer in-game landscape stretch=%d%% source=%.1fx%.1f target=%.1fx%.1f gravity=kCAGravityResize",
-                             g_stretch_percent, src_w, src_h, size.width, size.height);
-            }
+    // 1. Uncap Metal VSync (iOS equivalent of eglSwapInterval(0) on Android)
+    if (fps_runtime_requested()) {
+        SEL sync_sel = sel_registerName("setDisplaySyncEnabled:");
+        if (((bool (*)(id, SEL, SEL))objc_msgSend)(layer, sel_registerName("respondsToSelector:"), sync_sel)) {
+            ((void (*)(id, SEL, bool))objc_msgSend)(layer, sync_sel, false);
         }
     }
+
+    // 2. Hardware CoreAnimation stretch transform (preserves native drawableSize & aspect ratio)
+    double scale_x = 1.0;
+    if (g_stretch_percent > 0 && g_stretch_percent != 100) {
+        MSSize size = ((MSSize (*)(id, SEL))objc_msgSend)(layer, sel_registerName("drawableSize"));
+        if (size.width > size.height && size.height > 0) {
+            scale_x = 100.0 / (double)g_stretch_percent;
+        }
+    }
+    id num = ((id (*)(id, SEL, double))objc_msgSend)(objc_getClass("NSNumber"),
+        sel_registerName("numberWithDouble:"), scale_x);
+    ((void (*)(id, SEL, id, id))objc_msgSend)(layer,
+        sel_registerName("setValue:forKeyPath:"), num, ms_string("transform.scale.x"));
+}
+
+static void metal_layer_set_drawable_size_hook(id self, SEL cmd, MSSize size) {
     if (g_original_set_drawable_size) {
         g_original_set_drawable_size(self, cmd, size);
+    }
+    ms_apply_metal_layer_policies(self);
+    static int s_logged_stretch = 0;
+    if (!s_logged_stretch && g_stretch_percent > 0 && g_stretch_percent != 100 && size.width > size.height) {
+        s_logged_stretch = 1;
+        runtime_note("[APPLY][STRETCH] CAMetalLayer CoreAnimation transform.scale.x=%.2f stretch=%d%% native=%.0fx%.0f",
+                     100.0 / (double)g_stretch_percent, g_stretch_percent, size.width, size.height);
+    }
+}
+
+static void metal_layer_set_display_sync_hook(id self, SEL cmd, bool enabled) {
+    if (fps_runtime_requested()) {
+        enabled = false;
+    }
+    if (g_original_set_display_sync) {
+        g_original_set_display_sync(self, cmd, enabled);
     }
 }
 
@@ -318,6 +315,12 @@ static bool install_metal_layer_stretch_policy(void) {
     Method m = class_getInstanceMethod(cls, sel_registerName("setDrawableSize:"));
     if (m && !g_original_set_drawable_size) {
         g_original_set_drawable_size = (SetDrawableSizeImp)method_setImplementation(m, (IMP)metal_layer_set_drawable_size_hook);
+    }
+    Method sync_m = class_getInstanceMethod(cls, sel_registerName("setDisplaySyncEnabled:"));
+    if (sync_m && !g_original_set_display_sync) {
+        g_original_set_display_sync = (SetDisplaySyncImp)method_setImplementation(sync_m, (IMP)metal_layer_set_display_sync_hook);
+    }
+    if (m || sync_m) {
         g_metal_layer_stretch_installed = 1;
         runtime_note("[CAPABILITY][STRETCH] backend=%s status=READY hookInstalled=1", kStretchRuntimeBackend);
         return true;
@@ -328,10 +331,7 @@ static bool install_metal_layer_stretch_policy(void) {
 static void ms_apply_stretch_to_layer_tree(id layer, Class metalClass) {
     if (!layer || !metalClass) return;
     if (((bool (*)(id, SEL, id))objc_msgSend)(layer, sel_registerName("isKindOfClass:"), (id)metalClass)) {
-        MSSize current = ((MSSize (*)(id, SEL))objc_msgSend)(layer, sel_registerName("drawableSize"));
-        if (current.width > 0 && current.height > 0) {
-            metal_layer_set_drawable_size_hook(layer, sel_registerName("setDrawableSize:"), current);
-        }
+        ms_apply_metal_layer_policies(layer);
     }
     id sublayers = ((id (*)(id, SEL))objc_msgSend)(layer, sel_registerName("sublayers"));
     if (sublayers) {

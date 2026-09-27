@@ -2006,6 +2006,12 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
             "FFlagDebugDisplayFPS": True,
             "FFlagDebugSkyGray": True,
             "DFIntTaskSchedulerTargetFps": 2000,
+            "FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate": False,
+            "FFlagTaskSchedulerLimitTargetFpsTo2402": False,
+            "FFlagGameBasicSettingsFramerateCap": False,
+            "FFlagDebugDisableVsync": True,
+            "FFlagMetalVsyncPreferMaximumRefreshRate": True,
+            "FFlagPerformanceControlDisplayRefreshRate": True,
             "DFIntDebugTextureManagerSkipMips": 12,
             "FIntDebugForceMSAASamples": 1,
             "DFIntDebugDynamicRenderKiloPixels": 922,
@@ -2227,7 +2233,7 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                             "targetFrameRate": 240,
                             "displayRefreshContract": True,
                             "keepDisplayActive": True,
-                            "stretchScreenPercent": 80,
+                            "stretchScreenPercent": 100,
                             "rendererMode": "Automatic"
                         }
                         turbo_bytes = json.dumps(turbo_default, indent=4).encode("utf-8")
