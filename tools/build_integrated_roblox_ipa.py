@@ -2178,6 +2178,7 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                     replaced_jsons_count = 0
 
                     for item in zin.infolist():
+                        name = item.filename
                         # Skip embedded settings and dylib from input IPA so they are cleanly re-embedded afresh without duplicate entries
                         if name in embedded_settings_entries or name == "Payload/Roblox.app/Frameworks/libmasterstrap.dylib":
                             continue
