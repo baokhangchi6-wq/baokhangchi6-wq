@@ -5,6 +5,8 @@
 extern int pthread_main_np(void);
 extern char _dispatch_main_q;
 extern void dispatch_async_f(void*, void*, void (*)(void*));
+extern void* dlopen(const char*, int);
+extern void* dlsym(void*, const char*);
 extern Class objc_allocateClassPair(Class, const char*, size_t);
 extern void objc_registerClassPair(Class);
 extern id objc_getAssociatedObject(id, const void*);
@@ -59,8 +61,11 @@ static long fps_runtime_target(void) {
 }
 static MSFrameRateRange ms_target_range(void) {
     float target = (float)fps_runtime_target();
-    float min_fps = target < 60.0f ? target : 60.0f;
-    return (MSFrameRateRange){min_fps, target, target};
+    int screen_max = ios_maximum_frames_per_second();
+    float link_max = (float)screen_max;
+    if (target < link_max) link_max = target;
+    float min_fps = link_max < 60.0f ? link_max : 60.0f;
+    return (MSFrameRateRange){min_fps, link_max, link_max};
 }
 static bool ms_get_link_request(id link, MSLinkRequest* request) {
     id value = objc_getAssociatedObject(link, &g_ms_link_request_key);
@@ -257,9 +262,26 @@ static bool install_display_link_policy(void) {
 typedef struct { double width; double height; } MSSize;
 typedef void (*SetDrawableSizeImp)(id, SEL, MSSize);
 typedef void (*SetDisplaySyncImp)(id, SEL, bool);
+typedef void (*SetContentsGravityImp)(id, SEL, id);
 static SetDrawableSizeImp g_original_set_drawable_size;
 static SetDisplaySyncImp g_original_set_display_sync;
+static SetContentsGravityImp g_original_set_contents_gravity;
 static int g_metal_layer_stretch_installed;
+static char g_ms_stretch_source_size_key;
+typedef struct { double src_w, src_h, dst_w, dst_h; int applied; } MSLayerStretchState;
+
+static id get_ca_gravity_resize(void) {
+    static id s_gravity_resize = NULL;
+    if (!s_gravity_resize) {
+        void* handle = dlopen("/System/Library/Frameworks/QuartzCore.framework/QuartzCore", 0x1 /* RTLD_LAZY */);
+        if (handle) {
+            id* sym = (id*)dlsym(handle, "kCAGravityResize");
+            if (sym && *sym) s_gravity_resize = *sym;
+        }
+        if (!s_gravity_resize) s_gravity_resize = ms_string("resize");
+    }
+    return s_gravity_resize;
+}
 
 static void ms_apply_metal_layer_policies(id layer) {
     if (!layer) return;
@@ -272,30 +294,113 @@ static void ms_apply_metal_layer_policies(id layer) {
         }
     }
 
-    // 2. Hardware CoreAnimation stretch transform (preserves native drawableSize & aspect ratio)
-    double scale_x = 1.0;
+    // 2. Reset any previous CoreAnimation transform so GUI is NEVER distorted/stretched!
+    id num_one = ((id (*)(id, SEL, double))objc_msgSend)(objc_getClass("NSNumber"),
+        sel_registerName("numberWithDouble:"), 1.0);
+    ((void (*)(id, SEL, id, id))objc_msgSend)(layer,
+        sel_registerName("setValue:forKeyPath:"), num_one, ms_string("transform.scale.x"));
+
+    // 3. Stretched Resolution via CAMetalLayer drawableSize + kCAGravityResize
+    // Exactly matches Android's ANativeWindow_setBuffersGeometry:
+    // Roblox renders 3D camera with wider aspect ratio into target_w buffer,
+    // and CoreAnimation hardware-compositor stretches buffer to fill display.
     if (g_stretch_percent > 0 && g_stretch_percent != 100) {
+        ((void (*)(id, SEL, id))objc_msgSend)(layer, sel_registerName("setContentsGravity:"), get_ca_gravity_resize());
+
         MSSize size = ((MSSize (*)(id, SEL))objc_msgSend)(layer, sel_registerName("drawableSize"));
         if (size.width > size.height && size.height > 0) {
-            scale_x = 100.0 / (double)g_stretch_percent;
+            MSLayerStretchState st = {0};
+            id val = objc_getAssociatedObject(layer, &g_ms_stretch_source_size_key);
+            if (val) {
+                ((void (*)(id, SEL, void*))objc_msgSend)(val, sel_registerName("getValue:"), &st);
+            }
+            double src_w = size.width;
+            double src_h = size.height;
+            if (st.applied && size.width == st.dst_w && size.height == st.dst_h) {
+                src_w = st.src_w;
+                src_h = st.src_h;
+            }
+            double factor = (double)g_stretch_percent / 100.0;
+            double target_w = (double)((long long)(src_w * factor + 0.5));
+            if (target_w < 64.0) target_w = 64.0;
+
+            st.src_w = src_w;
+            st.src_h = src_h;
+            st.dst_w = target_w;
+            st.dst_h = src_h;
+            st.applied = 1;
+
+            id new_val = ((id (*)(id, SEL, const void*, const char*))objc_msgSend)(objc_getClass("NSValue"),
+                sel_registerName("valueWithBytes:objCType:"), &st, "{MSLayerStretchState=ddddi}");
+            objc_setAssociatedObject(layer, &g_ms_stretch_source_size_key, new_val, 1);
+
+            size.width = target_w;
+            size.height = src_h;
+            if (g_original_set_drawable_size) {
+                g_original_set_drawable_size(layer, sel_registerName("setDrawableSize:"), size);
+            }
         }
     }
-    id num = ((id (*)(id, SEL, double))objc_msgSend)(objc_getClass("NSNumber"),
-        sel_registerName("numberWithDouble:"), scale_x);
-    ((void (*)(id, SEL, id, id))objc_msgSend)(layer,
-        sel_registerName("setValue:forKeyPath:"), num, ms_string("transform.scale.x"));
 }
 
 static void metal_layer_set_drawable_size_hook(id self, SEL cmd, MSSize size) {
+    if (g_stretch_percent > 0 && g_stretch_percent != 100 && size.width > 0 && size.height > 0) {
+        MSLayerStretchState st = {0};
+        id val = objc_getAssociatedObject(self, &g_ms_stretch_source_size_key);
+        if (val) {
+            ((void (*)(id, SEL, void*))objc_msgSend)(val, sel_registerName("getValue:"), &st);
+        }
+
+        double src_w = size.width;
+        double src_h = size.height;
+        if (st.applied && size.width == st.dst_w && size.height == st.dst_h) {
+            src_w = st.src_w;
+            src_h = st.src_h;
+        }
+
+        // Android parity: Only stretch in landscape mode (in-game), never in portrait (homepage/login)
+        if (src_w > src_h) {
+            double factor = (double)g_stretch_percent / 100.0;
+            double target_w = (double)((long long)(src_w * factor + 0.5));
+            if (target_w < 64.0) target_w = 64.0;
+
+            st.src_w = src_w;
+            st.src_h = src_h;
+            st.dst_w = target_w;
+            st.dst_h = src_h;
+            st.applied = 1;
+
+            id new_val = ((id (*)(id, SEL, const void*, const char*))objc_msgSend)(objc_getClass("NSValue"),
+                sel_registerName("valueWithBytes:objCType:"), &st, "{MSLayerStretchState=ddddi}");
+            objc_setAssociatedObject(self, &g_ms_stretch_source_size_key, new_val, 1);
+
+            // Crucial: Set contentsGravity to @"resize" so the stretched drawable fills entire layer bounds
+            id gravity = get_ca_gravity_resize();
+            ((void (*)(id, SEL, id))objc_msgSend)(self, sel_registerName("setContentsGravity:"), gravity);
+
+            size.width = target_w;
+            size.height = src_h;
+
+            static int s_logged_stretch = 0;
+            if (!s_logged_stretch) {
+                s_logged_stretch = 1;
+                runtime_note("[APPLY][STRETCH] CAMetalLayer in-game landscape stretch=%d%% source=%.1fx%.1f target=%.1fx%.1f contentsGravity=resize",
+                             g_stretch_percent, src_w, src_h, size.width, size.height);
+            }
+        }
+    }
     if (g_original_set_drawable_size) {
         g_original_set_drawable_size(self, cmd, size);
     }
     ms_apply_metal_layer_policies(self);
-    static int s_logged_stretch = 0;
-    if (!s_logged_stretch && g_stretch_percent > 0 && g_stretch_percent != 100 && size.width > size.height) {
-        s_logged_stretch = 1;
-        runtime_note("[APPLY][STRETCH] CAMetalLayer CoreAnimation transform.scale.x=%.2f stretch=%d%% native=%.0fx%.0f",
-                     100.0 / (double)g_stretch_percent, g_stretch_percent, size.width, size.height);
+}
+
+static void metal_layer_set_contents_gravity_hook(id self, SEL cmd, id gravity) {
+    if (g_stretch_percent > 0 && g_stretch_percent != 100) {
+        gravity = get_ca_gravity_resize();
+    }
+    if (g_original_set_contents_gravity) {
+        g_original_set_contents_gravity(self, cmd, gravity);
     }
 }
 
@@ -320,7 +425,11 @@ static bool install_metal_layer_stretch_policy(void) {
     if (sync_m && !g_original_set_display_sync) {
         g_original_set_display_sync = (SetDisplaySyncImp)method_setImplementation(sync_m, (IMP)metal_layer_set_display_sync_hook);
     }
-    if (m || sync_m) {
+    Method grav_m = class_getInstanceMethod(cls, sel_registerName("setContentsGravity:"));
+    if (grav_m && !g_original_set_contents_gravity) {
+        g_original_set_contents_gravity = (SetContentsGravityImp)method_setImplementation(grav_m, (IMP)metal_layer_set_contents_gravity_hook);
+    }
+    if (m || sync_m || grav_m) {
         g_metal_layer_stretch_installed = 1;
         runtime_note("[CAPABILITY][STRETCH] backend=%s status=READY hookInstalled=1", kStretchRuntimeBackend);
         return true;

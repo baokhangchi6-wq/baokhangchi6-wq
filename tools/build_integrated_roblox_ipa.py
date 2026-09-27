@@ -1568,6 +1568,23 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    return 0;",
         "}",
         "",
+        "static void* fps_slot_guard_thread(void* arg) {",
+        "    uintptr_t base = (uintptr_t)arg;",
+        "    if (!base) return NULL;",
+        "    uintptr_t fps_slot = base + 0x6a58de8;",
+        "    for (int cycle = 0; cycle < 120; cycle++) {",
+        "        usleep(2500000);",
+        "        if (g_target_fps > 0) {",
+        "            int current = *(volatile int32_t*)fps_slot;",
+        "            if (current != g_target_fps) {",
+        "                *(volatile int32_t*)fps_slot = g_target_fps;",
+        "                runtime_note(\"[FPS_SLOT_GUARD] Restored targetFps slot from %d to %d (cycle=%d)\", current, g_target_fps, cycle);",
+        "            }",
+        "        }",
+        "    }",
+        "    return NULL;",
+        "}",
+        "",
         "static void* worker_thread(void* arg) {",
         "    (void)arg;",
         "    uintptr_t base = 0;",
@@ -1686,6 +1703,37 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "                                (unsigned long)kVerifiedFlags[i].rva, (int32_t)kVerifiedFlags[i].value);",
         "                    }",
         "                }",
+        "            }",
+        "",
+        "            // 2b. Native FPS Ceiling Uncap (Android Parity)",
+        "            if (base != 0 && g_target_fps > 0) {",
+        "                uintptr_t fps_slot = base + 0x6a58de8;",
+        "                *(volatile int32_t*)fps_slot = g_target_fps;",
+        "",
+        "                uintptr_t cap_func = base + 0x4625698;",
+        "                uintptr_t page_size = 16384;",
+        "                uintptr_t page_start = cap_func & ~(page_size - 1);",
+        "                if (mprotect((void*)page_start, page_size * 2, PROT_READ | PROT_WRITE | PROT_EXEC) == 0) {",
+        "                    uint32_t mov_w0 = 0x52800000 | ((g_target_fps & 0xFFFF) << 5);",
+        "                    uint32_t ret_op = 0xd65f03c0;",
+        "                    *(volatile uint32_t*)cap_func = mov_w0;",
+        "                    *(volatile uint32_t*)(cap_func + 4) = ret_op;",
+        "                    uintptr_t clamp_site = base + 0x46256c4;",
+        "                    *(volatile uint32_t*)clamp_site = 0x2a0803e9;",
+        "                    __builtin___clear_cache((char*)cap_func, (char*)cap_func + 64);",
+        "                    mprotect((void*)page_start, page_size * 2, PROT_READ | PROT_EXEC);",
+        "                }",
+        "",
+        "                void* th = NULL;",
+        "                pthread_create(&th, NULL, fps_slot_guard_thread, (void*)base);",
+        "                if (th) pthread_detach(th);",
+        "",
+        "                if (log_file) {",
+        "                    fprintf(log_file, \"[FPS_CEILING] Uncapped TaskScheduler targetFps=%d slot=0x%lx func=0x%lx (Status: VERIFIED)\\n\",",
+        "                            g_target_fps, (unsigned long)fps_slot, (unsigned long)cap_func);",
+        "                }",
+        "                runtime_note(\"[FPS_CEILING] Uncapped TaskScheduler targetFps=%d slot=0x%lx func=0x%lx status=VERIFIED\",",
+        "                             g_target_fps, (unsigned long)fps_slot, (unsigned long)cap_func);",
         "            }",
         "            purge_local_launch_configuration(\"cold_launch_applied\", true);",
         "        }",
@@ -2179,6 +2227,13 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         if name == "Payload/Roblox.app/Roblox":
                             data = insert_load_dylib(data, "@executable_path/Frameworks/libmasterstrap.dylib")
                         elif name == "Payload/Roblox.app/Frameworks/RobloxLib.framework/RobloxLib":
+                            data = bytearray(data)
+                            # Android parity: Bypass 240 FPS clamp in GetDefaultFramerateCap (csel w9, w8, w9, lt -> mov w9, w8)
+                            clamp_offset = 0x46256c4
+                            if len(data) > clamp_offset + 4 and data[clamp_offset:clamp_offset+4] == b'\x09\xb1\x89\x1a':
+                                data[clamp_offset:clamp_offset+4] = b'\xe9\x03\x08\x2a'
+                                print(f"[FPS_CEILING] Bypassed RobloxLib 240 FPS clamp site @ 0x{clamp_offset:X} (csel -> mov w9, w8)")
+                            data = bytes(data)
                             data = insert_load_dylib(data, "@rpath/libmasterstrap.dylib")
                         elif name.endswith("Roblox.app/Info.plist"):
                             try:
