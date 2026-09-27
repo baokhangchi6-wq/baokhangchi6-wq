@@ -13,7 +13,7 @@ import time
 import zipfile
 from pathlib import Path
 
-DEFAULT_URL = "https://github.com/baokhangchi6-wq/baokhangchi6-wq/releases/download/ios-arm64-2.739.687-run-9/Masterstrap-2.739.687.ipa"
+DEFAULT_URL = "https://github.com/baokhangchi6-wq/baokhangchi6-wq/releases/download/ios-arm64-2.739.687-run-18/Masterstrap-2.739.687.ipa"
 OUT_PATH = Path("output/Masterstrap-2.739.687.ipa")
 
 def get_token():
@@ -50,7 +50,7 @@ def fast_download(url: str = DEFAULT_URL, out_path: Path = OUT_PATH):
     except Exception:
         pass
 
-    asset_id = "592786657"
+    asset_id = "593446743"
     api_url = f"https://api.github.com/repos/baokhangchi6-wq/baokhangchi6-wq/releases/assets/{asset_id}"
 
     print(f"Downloading Masterstrap-2.739.687.ipa ({url}) via curl.exe...", flush=True)
@@ -58,7 +58,6 @@ def fast_download(url: str = DEFAULT_URL, out_path: Path = OUT_PATH):
         "curl.exe",
         "-f",
         "-L",
-        "-C", "-",
         "--tcp-nodelay",
         *proxy_args,
         "-H", f"Authorization: token {token}",
