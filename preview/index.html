@@ -6081,7 +6081,7 @@ window.MasterstrapAds = (() => {
             resolveRequest = resolve;
         });
         const requestId = "ad-" + Date.now() + "-" + (++sequence);
-        const timeoutMs = format === "rewarded" ? 120000 : 60000;
+        const timeoutMs = format === "rewarded" ? 30000 : 20000;
         const timer = setTimeout(() => {
             pending.delete(requestId);
             if (inFlightByFormat.get(format) === promise) inFlightByFormat.delete(format);
@@ -6126,6 +6126,22 @@ window.MasterstrapAds = (() => {
             window.webkit.messageHandlers.setLevelPlayBannerVisible.postMessage(visible ? "true" : "false");
         }
     }
+
+    let lastBannerInteractionTime = 0;
+    function triggerBannerRefreshOnInteraction() {
+        if (!isFree()) return;
+        const now = Date.now();
+        if (now - lastBannerInteractionTime >= 60000) {
+            lastBannerInteractionTime = now;
+            try {
+                if (window.webkit?.messageHandlers?.refreshLevelPlayBanner) {
+                    window.webkit.messageHandlers.refreshLevelPlayBanner.postMessage("refresh");
+                }
+            } catch (e) {}
+        }
+    }
+    document.addEventListener("pointerdown", triggerBannerRefreshOnInteraction, { passive: true });
+
     return { request, nativeResult, banner, isFree, needsFpsReward, grants };
 })();
 

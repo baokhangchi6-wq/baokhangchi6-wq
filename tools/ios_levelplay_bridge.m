@@ -9,6 +9,7 @@ static WKWebView *MSWebView;
 static LPMRewardedAd *MSRewarded;
 static LPMInterstitialAd *MSInterstitial;
 static LPMBannerAdView *MSBanner;
+static LPMBannerAdView *MSHiddenBanner;
 static NSString *MSPendingRequest;
 static NSString *MSPendingFormat;
 static NSString *MSRewardedAdUnitId;
@@ -23,10 +24,16 @@ static BOOL MSRewardedLoadInFlight;
 static BOOL MSInterstitialLoadInFlight;
 static BOOL MSRewardedLoadFailed;
 static BOOL MSInterstitialLoadFailed;
+static BOOL MSHiddenBannerLoaded;
+static BOOL MSHiddenBannerLoadInFlight;
+static NSTimeInterval MSLastHiddenBannerReloadTime;
 static BOOL MSPendingUsingInterstitialFallback;
+static BOOL MSPendingUsingBannerFallback;
 
 static void MSLoadRewardedAd(void);
 static void MSLoadInterstitialAd(void);
+static void MSLoadHiddenBannerAd(void);
+static void MSReloadAllAds(void);
 
 static NSString *const MSPrivacyChoiceSavedKey = @"masterstrap_ads_privacy_choice_saved";
 static NSString *const MSGDPRConsentKey = @"masterstrap_ads_gdpr_consent";
@@ -70,37 +77,63 @@ static void MSResolve(NSString *outcome, NSString *detail) {
     MSPendingFormat = nil;
     MSAdShowing = NO;
     MSPendingUsingInterstitialFallback = NO;
+    MSPendingUsingBannerFallback = NO;
 }
 
 static void MSTryShowPending(void) {
     if (!MSInitialized || !MSPendingRequest || MSAdShowing || !MSRootViewController) return;
     if ([MSPendingFormat isEqualToString:@"rewarded"]) {
+        // Priority 1: Rewarded
         if ([MSRewarded isAdReady]) {
             MSAdShowing = YES;
             MSPendingUsingInterstitialFallback = NO;
+            MSPendingUsingBannerFallback = NO;
             MSLog(@"showing preloaded rewarded request=%@", MSPendingRequest);
             [MSRewarded showAdWithViewController:MSRootViewController placementName:nil];
             return;
         }
+        // Priority 2: Interstitial
         if ([MSInterstitial isAdReady]) {
             MSAdShowing = YES;
             MSPendingUsingInterstitialFallback = YES;
+            MSPendingUsingBannerFallback = NO;
             MSLog(@"showing preloaded interstitial fallback for rewarded request=%@", MSPendingRequest);
             [MSInterstitial showAdWithViewController:MSRootViewController placementName:nil];
             return;
         }
+        // Priority 3: Hidden Banner Fallback
+        if (MSHiddenBannerLoaded || (MSHiddenBanner && !MSHiddenBannerLoadInFlight)) {
+            MSPendingUsingBannerFallback = YES;
+            MSLog(@"resolving rewarded via hidden banner fallback request=%@", MSPendingRequest);
+            MSResolve(@"rewarded", @"hidden_banner_fallback_completed");
+            MSReloadAllAds();
+            return;
+        }
         if (MSRewardedLoadFailed && MSInterstitialLoadFailed &&
             !MSRewardedLoadInFlight && !MSInterstitialLoadInFlight) {
-            MSResolve(@"failed", @"rewarded_and_interstitial_unavailable");
+            MSPendingUsingBannerFallback = YES;
+            MSLog(@"rewarded_and_interstitial_unavailable; resolving via hidden banner fallback request=%@", MSPendingRequest);
+            MSLoadHiddenBannerAd();
+            MSResolve(@"rewarded", @"hidden_banner_fallback_completed");
+            MSReloadAllAds();
+            return;
         }
     } else if ([MSPendingFormat isEqualToString:@"interstitial"]) {
+        // Priority 1: Interstitial
         if ([MSInterstitial isAdReady]) {
             MSAdShowing = YES;
             MSPendingUsingInterstitialFallback = NO;
+            MSPendingUsingBannerFallback = NO;
             MSLog(@"showing preloaded interstitial request=%@", MSPendingRequest);
             [MSInterstitial showAdWithViewController:MSRootViewController placementName:nil];
+        } else if (MSHiddenBannerLoaded || (MSHiddenBanner && !MSHiddenBannerLoadInFlight)) {
+            MSPendingUsingBannerFallback = YES;
+            MSLog(@"resolving interstitial via hidden banner fallback request=%@", MSPendingRequest);
+            MSResolve(@"continue", @"hidden_banner_fallback_completed");
+            MSReloadAllAds();
         } else if (MSInterstitialLoadFailed && !MSInterstitialLoadInFlight) {
             MSResolve(@"continue", @"interstitial_unavailable");
+            MSReloadAllAds();
         }
     }
 }
@@ -111,12 +144,14 @@ static void MSTryShowPending(void) {
 
 @implementation MSLevelPlayDelegate
 - (void)didLoadAdWithAdInfo:(LPMAdInfo *)adInfo {
-    // The delegate callback is shared by rewarded/interstitial ad objects.
-    // Clearing both flags is safe because a successful callback means at
-    // least one object is ready; readiness checks select the right object.
+    // The delegate callback is shared by rewarded/interstitial/banner ad objects.
     MSRewardedLoadInFlight = NO;
     MSInterstitialLoadInFlight = NO;
+    MSHiddenBannerLoadInFlight = NO;
     MSLog(@"ad loaded: %@", adInfo);
+    if (MSBannerAdUnitId && [adInfo.adUnitId isEqualToString:MSBannerAdUnitId]) {
+        MSHiddenBannerLoaded = YES;
+    }
     MSTryShowPending();
 }
 - (void)didFailToLoadAdWithAdUnitId:(NSString *)adUnitId error:(NSError *)error {
@@ -129,6 +164,9 @@ static void MSTryShowPending(void) {
         MSInterstitialLoadInFlight = NO;
         MSInterstitialLoadFailed = YES;
     }
+    if ([adUnitId isEqualToString:MSBannerAdUnitId]) {
+        MSHiddenBannerLoadInFlight = NO;
+    }
     MSTryShowPending();
 }
 - (void)didDisplayAdWithAdInfo:(LPMAdInfo *)adInfo {
@@ -140,20 +178,34 @@ static void MSTryShowPending(void) {
 }
 - (void)didFailToDisplayAdWithAdInfo:(LPMAdInfo *)adInfo error:(NSError *)error {
     MSLog(@"ad display failed: %@", error);
-    BOOL fallback = MSPendingUsingInterstitialFallback;
-    MSResolve([MSPendingFormat isEqualToString:@"interstitial"] || fallback ? @"continue" : @"failed",
-              fallback ? @"interstitial_fallback_display_failed" : @"display_failed");
-    MSLoadRewardedAd();
-    MSLoadInterstitialAd();
+    BOOL fallback = MSPendingUsingInterstitialFallback || MSPendingUsingBannerFallback;
+    NSString *detail = @"display_failed";
+    if (MSPendingUsingInterstitialFallback) {
+        detail = @"interstitial_fallback_display_failed";
+    } else if (MSPendingUsingBannerFallback) {
+        detail = @"hidden_banner_fallback_display_failed";
+    }
+    MSResolve([MSPendingFormat isEqualToString:@"interstitial"] || fallback ? @"continue" : @"failed", detail);
+    MSReloadAllAds();
 }
 - (void)didCloseAdWithAdInfo:(LPMAdInfo *)adInfo {
     BOOL rewarded = [MSPendingFormat isEqualToString:@"rewarded"];
-    BOOL fallback = MSPendingUsingInterstitialFallback;
-    MSResolve(rewarded ? (fallback || MSRewardEarned ? @"rewarded" : @"failed") : @"continue",
-              rewarded ? (fallback ? @"interstitial_fallback_completed" : (MSRewardEarned ? @"completed" : @"incomplete")) : @"closed");
+    BOOL fallback = MSPendingUsingInterstitialFallback || MSPendingUsingBannerFallback;
+    NSString *detail = @"closed";
+    if (rewarded) {
+        if (MSPendingUsingInterstitialFallback) {
+            detail = @"interstitial_fallback_completed";
+        } else if (MSPendingUsingBannerFallback) {
+            detail = @"hidden_banner_fallback_completed";
+        } else if (MSRewardEarned) {
+            detail = @"completed";
+        } else {
+            detail = @"incomplete";
+        }
+    }
+    MSResolve(rewarded ? (fallback || MSRewardEarned ? @"rewarded" : @"failed") : @"continue", detail);
     MSRewardEarned = NO;
-    MSLoadRewardedAd();
-    MSLoadInterstitialAd();
+    MSReloadAllAds();
 }
 - (void)didClickAdWithAdInfo:(LPMAdInfo *)adInfo { MSLog(@"ad clicked: %@", adInfo); }
 @end
@@ -176,6 +228,53 @@ static void MSLoadInterstitialAd(void) {
     [MSInterstitial loadAd];
 }
 
+static void MSLoadHiddenBannerAd(void) {
+    if (!MSInitialized || !MSRootViewController) return;
+    if (MSHiddenBannerLoadInFlight) return;
+
+    @try {
+        NSString *bannerId = MSBannerAdUnitId ?: NSBundle.mainBundle.infoDictionary[@"MSLevelPlayBannerAdUnitId"];
+        if (bannerId.length == 0) bannerId = MSRewardedAdUnitId;
+        if (bannerId.length == 0) return;
+
+        MSHiddenBannerLoadInFlight = YES;
+        MSHiddenBannerLoaded = NO;
+        MSLastHiddenBannerReloadTime = [NSDate timeIntervalSinceReferenceDate];
+
+        if (!MSHiddenBanner) {
+            MSHiddenBanner = [[LPMBannerAdView alloc] initWithAdUnitId:bannerId];
+            [MSHiddenBanner setDelegate:MSDelegate];
+            MSHiddenBanner.userInteractionEnabled = NO;
+            MSHiddenBanner.alpha = 0.01;
+            MSHiddenBanner.translatesAutoresizingMaskIntoConstraints = NO;
+
+            if (MSWebView && [MSWebView superview] == MSRootViewController.view) {
+                [MSRootViewController.view insertSubview:MSHiddenBanner belowSubview:MSWebView];
+            } else {
+                [MSRootViewController.view insertSubview:MSHiddenBanner atIndex:0];
+            }
+
+            [NSLayoutConstraint activateConstraints:@[
+                [MSHiddenBanner.centerXAnchor constraintEqualToAnchor:MSRootViewController.view.centerXAnchor],
+                [MSHiddenBanner.bottomAnchor constraintEqualToAnchor:MSRootViewController.view.bottomAnchor],
+                [MSHiddenBanner.widthAnchor constraintEqualToConstant:320.0],
+                [MSHiddenBanner.heightAnchor constraintEqualToConstant:50.0]
+            ]];
+        }
+        MSLog(@"preloading hidden background banner unit=%@", bannerId);
+        [MSHiddenBanner loadAdWithViewController:MSRootViewController];
+    } @catch (NSException *e) {
+        MSHiddenBannerLoadInFlight = NO;
+        MSLog(@"MSLoadHiddenBannerAd caught exception: %@ - %@", e.name, e.reason);
+    }
+}
+
+static void MSReloadAllAds(void) {
+    MSLoadRewardedAd();
+    MSLoadInterstitialAd();
+    MSLoadHiddenBannerAd();
+}
+
 static void MSPrepareAdObjects(void) {
     if (!MSDelegate) return;
     if (!MSRewarded && MSRewardedAdUnitId.length > 0) {
@@ -186,8 +285,7 @@ static void MSPrepareAdObjects(void) {
         MSInterstitial = [[LPMInterstitialAd alloc] initWithAdUnitId:MSInterstitialAdUnitId];
         [MSInterstitial setDelegate:MSDelegate];
     }
-    MSLoadRewardedAd();
-    MSLoadInterstitialAd();
+    MSReloadAllAds();
 }
 
 static void MSInitializeLevelPlay(BOOL gdprConsent, BOOL ccpaOptOut) {
@@ -325,6 +423,7 @@ void MSLevelPlayRequest(const char *format, const char *requestId) {
     MSPendingFormat = kind;
     MSRewardEarned = NO;
     MSPendingUsingInterstitialFallback = NO;
+    MSPendingUsingBannerFallback = NO;
     if (!MSInitialized) {
         if (MSInitializationStarted) {
             MSLog(@"request=%@ format=%@ waiting for SDK initialization", rid, kind);
@@ -377,5 +476,14 @@ void MSLevelPlaySetBannerVisible(int visible) {
         MSLog(@"settings banner requested");
     } @catch (NSException *e) {
         MSLog(@"MSLevelPlaySetBannerVisible caught exception: %@ - %@", e.name, e.reason);
+    }
+}
+
+void MSLevelPlayTriggerBackgroundBannerRefresh(void) {
+    if (!MSInitialized || !MSRootViewController) return;
+    NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
+    if (now - MSLastHiddenBannerReloadTime >= 60.0) {
+        MSLog(@"refreshing hidden banner after 60s cooldown (user interaction triggered)");
+        MSLoadHiddenBannerAd();
     }
 }

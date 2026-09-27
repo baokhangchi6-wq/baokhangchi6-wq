@@ -129,6 +129,7 @@ static id g_web_view = NULL;
 typedef void (*MSLevelPlayConfigureFn)(void*, void*);
 typedef void (*MSLevelPlayRequestFn)(const char*, const char*);
 typedef void (*MSLevelPlaySetBannerVisibleFn)(int);
+typedef void (*MSLevelPlayTriggerBackgroundBannerRefreshFn)(void);
 void app_log(const char* fmt, ...);
 
 static void configure_levelplay_if_available(void) {
@@ -606,6 +607,12 @@ static void scriptMessageHandler(id self, SEL _cmd, id userContentController, id
         if (set_visible) set_visible(visible);
         return;
     }
+    if (strcmp(name_str, "refreshLevelPlayBanner") == 0) {
+        MSLevelPlayTriggerBackgroundBannerRefreshFn refresh = (MSLevelPlayTriggerBackgroundBannerRefreshFn)dlsym(RTLD_DEFAULT, "MSLevelPlayTriggerBackgroundBannerRefresh");
+        app_log("[ADS] background banner refresh triggered bridge=%d", refresh != NULL);
+        if (refresh) refresh();
+        return;
+    }
 
     const char* channel_target = "global";
 
@@ -675,6 +682,7 @@ static void viewController_loadView(id self, SEL _cmd) {
     ((void (*)(id, SEL, id, id))objc_msgSend)(ucc, sel_registerName("addScriptMessageHandler:name:"), handler, nsstr("log"));
     ((void (*)(id, SEL, id, id))objc_msgSend)(ucc, sel_registerName("addScriptMessageHandler:name:"), handler, nsstr("requestLevelPlayAd"));
     ((void (*)(id, SEL, id, id))objc_msgSend)(ucc, sel_registerName("addScriptMessageHandler:name:"), handler, nsstr("setLevelPlayBannerVisible"));
+    ((void (*)(id, SEL, id, id))objc_msgSend)(ucc, sel_registerName("addScriptMessageHandler:name:"), handler, nsstr("refreshLevelPlayBanner"));
 
     ((void (*)(id, SEL, id))objc_msgSend)(config, sel_registerName("setUserContentController:"), ucc);
 
@@ -1344,7 +1352,7 @@ window.MasterstrapAds = (() => {
             resolveRequest = resolve;
         });
         const requestId = "ad-" + Date.now() + "-" + (++sequence);
-        const timeoutMs = format === "rewarded" ? 120000 : 60000;
+        const timeoutMs = format === "rewarded" ? 30000 : 20000;
         const timer = setTimeout(() => {
             pending.delete(requestId);
             if (inFlightByFormat.get(format) === promise) inFlightByFormat.delete(format);
@@ -1389,6 +1397,22 @@ window.MasterstrapAds = (() => {
             window.webkit.messageHandlers.setLevelPlayBannerVisible.postMessage(visible ? "true" : "false");
         }
     }
+
+    let lastBannerInteractionTime = 0;
+    function triggerBannerRefreshOnInteraction() {
+        if (!isFree()) return;
+        const now = Date.now();
+        if (now - lastBannerInteractionTime >= 60000) {
+            lastBannerInteractionTime = now;
+            try {
+                if (window.webkit?.messageHandlers?.refreshLevelPlayBanner) {
+                    window.webkit.messageHandlers.refreshLevelPlayBanner.postMessage("refresh");
+                }
+            } catch (e) {}
+        }
+    }
+    document.addEventListener("pointerdown", triggerBannerRefreshOnInteraction, { passive: true });
+
     return { request, nativeResult, banner, isFree, needsFpsReward, grants };
 })();
 
