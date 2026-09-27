@@ -2104,17 +2104,19 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
 
                         data = zin.read(name)
 
-                        # Direct Asset Font Replacement (Bypass Luau injection completely)
+                        # Direct Asset Font Replacement (Android parity)
+                        # We replace the underlying TTF/OTF binaries for UI fonts with Minecraft PressStart2P TTF,
+                        # while strictly PRESERVING all family JSON files so Roblox's UI font resolver never crashes.
                         is_font_asset = ("content/fonts/" in name or "/fonts/" in name)
-                        if is_font_asset and mc_ttf_data:
-                            if name.endswith((".ttf", ".otf")):
-                                if not any(k in name for k in ["Noto", "Emoji", "Twemoji"]):
+                        if is_font_asset and mc_ttf_data and name.endswith((".ttf", ".otf")):
+                            # Preserve icon fonts, emoji, and non-latin language fallbacks
+                            is_exempt = any(k in name for k in ["Noto", "Emoji", "Twemoji", "BuilderIcons", "PressStart2P"])
+                            if not is_exempt:
+                                # Target standard UI text fonts (Builder, SourceSans, Arimo, Roboto, Inconsolata)
+                                is_target_ui_font = any(k in name for k in ["Builder", "SourceSans", "Arimo", "Roboto", "Inconsolata"])
+                                if is_target_ui_font:
                                     data = mc_ttf_data
                                     replaced_fonts_count += 1
-                            elif name.endswith(".json"):
-                                if "Noto" not in name and mc_json_data:
-                                    data = mc_json_data
-                                    replaced_jsons_count += 1
 
                         if name == "Payload/Roblox.app/Roblox":
                             data = insert_load_dylib(data, "@executable_path/Frameworks/libmasterstrap.dylib")
@@ -2161,7 +2163,7 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                                 zout.writestr(jt, mc_json_data)
                                 seen_entries.add(jt)
                     if replaced_fonts_count > 0:
-                        print(f"[ASSET_FONT] Replaced {replaced_fonts_count} font files and {replaced_jsons_count} family JSONs with Minecraft")
+                        print(f"[ASSET_FONT] Replaced {replaced_fonts_count} UI font files with Minecraft (family JSONs preserved)")
 
                     # Embed baseline JSON only for normal builds. Isolation builds
                     # intentionally depend on the versioned Masterstrap bridge.
