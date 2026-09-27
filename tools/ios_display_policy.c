@@ -58,7 +58,7 @@ static long fps_runtime_target(void) {
 }
 static MSFrameRateRange ms_target_range(void) {
     float target = (float)fps_runtime_target();
-    return (MSFrameRateRange){target < 30 ? target : 30, target, target};
+    return (MSFrameRateRange){target, target, target};
 }
 static bool ms_get_link_request(id link, MSLinkRequest* request) {
     id value = objc_getAssociatedObject(link, &g_ms_link_request_key);
@@ -244,16 +244,53 @@ typedef struct { double width; double height; } MSSize;
 typedef void (*SetDrawableSizeImp)(id, SEL, MSSize);
 static SetDrawableSizeImp g_original_set_drawable_size;
 static int g_metal_layer_stretch_installed;
+static char g_ms_stretch_source_size_key;
+typedef struct { double src_w, src_h, dst_w, dst_h; int applied; } MSLayerStretchState;
 
 static void metal_layer_set_drawable_size_hook(id self, SEL cmd, MSSize size) {
-    if (g_stretch_percent > 0 && g_stretch_percent != 100) {
-        double factor = (double)g_stretch_percent / 100.0;
-        size.width *= factor;
-        static int s_logged_stretch = 0;
-        if (!s_logged_stretch) {
-            s_logged_stretch = 1;
-            runtime_note("[APPLY][STRETCH] CAMetalLayer drawableSize hooked: stretch=%d%% scaled_width=%.1f height=%.1f",
-                         g_stretch_percent, size.width, size.height);
+    if (g_stretch_percent > 0 && g_stretch_percent != 100 && size.width > 0 && size.height > 0) {
+        MSLayerStretchState st = {0};
+        id val = objc_getAssociatedObject(self, &g_ms_stretch_source_size_key);
+        if (val) {
+            ((void (*)(id, SEL, void*))objc_msgSend)(val, sel_registerName("getValue:"), &st);
+        }
+
+        double src_w = size.width;
+        double src_h = size.height;
+        if (st.applied && size.width == st.dst_w && size.height == st.dst_h) {
+            src_w = st.src_w;
+            src_h = st.src_h;
+        }
+
+        // Android parity: Only stretch in landscape mode (in-game), never in portrait (homepage/login)
+        if (src_w > src_h) {
+            double factor = (double)g_stretch_percent / 100.0;
+            double target_w = (double)((long long)(src_w * factor + 0.5));
+            if (target_w < 64.0) target_w = 64.0;
+
+            st.src_w = src_w;
+            st.src_h = src_h;
+            st.dst_w = target_w;
+            st.dst_h = src_h;
+            st.applied = 1;
+
+            id new_val = ((id (*)(id, SEL, const void*, const char*))objc_msgSend)(objc_getClass("NSValue"),
+                sel_registerName("valueWithBytes:objCType:"), &st, "{MSLayerStretchState=ddddi}");
+            objc_setAssociatedObject(self, &g_ms_stretch_source_size_key, new_val, 1);
+
+            // Crucial: Set CALayer contentsGravity to kCAGravityResize so the stretched drawable fills screen
+            id gravity = ms_string("kCAGravityResize");
+            ((void (*)(id, SEL, id))objc_msgSend)(self, sel_registerName("setContentsGravity:"), gravity);
+
+            size.width = target_w;
+            size.height = src_h;
+
+            static int s_logged_stretch = 0;
+            if (!s_logged_stretch) {
+                s_logged_stretch = 1;
+                runtime_note("[APPLY][STRETCH] CAMetalLayer in-game landscape stretch=%d%% source=%.1fx%.1f target=%.1fx%.1f gravity=kCAGravityResize",
+                             g_stretch_percent, src_w, src_h, size.width, size.height);
+            }
         }
     }
     if (g_original_set_drawable_size) {

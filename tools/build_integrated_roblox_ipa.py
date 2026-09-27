@@ -231,26 +231,30 @@ def resolve_flags_with_miss_report(flags: dict, table: dict):
 
 
 def fetch_or_load_offsets_map(local_hpp: Path) -> dict:
-    content = ""
-    if local_hpp and local_hpp.is_file():
-        content = local_hpp.read_text(encoding="utf-8", errors="ignore")
-    else:
-        fallback_paths = [
-            ROOT / "output" / "2.735.1135" / "Offsets.hpp",
-            ROOT / "roblox" / "output" / "2.735.1135" / "Offsets.hpp",
-            ROOT / "output" / "Offsets.hpp",
-            Path(r"C:\Users\Administrator\Desktop\Website\Data\IOS\IOS_Offsets.hpp")
-        ]
-        for fb in fallback_paths:
-            if fb.is_file():
-                content = fb.read_text(encoding="utf-8", errors="ignore")
+    table = {}
+    fallback_paths = [
+        ROOT / "output" / "2.735.1135" / "Offsets.hpp",
+        ROOT / "roblox" / "output" / "2.735.1135" / "Offsets.hpp",
+        ROOT / "output" / "Offsets.hpp",
+        Path(r"C:\Users\Administrator\Desktop\Website\Data\IOS\IOS_Offsets.hpp")
+    ]
+    for fb in fallback_paths:
+        if fb.is_file():
+            content = fb.read_text(encoding="utf-8", errors="ignore")
+            for line in content.splitlines():
+                m = re.search(r'inline\s+constexpr\s+std::uintptr_t\s+(\w+)\s*=\s*(0x[0-9A-Fa-f]+);', line)
+                if m:
+                    table[m.group(1)] = int(m.group(2), 16)
+            if table:
                 break
 
-    table = {}
-    for line in content.splitlines():
-        m = re.search(r'inline\s+constexpr\s+std::uintptr_t\s+(\w+)\s*=\s*(0x[0-9A-Fa-f]+);', line)
-        if m:
-            table[m.group(1)] = int(m.group(2), 16)
+    if local_hpp and local_hpp.is_file():
+        content = local_hpp.read_text(encoding="utf-8", errors="ignore")
+        for line in content.splitlines():
+            m = re.search(r'inline\s+constexpr\s+std::uintptr_t\s+(\w+)\s*=\s*(0x[0-9A-Fa-f]+);', line)
+            if m:
+                table[m.group(1)] = int(m.group(2), 16)
+
     return table
 
 
@@ -1815,7 +1819,34 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "            runtime_note(\"Persistence checkpoint: elapsedSeconds=%d baseReady=%d\", (loop + 1) / 2, base != 0);",
         "        }",
         "    }",
-        "    runtime_note(\"Persistence loop completed: pid=%d\", getpid());",
+        "    runtime_note(\"Persistence initial 30s completed. Starting continuous watchdog: pid=%d\", getpid());",
+        "    int watchdog_ticks = 0;",
+        "    while (launch_authorized) {",
+        "        usleep(1000000); // 1s heartbeat",
+        "        watchdog_ticks++;",
+        "        if (base == 0) { base = get_robloxlib_base(); if (!engine_identity_matches(base)) base = 0; g_engine_base = base; }",
+        "        if (base != 0) {",
+        "            // Watchdog lock: if Roblox engine resets TaskSchedulerTargetFps to 60 upon server join, reassert instantly",
+        "            for (size_t i = 0; i < kVerifiedCount; i++) {",
+        "                if (kVerifiedFlags[i].kind == 1) {",
+        "                    int32_t cur = *(volatile int32_t*)(base + kVerifiedFlags[i].rva);",
+        "                    if (cur != (int32_t)kVerifiedFlags[i].value) {",
+        "                        SetFastFlag(base, &kVerifiedFlags[i]);",
+        "                    }",
+        "                } else if (kVerifiedFlags[i].kind == 0) {",
+        "                    uint8_t cur = *(volatile uint8_t*)(base + kVerifiedFlags[i].rva);",
+        "                    if (cur != (uint8_t)kVerifiedFlags[i].value) {",
+        "                        SetFastFlag(base, &kVerifiedFlags[i]);",
+        "                    }",
+        "                }",
+        "            }",
+        "            apply_cached_dynamic_flags(base);",
+        "        }",
+        "        if (watchdog_ticks % 300 == 0) {",
+        "            runtime_note(\"Watchdog checkpoint: elapsedSeconds=%d baseReady=%d\", 30 + watchdog_ticks, base != 0);",
+        "        }",
+        "    }",
+        "    runtime_note(\"Watchdog loop terminated: pid=%d\", getpid());",
         "",
         "    return NULL;",
         "}",
@@ -2118,6 +2149,37 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                                     data = mc_ttf_data
                                     replaced_fonts_count += 1
 
+                        # Redirect cloud asset IDs (rbxassetid://) in UI font family JSONs to local Minecraft font files,
+                        # ensuring font variants like bold FPS counter render using local Minecraft font without downloading from cloud
+                        if is_font_asset and name.endswith(".json") and "families/" in name:
+                            is_exempt_family = any(k in name for k in ["Noto", "Emoji", "Twemoji", "BuilderIcons", "PressStart2P"])
+                            if not is_exempt_family:
+                                try:
+                                    family_obj = json.loads(data.decode("utf-8"))
+                                    if isinstance(family_obj, dict) and "faces" in family_obj:
+                                        # Find if there is an existing local rbxasset:// face in this family
+                                        local_asset = None
+                                        for face in family_obj.get("faces", []):
+                                            aid = face.get("assetId", "")
+                                            if isinstance(aid, str) and aid.startswith("rbxasset://fonts/") and aid.endswith((".ttf", ".otf")):
+                                                local_asset = aid
+                                                break
+                                        if not local_asset:
+                                            local_asset = "rbxasset://fonts/PressStart2P-Regular.ttf"
+
+                                        json_modified = False
+                                        for face in family_obj.get("faces", []):
+                                            aid = face.get("assetId", "")
+                                            if isinstance(aid, str) and aid.startswith("rbxassetid://"):
+                                                face["assetId"] = local_asset
+                                                json_modified = True
+
+                                        if json_modified:
+                                            data = json.dumps(family_obj, indent=2).encode("utf-8")
+                                            replaced_jsons_count += 1
+                                except Exception:
+                                    pass
+
                         if name == "Payload/Roblox.app/Roblox":
                             data = insert_load_dylib(data, "@executable_path/Frameworks/libmasterstrap.dylib")
                         elif name == "Payload/Roblox.app/Frameworks/RobloxLib.framework/RobloxLib":
@@ -2162,8 +2224,8 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                             if jt not in seen_entries:
                                 zout.writestr(jt, mc_json_data)
                                 seen_entries.add(jt)
-                    if replaced_fonts_count > 0:
-                        print(f"[ASSET_FONT] Replaced {replaced_fonts_count} UI font files with Minecraft (family JSONs preserved)")
+                    if replaced_fonts_count > 0 or replaced_jsons_count > 0:
+                        print(f"[ASSET_FONT] Replaced {replaced_fonts_count} UI font files with Minecraft + redirected {replaced_jsons_count} family JSONs to local assets")
 
                     # Embed baseline JSON only for normal builds. Isolation builds
                     # intentionally depend on the versioned Masterstrap bridge.
