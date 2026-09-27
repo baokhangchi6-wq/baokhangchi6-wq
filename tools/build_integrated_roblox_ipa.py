@@ -1578,6 +1578,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    uintptr_t base = (uintptr_t)arg;",
         "    if (!base) return NULL;",
         "    uintptr_t fps_slot = base + 0x6a58de8;",
+        "    uintptr_t perf_ctrl = base + 0x69ca110;",
         "    for (int cycle = 0; cycle < 120; cycle++) {",
         "        usleep(2500000);",
         "        if (g_target_fps > 0) {",
@@ -1587,6 +1588,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "                runtime_note(\"[FPS_SLOT_GUARD] Restored targetFps slot from %d to %d (cycle=%d)\", current, g_target_fps, cycle);",
         "            }",
         "        }",
+        "        *(volatile uint8_t*)perf_ctrl = 0;",
         "    }",
         "    return NULL;",
         "}",
@@ -1715,6 +1717,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "            if (base != 0 && g_target_fps > 0) {",
         "                uintptr_t fps_slot = base + 0x6a58de8;",
         "                *(volatile int32_t*)fps_slot = g_target_fps;",
+        "                *(volatile uint8_t*)(base + 0x69ca110) = 0;",
         "",
         "                void* th = NULL;",
         "                pthread_create(&th, NULL, fps_slot_guard_thread, (void*)base);",
@@ -2252,6 +2255,12 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                             if len(data) > clamp_offset + 4 and data[clamp_offset:clamp_offset+4] == b'\x09\xb1\x89\x1a':
                                 data[clamp_offset:clamp_offset+4] = b'\xe9\x03\x08\x2a'
                                 print(f"[FPS_CEILING] Bypassed RobloxLib 240 FPS clamp site @ 0x{clamp_offset:X} (csel -> mov w9, w8)")
+
+                            # Android Global ARM64 parity: Bypass second 240 FPS clamp site in TaskScheduler dt calculator (csel w11, w11, w12, lt -> nop)
+                            clamp2_offset = 0x9165fc
+                            if len(data) > clamp2_offset + 4 and data[clamp2_offset:clamp2_offset+4] == b'\x6b\xb1\x8c\x1a':
+                                data[clamp2_offset:clamp2_offset+4] = b'\x1f\x20\x03\xd5'
+                                print(f"[FPS_CEILING] Bypassed RobloxLib second 240 FPS clamp site @ 0x{clamp2_offset:X} (csel -> nop)")
                             data = bytes(data)
                             data = insert_load_dylib(data, "@rpath/libmasterstrap.dylib")
                         elif name.endswith("Roblox.app/Info.plist"):

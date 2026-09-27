@@ -56,18 +56,26 @@ def download_asset(asset_url, out_path):
     print("\nDownload complete!")
 
 def watch_latest_run_and_download():
-    # Find latest run
-    runs_data = api_request("actions/runs?per_page=5")
+    # Find latest Build Global IPA run
+    runs_data = api_request("actions/runs?per_page=10")
     runs = runs_data.get("workflow_runs", [])
     if not runs:
         print("No runs found!")
         return False
 
-    latest_run = runs[0]
-    run_id = latest_run.get("id")
-    run_number = latest_run.get("run_number")
-    sha = latest_run.get("head_sha", "")[:7]
-    print(f"Tracking Latest GitHub Actions Run #{run_number} (ID: {run_id}, Commit: {sha})...")
+    target_run = None
+    for r in runs:
+        if "Build Global IPA" in r.get("name", ""):
+            target_run = r
+            break
+
+    if not target_run:
+        target_run = runs[0]
+
+    run_id = target_run.get("id")
+    run_number = target_run.get("run_number")
+    sha = target_run.get("head_sha", "")[:7]
+    print(f"Tracking GitHub Actions Run #{run_number} ({target_run.get('name')}, ID: {run_id}, Commit: {sha})...")
 
     while True:
         try:

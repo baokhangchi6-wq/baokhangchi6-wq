@@ -300,94 +300,17 @@ static void ms_apply_metal_layer_policies(id layer) {
     ((void (*)(id, SEL, id, id))objc_msgSend)(layer,
         sel_registerName("setValue:forKeyPath:"), num_one, ms_string("transform.scale.x"));
 
-    // 3. Stretched Resolution via CAMetalLayer drawableSize + kCAGravityResize
-    // Exactly matches Android's ANativeWindow_setBuffersGeometry:
-    // Roblox renders 3D camera with wider aspect ratio into target_w buffer,
-    // and CoreAnimation hardware-compositor stretches buffer to fill display.
-    if (g_stretch_percent > 0 && g_stretch_percent != 100) {
-        ((void (*)(id, SEL, id))objc_msgSend)(layer, sel_registerName("setContentsGravity:"), get_ca_gravity_resize());
-
-        MSSize size = ((MSSize (*)(id, SEL))objc_msgSend)(layer, sel_registerName("drawableSize"));
-        if (size.width > size.height && size.height > 0) {
-            MSLayerStretchState st = {0};
-            id val = objc_getAssociatedObject(layer, &g_ms_stretch_source_size_key);
-            if (val) {
-                ((void (*)(id, SEL, void*))objc_msgSend)(val, sel_registerName("getValue:"), &st);
-            }
-            double src_w = size.width;
-            double src_h = size.height;
-            if (st.applied && size.width == st.dst_w && size.height == st.dst_h) {
-                src_w = st.src_w;
-                src_h = st.src_h;
-            }
-            double factor = (double)g_stretch_percent / 100.0;
-            double target_w = (double)((long long)(src_w * factor + 0.5));
-            if (target_w < 64.0) target_w = 64.0;
-
-            st.src_w = src_w;
-            st.src_h = src_h;
-            st.dst_w = target_w;
-            st.dst_h = src_h;
-            st.applied = 1;
-
-            id new_val = ((id (*)(id, SEL, const void*, const char*))objc_msgSend)(objc_getClass("NSValue"),
-                sel_registerName("valueWithBytes:objCType:"), &st, "{MSLayerStretchState=ddddi}");
-            objc_setAssociatedObject(layer, &g_ms_stretch_source_size_key, new_val, 1);
-
-            size.width = target_w;
-            size.height = src_h;
-            if (g_original_set_drawable_size) {
-                g_original_set_drawable_size(layer, sel_registerName("setDrawableSize:"), size);
-            }
-        }
-    }
+    // 3. Android Global ARM64 Parity (v68/v73):
+    // Surface geometry / CAMetalLayer drawableSize MUST REMAIN PASSTHROUGH!
+    // Never modify drawableSize buffer or force kCAGravityResize, which squashes the whole app and distorts 2D UI.
 }
 
 static void metal_layer_set_drawable_size_hook(id self, SEL cmd, MSSize size) {
-    if (g_stretch_percent > 0 && g_stretch_percent != 100 && size.width > 0 && size.height > 0) {
-        MSLayerStretchState st = {0};
-        id val = objc_getAssociatedObject(self, &g_ms_stretch_source_size_key);
-        if (val) {
-            ((void (*)(id, SEL, void*))objc_msgSend)(val, sel_registerName("getValue:"), &st);
-        }
-
-        double src_w = size.width;
-        double src_h = size.height;
-        if (st.applied && size.width == st.dst_w && size.height == st.dst_h) {
-            src_w = st.src_w;
-            src_h = st.src_h;
-        }
-
-        // Android parity: Only stretch in landscape mode (in-game), never in portrait (homepage/login)
-        if (src_w > src_h) {
-            double factor = (double)g_stretch_percent / 100.0;
-            double target_h = (double)((long long)(src_h * factor + 0.5));
-            if (target_h < 64.0) target_h = 64.0;
-
-            st.src_w = src_w;
-            st.src_h = src_h;
-            st.dst_w = src_w;
-            st.dst_h = target_h;
-            st.applied = 1;
-
-            id new_val = ((id (*)(id, SEL, const void*, const char*))objc_msgSend)(objc_getClass("NSValue"),
-                sel_registerName("valueWithBytes:objCType:"), &st, "{MSLayerStretchState=ddddi}");
-            objc_setAssociatedObject(self, &g_ms_stretch_source_size_key, new_val, 1);
-
-            // Crucial: Set contentsGravity to @"resize" so the stretched drawable fills entire layer bounds
-            id gravity = get_ca_gravity_resize();
-            ((void (*)(id, SEL, id))objc_msgSend)(self, sel_registerName("setContentsGravity:"), gravity);
-
-            size.width = src_w;
-            size.height = target_h;
-
-            static int s_logged_stretch = 0;
-            if (!s_logged_stretch) {
-                s_logged_stretch = 1;
-                runtime_note("[APPLY][STRETCH] CAMetalLayer in-game landscape stretch=%d%% source=%.1fx%.1f target=%.1fx%.1f contentsGravity=resize",
-                             g_stretch_percent, src_w, src_h, size.width, size.height);
-            }
-        }
+    static int s_logged_stretch = 0;
+    if (!s_logged_stretch && g_stretch_percent > 0 && g_stretch_percent != 100) {
+        s_logged_stretch = 1;
+        runtime_note("[APPLY][STRETCH] surface_geometry=passthrough CAMetalLayer size=%.1fx%.1f percent=%d%% UI_preserved=1",
+                     size.width, size.height, g_stretch_percent);
     }
     if (g_original_set_drawable_size) {
         g_original_set_drawable_size(self, cmd, size);
@@ -396,9 +319,6 @@ static void metal_layer_set_drawable_size_hook(id self, SEL cmd, MSSize size) {
 }
 
 static void metal_layer_set_contents_gravity_hook(id self, SEL cmd, id gravity) {
-    if (g_stretch_percent > 0 && g_stretch_percent != 100) {
-        gravity = get_ca_gravity_resize();
-    }
     if (g_original_set_contents_gravity) {
         g_original_set_contents_gravity(self, cmd, gravity);
     }
@@ -431,7 +351,7 @@ static bool install_metal_layer_stretch_policy(void) {
     }
     if (m || sync_m || grav_m) {
         g_metal_layer_stretch_installed = 1;
-        runtime_note("[CAPABILITY][STRETCH] backend=%s status=READY hookInstalled=1", kStretchRuntimeBackend);
+        runtime_note("[CAPABILITY][STRETCH] backend=%s status=READY hookInstalled=1 surface_geometry=passthrough", kStretchRuntimeBackend);
         return true;
     }
     return false;
