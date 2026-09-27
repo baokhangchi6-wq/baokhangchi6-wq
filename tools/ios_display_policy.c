@@ -361,13 +361,13 @@ static void metal_layer_set_drawable_size_hook(id self, SEL cmd, MSSize size) {
         // Android parity: Only stretch in landscape mode (in-game), never in portrait (homepage/login)
         if (src_w > src_h) {
             double factor = (double)g_stretch_percent / 100.0;
-            double target_w = (double)((long long)(src_w * factor + 0.5));
-            if (target_w < 64.0) target_w = 64.0;
+            double target_h = (double)((long long)(src_h * factor + 0.5));
+            if (target_h < 64.0) target_h = 64.0;
 
             st.src_w = src_w;
             st.src_h = src_h;
-            st.dst_w = target_w;
-            st.dst_h = src_h;
+            st.dst_w = src_w;
+            st.dst_h = target_h;
             st.applied = 1;
 
             id new_val = ((id (*)(id, SEL, const void*, const char*))objc_msgSend)(objc_getClass("NSValue"),
@@ -378,8 +378,8 @@ static void metal_layer_set_drawable_size_hook(id self, SEL cmd, MSSize size) {
             id gravity = get_ca_gravity_resize();
             ((void (*)(id, SEL, id))objc_msgSend)(self, sel_registerName("setContentsGravity:"), gravity);
 
-            size.width = target_w;
-            size.height = src_h;
+            size.width = src_w;
+            size.height = target_h;
 
             static int s_logged_stretch = 0;
             if (!s_logged_stretch) {

@@ -55,14 +55,26 @@ def download_asset(asset_url, out_path):
             print(f"\rDownloaded {total / (1024*1024):.1f} MB", end="", flush=True)
     print("\nDownload complete!")
 
-def watch_run_and_download(run_id=36326933294):
-    print(f"Tracking GitHub Actions Run #{run_id}...")
+def watch_latest_run_and_download():
+    # Find latest run
+    runs_data = api_request("actions/runs?per_page=5")
+    runs = runs_data.get("workflow_runs", [])
+    if not runs:
+        print("No runs found!")
+        return False
+
+    latest_run = runs[0]
+    run_id = latest_run.get("id")
+    run_number = latest_run.get("run_number")
+    sha = latest_run.get("head_sha", "")[:7]
+    print(f"Tracking Latest GitHub Actions Run #{run_number} (ID: {run_id}, Commit: {sha})...")
+
     while True:
         try:
             run_data = api_request(f"actions/runs/{run_id}")
             status = run_data.get("status")
             conclusion = run_data.get("conclusion")
-            print(f"[{time.strftime('%H:%M:%S')}] Run status: {status} | conclusion: {conclusion}")
+            print(f"[{time.strftime('%H:%M:%S')}] Run #{run_number} status: {status} | conclusion: {conclusion}")
             if status == "completed":
                 if conclusion != "success":
                     print(f"Workflow finished with failure conclusion: {conclusion}")
@@ -73,23 +85,27 @@ def watch_run_and_download(run_id=36326933294):
             print(f"Error checking run: {e}")
         time.sleep(15)
 
-    print("User instructed: waiting 1 minute (60 seconds) after GitHub Actions completion...")
+    print("\nUser requested: waiting 1 minute (60 seconds) after GitHub Actions completion...")
     for remaining in range(60, 0, -10):
         print(f"Waiting {remaining}s...")
         time.sleep(10)
     print("Wait finished! Finding release asset...")
 
-    # Look for release matching run 13
-    target_tag = "run-13"
-    releases = api_request("releases?per_page=10")
+    target_tag = f"run-{run_number}"
     matching_release = None
-    for rel in releases:
-        if target_tag in rel.get("tag_name", ""):
-            matching_release = rel
+    for attempt in range(5):
+        releases = api_request("releases?per_page=10")
+        for rel in releases:
+            if target_tag in rel.get("tag_name", ""):
+                matching_release = rel
+                break
+        if matching_release:
             break
+        print(f"Waiting for release tag containing {target_tag}... (attempt {attempt+1}/5)")
+        time.sleep(10)
 
     if not matching_release:
-        print("Release matching run-13 not found in top releases, checking latest release...")
+        releases = api_request("releases?per_page=5")
         matching_release = releases[0] if releases else None
 
     if not matching_release:
@@ -112,17 +128,27 @@ def watch_run_and_download(run_id=36326933294):
     out_dir.mkdir(exist_ok=True)
     out_file = out_dir / ipa_asset.get("name")
     download_asset(ipa_asset.get("url"), out_file)
-    print(f"\n[DONE] Saved IPA to: {out_file.resolve()}")
+
+    # Also copy to MuMu shared folder if available
+    mumu_dir = Path(r"C:\Users\Administrator\Documents\MuMuSharedFolder\Download\Masterstrap")
+    if mumu_dir.is_dir():
+        import shutil
+        mumu_target = mumu_dir / ipa_asset.get("name")
+        shutil.copy2(out_file, mumu_target)
+        print(f"Copied to MuMu Shared Folder: {mumu_target}")
+
+    print(f"\n==========================================")
+    print(f"[SUCCESS] Downloaded IPA to: {out_file.resolve()}")
+    print(f"==========================================")
     return True
+
+def list_runs():
+    runs_data = api_request("actions/runs?per_page=5")
+    for r in runs_data.get("workflow_runs", []):
+        print(f"Run #{r.get('run_number')} ({r.get('id')}): {r.get('name')} | status={r.get('status')} | conclusion={r.get('conclusion')} | sha={r.get('head_sha')[:7]}")
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "watch":
-        watch_run_and_download()
+        watch_latest_run_and_download()
     else:
-        run_data = api_request("actions/runs/36326933294")
-        print(f"Run 13 status: {run_data.get('status')} | conclusion: {run_data.get('conclusion')}")
-        jobs = api_request("actions/runs/36326933294/jobs")
-        for j in jobs.get("jobs", []):
-            print(f"Job: {j.get('name')} ({j.get('status')})")
-            for s in j.get("steps", []):
-                print(f"  - {s.get('name')}: {s.get('status')} ({s.get('conclusion')})")
+        list_runs()

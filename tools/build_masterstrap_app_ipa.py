@@ -1024,13 +1024,19 @@ def configure_ios_runtime_html(html: str) -> str:
     delete activeFlags["FFlagDebugGraphicsPreferVulkan"];
     if (renderer === "metal_performance") {
         activeFlags["FFlagMetalVsyncPreferMaximumRefreshRate"] = "true";
-        activeFlags["FFlagPerformanceControlDisplayRefreshRate"] = "true";
+        activeFlags["FFlagPerformanceControlDisplayRefreshRate"] = "false";
+        activeFlags["FFlagApplicationFrameRate"] = "false";
+        activeFlags["FFlagDebugExperimentalVSyncFramePacing"] = "false";
     } else if (renderer === "metal_quality") {
         activeFlags["FFlagMetalVsyncPreferMaximumRefreshRate"] = "true";
         activeFlags["FFlagPerformanceControlDisplayRefreshRate"] = "false";
+        activeFlags["FFlagApplicationFrameRate"] = "false";
+        activeFlags["FFlagDebugExperimentalVSyncFramePacing"] = "false";
     } else {
         activeFlags["FFlagMetalVsyncPreferMaximumRefreshRate"] = "true";
-        delete activeFlags["FFlagPerformanceControlDisplayRefreshRate"];
+        activeFlags["FFlagPerformanceControlDisplayRefreshRate"] = "false";
+        activeFlags["FFlagApplicationFrameRate"] = "false";
+        activeFlags["FFlagDebugExperimentalVSyncFramePacing"] = "false";
     }
 ''',
         "renderer flags",
