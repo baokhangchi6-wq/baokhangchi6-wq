@@ -53,6 +53,7 @@ class AppBridgeTests(unittest.TestCase):
         plist = {}
         self.roblox_builder.configure_ios_runtime_plist(plist)
         self.assertIs(True, plist["CADisableMinimumFrameDurationOnPhone"])
+        self.assertIs(True, plist["CADisableMinimumFrameDuration"])
 
     def test_sanitize_and_configure_roblox_plist_restores_global_bundle_and_purges_delta(self):
         plist = {

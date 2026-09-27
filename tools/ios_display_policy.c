@@ -64,8 +64,8 @@ static MSFrameRateRange ms_target_range(void) {
     int screen_max = ios_maximum_frames_per_second();
     float link_max = (float)screen_max;
     if (target < link_max) link_max = target;
-    float min_fps = link_max < 60.0f ? link_max : 60.0f;
-    return (MSFrameRateRange){min_fps, link_max, link_max};
+    /* Lock minimum to link_max so iOS ProMotion compositor does not down-throttle to 60Hz */
+    return (MSFrameRateRange){link_max, link_max, link_max};
 }
 static bool ms_get_link_request(id link, MSLinkRequest* request) {
     id value = objc_getAssociatedObject(link, &g_ms_link_request_key);

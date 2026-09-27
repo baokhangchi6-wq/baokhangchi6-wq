@@ -55,6 +55,7 @@ def register_bridge_url_scheme(plist: dict) -> str:
 def configure_ios_runtime_plist(plist: dict) -> dict:
     """Enable high-refresh presentation without forcing a frame rate."""
     plist["CADisableMinimumFrameDurationOnPhone"] = True
+    plist["CADisableMinimumFrameDuration"] = True
     return plist
 
 
@@ -1578,7 +1579,6 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    uintptr_t base = (uintptr_t)arg;",
         "    if (!base) return NULL;",
         "    uintptr_t fps_slot = base + 0x6a58de8;",
-        "    uintptr_t perf_ctrl = base + 0x69ca110;",
         "    for (int cycle = 0; cycle < 120; cycle++) {",
         "        usleep(2500000);",
         "        if (g_target_fps > 0) {",
@@ -1588,7 +1588,22 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "                runtime_note(\"[FPS_SLOT_GUARD] Restored targetFps slot from %d to %d (cycle=%d)\", current, g_target_fps, cycle);",
         "            }",
         "        }",
-        "        *(volatile uint8_t*)perf_ctrl = 0;",
+        "        // Zero out all 60Hz limit and policy flags",
+        "        *(volatile uint8_t*)(base + 0x69ca110) = 0; // FFlagPerformanceControlDisplayRefreshRate",
+        "        *(volatile uint8_t*)(base + 0x6a1ff20) = 0; // FFlagPerformanceControlDisplayRefreshRateInAdaptiveSync",
+        "        *(volatile uint8_t*)(base + 0x69ca120) = 0; // FFlagPerformanceControlDisplayRefreshRateMigration",
+        "        *(volatile uint8_t*)(base + 0x69913c0) = 0; // FFlagAuroraLimit60HzRenderSim",
+        "        *(volatile uint8_t*)(base + 0x697eaf0) = 0; // FFlagGameBasicSettingsFramerateCap",
+        "        *(volatile uint8_t*)(base + 0x6a29260) = 0; // FFlagApplicationFrameRate",
+        "        *(volatile uint8_t*)(base + 0x6a29248) = 0; // FFlagApplicationFrameRatePolicy",
+        "        *(volatile uint8_t*)(base + 0x6a20118) = 1; // FFlagMetalVsyncPreferMaximumRefreshRate",
+        "",
+        "        // Maintain stretch horizontal factor slot",
+        "        float factor = 1.0f;",
+        "        if (g_stretch_percent > 0 && g_stretch_percent != 100) {",
+        "            factor = 100.0f / (float)g_stretch_percent;",
+        "        }",
+        "        *(volatile float*)(base + 0x69ca130) = factor;",
         "    }",
         "    return NULL;",
         "}",
@@ -1717,7 +1732,14 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "            if (base != 0 && g_target_fps > 0) {",
         "                uintptr_t fps_slot = base + 0x6a58de8;",
         "                *(volatile int32_t*)fps_slot = g_target_fps;",
-        "                *(volatile uint8_t*)(base + 0x69ca110) = 0;",
+        "                *(volatile uint8_t*)(base + 0x69ca110) = 0; // FFlagPerformanceControlDisplayRefreshRate",
+        "                *(volatile uint8_t*)(base + 0x6a1ff20) = 0; // FFlagPerformanceControlDisplayRefreshRateInAdaptiveSync",
+        "                *(volatile uint8_t*)(base + 0x69ca120) = 0; // FFlagPerformanceControlDisplayRefreshRateMigration",
+        "                *(volatile uint8_t*)(base + 0x69913c0) = 0; // FFlagAuroraLimit60HzRenderSim",
+        "                *(volatile uint8_t*)(base + 0x697eaf0) = 0; // FFlagGameBasicSettingsFramerateCap",
+        "                *(volatile uint8_t*)(base + 0x6a29260) = 0; // FFlagApplicationFrameRate",
+        "                *(volatile uint8_t*)(base + 0x6a29248) = 0; // FFlagApplicationFrameRatePolicy",
+        "                *(volatile uint8_t*)(base + 0x6a20118) = 1; // FFlagMetalVsyncPreferMaximumRefreshRate",
         "",
         "                void* th = NULL;",
         "                pthread_create(&th, NULL, fps_slot_guard_thread, (void*)base);",
@@ -1729,6 +1751,20 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "                }",
         "                runtime_note(\"[FPS_CEILING] Uncapped TaskScheduler targetFps=%d slot=0x%lx status=VERIFIED\",",
         "                             g_target_fps, (unsigned long)fps_slot);",
+        "            }",
+        "            // 2c. Native Stretch Resolution Factor (Android Global v73 Parity)",
+        "            if (base != 0) {",
+        "                float factor = 1.0f;",
+        "                if (g_stretch_percent > 0 && g_stretch_percent != 100) {",
+        "                    factor = 100.0f / (float)g_stretch_percent;",
+        "                }",
+        "                *(volatile float*)(base + 0x69ca130) = factor;",
+        "                if (log_file) {",
+        "                    fprintf(log_file, \"[STRETCH_PROJECTION] Stored horizontalFactor=%.4f (stretchPercent=%d%%) to slot 0x%lx\\n\",",
+        "                            factor, g_stretch_percent, (unsigned long)(base + 0x69ca130));",
+        "                }",
+        "                runtime_note(\"[STRETCH_PROJECTION] Stored horizontalFactor=%.4f (stretchPercent=%d%%) to slot 0x%lx status=VERIFIED\",",
+        "                             factor, g_stretch_percent, (unsigned long)(base + 0x69ca130));",
         "            }",
         "            purge_local_launch_configuration(\"cold_launch_applied\", true);",
         "        }",
@@ -2261,6 +2297,36 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                             if len(data) > clamp2_offset + 4 and data[clamp2_offset:clamp2_offset+4] == b'\x6b\xb1\x8c\x1a':
                                 data[clamp2_offset:clamp2_offset+4] = b'\x1f\x20\x03\xd5'
                                 print(f"[FPS_CEILING] Bypassed RobloxLib second 240 FPS clamp site @ 0x{clamp2_offset:X} (csel -> nop)")
+
+                            # Android Global ARM64 parity: Stretch Resolution projection matrix hook via code cave
+                            # Code cave at 0x3fd0 (in header padding right before __TEXT,__text at 0x4000):
+                            #   0x3fd0: adrp x8, #0x69ca000      (28 4e 03 f0)
+                            #   0x3fd4: ldr s1, [x8, #0x130]      (01 31 41 bd)
+                            #   0x3fd8: fcmp s1, #0.0             (28 20 20 1e)
+                            #   0x3fdc: b.eq #0x3ff0              (a0 00 00 54)
+                            #   0x3fe0: add x8, x19, #0x1c8       (68 22 07 91)
+                            #   0x3fe4: ldr q0, [x8]              (00 01 c0 3d)
+                            #   0x3fe8: fmul v0.4s, v0.4s, v1.s[0] (00 90 81 4f)
+                            #   0x3fec: str q0, [x8]              (00 01 80 3d)
+                            #   0x3ff0: mov x0, x19               (e0 03 13 aa)
+                            #   0x3ff4: b #0x34f1bdc              (fa b6 d3 14)
+                            # Hook site at 0x34f1bd8:
+                            #   0x34f1bd8: b #0x3fd0              (fe 48 2c 17)
+                            stretch_cave_offset = 0x3fd0
+                            stretch_hook_offset = 0x34f1bd8
+                            stretch_cave_bytes = bytes.fromhex("284e03f0013141bd2820201ea0000054682207910001c03d0090814f0001803de00313aafab6d314")
+                            stretch_hook_bytes = bytes.fromhex("fe482c17")
+
+                            if len(data) > stretch_hook_offset + 4 and data[stretch_hook_offset:stretch_hook_offset+4] == b'\xe0\x03\x13\xaa':
+                                if data[stretch_cave_offset:stretch_cave_offset + len(stretch_cave_bytes)] == b'\x00' * len(stretch_cave_bytes):
+                                    data[stretch_cave_offset:stretch_cave_offset + len(stretch_cave_bytes)] = stretch_cave_bytes
+                                    data[stretch_hook_offset:stretch_hook_offset+4] = stretch_hook_bytes
+                                    print(f"[STRETCH_PROJECTION] Installed ARM64 projection matrix hook @ 0x{stretch_hook_offset:X} -> cave @ 0x{stretch_cave_offset:X}")
+                                else:
+                                    print(f"[STRETCH_PROJECTION] Warning: code cave @ 0x{stretch_cave_offset:X} is not empty!")
+                            else:
+                                print(f"[STRETCH_PROJECTION] Warning: hook site @ 0x{stretch_hook_offset:X} did not match expected opcode")
+
                             data = bytes(data)
                             data = insert_load_dylib(data, "@rpath/libmasterstrap.dylib")
                         elif name.endswith("Roblox.app/Info.plist"):
