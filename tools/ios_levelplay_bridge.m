@@ -102,7 +102,7 @@ static void MSTryShowPending(void) {
             return;
         }
         // Priority 3: Hidden Banner Fallback
-        if (MSHiddenBannerLoaded || (MSHiddenBanner && !MSHiddenBannerLoadInFlight)) {
+        if (MSHiddenBannerLoaded) {
             MSPendingUsingBannerFallback = YES;
             MSLog(@"resolving rewarded via hidden banner fallback request=%@", MSPendingRequest);
             MSResolve(@"rewarded", @"hidden_banner_fallback_completed");
@@ -111,12 +111,18 @@ static void MSTryShowPending(void) {
         }
         if (MSRewardedLoadFailed && MSInterstitialLoadFailed &&
             !MSRewardedLoadInFlight && !MSInterstitialLoadInFlight) {
-            MSPendingUsingBannerFallback = YES;
-            MSLog(@"rewarded_and_interstitial_unavailable; resolving via hidden banner fallback request=%@", MSPendingRequest);
-            MSLoadHiddenBannerAd();
-            MSResolve(@"rewarded", @"hidden_banner_fallback_completed");
-            MSReloadAllAds();
-            return;
+            if (MSHiddenBannerLoaded) {
+                MSPendingUsingBannerFallback = YES;
+                MSLog(@"rewarded_and_interstitial_unavailable; resolving via hidden banner fallback request=%@", MSPendingRequest);
+                MSResolve(@"rewarded", @"hidden_banner_fallback_completed");
+                MSReloadAllAds();
+                return;
+            } else if (!MSHiddenBannerLoadInFlight) {
+                MSLog(@"all ad formats unavailable (no fill on rewarded, interstitial, and banner); rejecting request=%@", MSPendingRequest);
+                MSResolve(@"failed", @"no_fill_all_formats");
+                MSReloadAllAds();
+                return;
+            }
         }
     } else if ([MSPendingFormat isEqualToString:@"interstitial"]) {
         // Priority 1: Interstitial
@@ -126,7 +132,7 @@ static void MSTryShowPending(void) {
             MSPendingUsingBannerFallback = NO;
             MSLog(@"showing preloaded interstitial request=%@", MSPendingRequest);
             [MSInterstitial showAdWithViewController:MSRootViewController placementName:nil];
-        } else if (MSHiddenBannerLoaded || (MSHiddenBanner && !MSHiddenBannerLoadInFlight)) {
+        } else if (MSHiddenBannerLoaded) {
             MSPendingUsingBannerFallback = YES;
             MSLog(@"resolving interstitial via hidden banner fallback request=%@", MSPendingRequest);
             MSResolve(@"continue", @"hidden_banner_fallback_completed");
@@ -166,11 +172,19 @@ static void MSTryShowPending(void) {
     }
     if ([adUnitId isEqualToString:MSBannerAdUnitId]) {
         MSHiddenBannerLoadInFlight = NO;
+        MSHiddenBannerLoaded = NO;
     }
     MSTryShowPending();
 }
 - (void)didDisplayAdWithAdInfo:(LPMAdInfo *)adInfo {
     MSLog(@"ad displayed: %@", adInfo);
+    if (MSPendingRequest.length > 0 && MSWebView) {
+        NSString *rid = [MSPendingRequest copy];
+        NSString *js = [NSString stringWithFormat:@"window.MasterstrapAds&&window.MasterstrapAds.onAdDisplayed&&window.MasterstrapAds.onAdDisplayed('%@');", rid];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [MSWebView evaluateJavaScript:js completionHandler:nil];
+        });
+    }
 }
 - (void)didRewardAdWithAdInfo:(LPMAdInfo *)adInfo reward:(LPMReward *)reward {
     MSRewardEarned = YES;

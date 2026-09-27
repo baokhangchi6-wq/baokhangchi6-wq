@@ -15,6 +15,7 @@ __pycache__/
 .DS_Store
 local.properties
 roblox_input/
+roblox_extracted/
 preview/.browser_profile/
 Log/
 log ios thật/

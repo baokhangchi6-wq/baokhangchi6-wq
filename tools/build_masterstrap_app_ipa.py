@@ -1352,7 +1352,7 @@ window.MasterstrapAds = (() => {
             resolveRequest = resolve;
         });
         const requestId = "ad-" + Date.now() + "-" + (++sequence);
-        const timeoutMs = format === "rewarded" ? 30000 : 20000;
+        const timeoutMs = format === "rewarded" ? 180000 : 60000;
         const timer = setTimeout(() => {
             pending.delete(requestId);
             if (inFlightByFormat.get(format) === promise) inFlightByFormat.delete(format);
@@ -1377,10 +1377,31 @@ window.MasterstrapAds = (() => {
         }
         return promise;
     }
+    function onAdDisplayed(requestId) {
+        const item = requestId ? pending.get(requestId) : null;
+        if (item) {
+            if (item.timer) {
+                clearTimeout(item.timer);
+                item.timer = null;
+            }
+            log("ad displayed, timeout disarmed format=" + item.format + " placement=" + item.placement + " id=" + requestId);
+        } else {
+            for (const [rid, it] of pending.entries()) {
+                if (it.timer) {
+                    clearTimeout(it.timer);
+                    it.timer = null;
+                    log("ad displayed, timeout disarmed format=" + it.format + " placement=" + it.placement + " id=" + rid);
+                }
+            }
+        }
+    }
     function nativeResult(event) {
         const item = event && pending.get(event.requestId);
         if (!item) return;
-        clearTimeout(item.timer);
+        if (item.timer) {
+            clearTimeout(item.timer);
+            item.timer = null;
+        }
         pending.delete(event.requestId);
         if (inFlightByFormat.get(item.format) === item.promise) inFlightByFormat.delete(item.format);
         const allowed = event.outcome === "rewarded" || event.outcome === "continue";
@@ -1412,8 +1433,10 @@ window.MasterstrapAds = (() => {
         }
     }
     document.addEventListener("pointerdown", triggerBannerRefreshOnInteraction, { passive: true });
+    document.addEventListener("touchstart", triggerBannerRefreshOnInteraction, { passive: true });
+    document.addEventListener("click", triggerBannerRefreshOnInteraction, { passive: true });
 
-    return { request, nativeResult, banner, isFree, needsFpsReward, grants };
+    return { request, nativeResult, onAdDisplayed, banner, isFree, needsFpsReward, grants };
 })();
 
 const msOpenFastFlagEditor = openFastFlagEditorSubpage;
