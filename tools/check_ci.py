@@ -36,24 +36,38 @@ def api_request(endpoint):
 
 def download_asset(asset_url, out_path):
     token = get_token()
-    headers = {
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "application/octet-stream"
-    }
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    req = urllib.request.Request(asset_url, headers=headers)
-    print(f"Downloading from {asset_url} to {out_path}...")
-    with urllib.request.urlopen(req) as resp, open(out_path, "wb") as f:
-        total = 0
-        while True:
-            chunk = resp.read(1024 * 1024)
-            if not chunk:
-                break
-            f.write(chunk)
-            total += len(chunk)
-            print(f"\rDownloaded {total / (1024*1024):.1f} MB", end="", flush=True)
-    print("\nDownload complete!")
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    proxy_args = []
+    try:
+        import socket
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(1)
+        if s.connect_ex(("127.0.0.1", 40000)) == 0:
+            proxy_args = ["-x", "socks5h://127.0.0.1:40000"]
+            print("Detected active Cloudflare WARP proxy on port 40000! Accelerating download...", flush=True)
+        s.close()
+    except Exception:
+        pass
+
+    print(f"Downloading from {asset_url} to {out_path} via curl.exe...", flush=True)
+    cmd = [
+        "curl.exe",
+        "-f",
+        "-L",
+        "--tcp-nodelay",
+        *proxy_args,
+        "-H", f"Authorization: token {token}",
+        "-H", "Accept: application/octet-stream",
+        asset_url,
+        "-o", str(out_path),
+        "--progress-bar"
+    ]
+    res = subprocess.run(cmd)
+    if res.returncode != 0:
+        print(f"Curl failed with return code {res.returncode}", flush=True)
+        sys.exit(res.returncode)
+    print("\nDownload complete!", flush=True)
 
 def watch_latest_run_and_download():
     # Find latest Build Global IPA run
@@ -132,25 +146,13 @@ def watch_latest_run_and_download():
         print("No .ipa asset found in release!")
         return False
 
-    out_dir = Path("output")
-    out_dir.mkdir(exist_ok=True)
-    out_file = out_dir / ipa_asset.get("name")
+    download_dir = Path(r"C:\Users\Administrator\Downloads")
+    download_dir.mkdir(parents=True, exist_ok=True)
+    out_file = download_dir / ipa_asset.get("name")
     download_asset(ipa_asset.get("url"), out_file)
 
-    # Copy directly into Download directory with NO extra subdirectories
-    import shutil
-    ipa_filename = ipa_asset.get("name")
-    for dl_path in [
-        Path(r"C:\Users\Administrator\Documents\MuMuSharedFolder\Download"),
-        Path(r"C:\Users\Administrator\Downloads")
-    ]:
-        if dl_path.is_dir():
-            target_dest = dl_path / ipa_filename
-            shutil.copy2(out_file, target_dest)
-            print(f"Copied to Download directory: {target_dest}")
-
     print(f"\n==========================================")
-    print(f"[SUCCESS] Downloaded IPA to: {out_file.resolve()}")
+    print(f"[SUCCESS] Downloaded IPA exclusively to single path: {out_file.resolve()}")
     print(f"==========================================")
     return True
 

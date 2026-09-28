@@ -2387,20 +2387,9 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                                 data[fallback_dt_offset:fallback_dt_offset+4] = b'\x17\xb7\xd1\x38'
                                 print(f"[FPS_CEILING] Patched RobloxLib fallback delta time @ 0x{fallback_dt_offset:X} (dt -> 0.0001s, 10000 FPS ceiling)")
 
-                            # 5. AdaptiveSync DisplayTiming Clamp Bypass (Prevents 120Hz/60Hz clamp during touch/motion)
-                            adapt_sched_offset = 0x3F64A84
-                            if len(data) > adapt_sched_offset + 4 and data[adapt_sched_offset:adapt_sched_offset+4] in (b'\x16\xc5\x9f\x1a', b'\x16\xe2\x84\x52'):
-                                data[adapt_sched_offset:adapt_sched_offset+4] = b'\x16\xe2\x84\x52'
-                                print(f"[FPS_CEILING] Uncapped AdaptiveSync target schedule @ 0x{adapt_sched_offset:X} (csinc -> mov w22, #10000)")
-
-                            adapt_clamp_offset = 0x3F64AE4
-                            if len(data) > adapt_clamp_offset + 4 and data[adapt_clamp_offset:adapt_clamp_offset+4] in (b'\xb6\x32\x96\x1a', b'\x1f\x20\x03\xd5'):
-                                data[adapt_clamp_offset:adapt_clamp_offset+4] = b'\x1f\x20\x03\xd5'
-                                print(f"[FPS_CEILING] Bypassed AdaptiveSync refresh clamp @ 0x{adapt_clamp_offset:X} (csel -> nop)")
-
-                            # 6. Stretch Resolution (Architecture v73 Parity):
+                            # 5. Stretch Resolution (Architecture v73 Parity):
                             # Hook View-Projection matrix write at 0xB75610 (inside 0xb75500) -> Code Cave at 0x3F80
-                            # Rebuilds horizontal clip row (Row 1, offset 0x10) from pristine cameraInput+0x90 every frame.
+                            # Rebuilds horizontal clip row (Row 0, offset 0x0) from pristine cameraInput+0x80 every frame.
                             # Keeps 2D GUI and surface geometry 100% distortion-free and artifact-free.
                             stretch_cave_offset = 0x3F80
                             stretch_hook_offset = 0xB75610
@@ -2413,9 +2402,9 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                                 0x1E2E1002,  # 0x3F90: fmov s2, #1.00000000
                                 0x1E222020,  # 0x3F94: fcmp s1, s2
                                 0x54000080,  # 0x3F98: b.eq #0x3fa8
-                                0x3DC02680,  # 0x3F9C: ldr q0, [x20, #0x90]
+                                0x3DC02280,  # 0x3F9C: ldr q0, [x20, #0x80]
                                 0x4F819000,  # 0x3FA0: fmul v0.4s, v0.4s, v1.s[0]
-                                0x3D800660,  # 0x3FA4: str q0, [x19, #0x10]
+                                0x3D800260,  # 0x3FA4: str q0, [x19]
                                 0xA94A7BFD,  # 0x3FA8: ldp x29, x30, [sp, #0xa0]
                                 0x142DC59A,  # 0x3FAC: b #0xb75614
                             )

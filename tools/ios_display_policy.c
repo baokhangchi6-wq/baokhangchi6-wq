@@ -59,13 +59,24 @@ static long fps_runtime_target(void) {
     int target = (g_ms_policy.target > 0) ? g_ms_policy.target : (g_target_fps > 0 ? g_target_fps : 60);
     return ms_ios_target_fps(target, ios_maximum_frames_per_second(), ms_low_power(), ms_thermal());
 }
+static inline MSFrameRateRange sanitize_frame_rate_range(MSFrameRateRange range) {
+    int screen_max = ios_maximum_frames_per_second();
+    if (screen_max <= 0) screen_max = 120;
+    float max_limit = (float)screen_max;
+    if (range.minimum <= 0.0f || range.minimum > max_limit) range.minimum = 1.0f;
+    if (range.maximum <= 0.0f || range.maximum > max_limit) range.maximum = max_limit;
+    if (range.minimum > range.maximum) range.minimum = range.maximum;
+    if (range.preferred < range.minimum) range.preferred = range.minimum;
+    if (range.preferred > range.maximum) range.preferred = range.maximum;
+    return range;
+}
 static MSFrameRateRange ms_target_range(void) {
     float target = (float)fps_runtime_target();
     int screen_max = ios_maximum_frames_per_second();
     float link_max = (target >= 120.0f) ? 120.0f : (float)screen_max;
     if (target < link_max) link_max = target;
     /* Lock minimum to link_max so iOS ProMotion compositor does not down-throttle to 60Hz */
-    return (MSFrameRateRange){link_max, link_max, link_max};
+    return sanitize_frame_rate_range((MSFrameRateRange){link_max, link_max, link_max});
 }
 static bool ms_get_link_request(id link, MSLinkRequest* request) {
     id value = objc_getAssociatedObject(link, &g_ms_link_request_key);
@@ -149,6 +160,7 @@ static void display_link_set_fps_hook(id self, SEL cmd, long requested) {
     apply_display_link_policy(self, "fps-setter");
 }
 static void display_link_set_range_hook(id self, SEL cmd, MSFrameRateRange requested) {
+    requested = sanitize_frame_rate_range(requested);
     if (!pthread_main_np() || g_ms_applying) {
         if (g_original_display_link_set_range) g_original_display_link_set_range(self, cmd, requested);
         return;
