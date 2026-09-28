@@ -243,16 +243,26 @@ static id serialize_bridge_payload(id body) {
 
     id NSJSONSerialization = objc_getClass("NSJSONSerialization");
     id NSCharacterSet = objc_getClass("NSCharacterSet");
+    id NSDictionary = objc_getClass("NSDictionary");
     if (!NSJSONSerialization || !NSCharacterSet) {
         app_log("Bridge payload unavailable: Foundation classes are missing");
         return NULL;
+    }
+
+    id payload_to_encode = body;
+    if (body && NSDictionary && ((bool (*)(id, SEL, id))objc_msgSend)(body, sel_registerName("isKindOfClass:"), NSDictionary)) {
+        id mutable_body = ((id (*)(id, SEL))objc_msgSend)(body, sel_registerName("mutableCopy"));
+        if (mutable_body) {
+            ((void (*)(id, SEL, id))objc_msgSend)(mutable_body, sel_registerName("removeObjectForKey:"), nsstr("globalSettings"));
+            payload_to_encode = mutable_body;
+        }
     }
 
     id error = NULL;
     id json_data = ((id (*)(id, SEL, id, NSUInteger, id*))objc_msgSend)(
         NSJSONSerialization,
         sel_registerName("dataWithJSONObject:options:error:"),
-        body,
+        payload_to_encode,
         0,
         &error);
     if (!json_data || error) {
@@ -331,6 +341,8 @@ static id bridge_json_post(const char* endpoint, id json_body, long expected_sta
                                                nsstr("application/json"), nsstr("Content-Type"));
     ((void (*)(id, SEL, id, id))objc_msgSend)(request, sel_registerName("setValue:forHTTPHeaderField:"),
                                                nsstr("application/json"), nsstr("Accept"));
+    ((void (*)(id, SEL, id, id))objc_msgSend)(request, sel_registerName("setValue:forHTTPHeaderField:"),
+                                               nsstr("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"), nsstr("User-Agent"));
     ((void (*)(id, SEL, id))objc_msgSend)(request, sel_registerName("setHTTPBody:"), request_data);
 
     id response = NULL;
