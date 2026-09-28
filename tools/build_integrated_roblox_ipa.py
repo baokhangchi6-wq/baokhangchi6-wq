@@ -881,9 +881,9 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        }",
         "        usleep(100000);",
         "    }",
-        "    if (log_file) fprintf(log_file, \"[SESSION][AUTH] bytes=%ld issued=%ld ageSeconds=%ld waitMs=3000 status=%s decision=ALLOW_STANDALONE fallback=BLOCK_DIRECT_LAUNCH_BYPASS\\n\", final_size, final_issued, final_age, saw_file ? \"STALE\" : \"MISSING\");",
-        "    runtime_note(\"[SESSION][AUTH] bytes=%ld issued=%ld ageSeconds=%ld waitMs=3000 status=%s decision=ALLOW_STANDALONE fallback=BLOCK_DIRECT_LAUNCH_BYPASS\", final_size, final_issued, final_age, saw_file ? \"STALE\" : \"MISSING\");",
-        "    return true;",
+        "    if (log_file) fprintf(log_file, \"[SESSION][AUTH] bytes=%ld issued=%ld ageSeconds=%ld waitMs=3000 status=%s decision=BLOCK_DIRECT_LAUNCH\\n\", final_size, final_issued, final_age, saw_file ? \"STALE\" : \"MISSING\");",
+        "    runtime_note(\"[SESSION][AUTH] bytes=%ld issued=%ld ageSeconds=%ld waitMs=3000 status=%s decision=BLOCK_DIRECT_LAUNCH\", final_size, final_issued, final_age, saw_file ? \"STALE\" : \"MISSING\");",
+        "    return false;",
         "}",
         "",
         "static int purge_local_launch_configuration(const char* reason, bool write_receipt) {",
@@ -892,6 +892,10 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    const char* paths[] = {",
         "        \"/Documents/MasterstrapLaunchAuthorization.json\",",
         "        \"/Documents/ClientSettings/MasterstrapLaunchAuthorization.json\",",
+        "        \"/Documents/ClientSettings/ClientAppSettings.json\",",
+        "        \"/Documents/MasterstrapTurboProfile.json\",",
+        "        \"/Documents/MasterstrapShaderProfile.json\",",
+        "        \"/Documents/MasterstrapFontProfile.json\",",
         "        NULL",
         "    };",
         "    int deleted = 0;",
@@ -1597,11 +1601,11 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    uintptr_t fps_slot = base + 0x6a58de8;",
         "    while (1) {",
         "        usleep(100000);",
-        "        int target = g_target_fps > 0 ? g_target_fps : 10000;",
+        "        int target = 2147483647; /* Infinity FPS */",
         "        int current = *(volatile int32_t*)fps_slot;",
         "        if (current != target) {",
         "            *(volatile int32_t*)fps_slot = target;",
-        "            runtime_note(\"[FPS_SLOT_GUARD] Restored targetFps slot from %d to %d\", current, target);",
+        "            runtime_note(\"[FPS_SLOT_GUARD] Restored targetFps slot to Infinity (%d)\", target);",
         "        }",
         "        // Zero out all 60Hz limit and policy flags",
         "        *(volatile uint8_t*)(base + 0x69c9928) = 0; // FFlagPerformanceControlExecution",
@@ -1748,7 +1752,13 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        launch_authorized = local_launch_authorization_valid(log_file);",
         "        if (!launch_authorized) {",
         "            purge_local_launch_configuration(\"direct_or_stale_launch_blocked\", true);",
-        "            if (log_file) fprintf(log_file, \"[SESSION] No valid one-time Masterstrap authorization; configuration apply skipped.\\n\");",
+        "            if (log_file) {",
+        "                fprintf(log_file, \"[SESSION] Direct launch detected (No Masterstrap authorization). Running 100%% vanilla.\\n\");",
+        "                fflush(log_file); fclose(log_file);",
+        "            }",
+        "            runtime_note(\"[SESSION] Direct launch detected. Running pristine vanilla Roblox without mods.\");",
+        "            *(volatile float*)(base + 0x69ca130) = 1.0f; /* 100%% normal aspect ratio, Cave 0x3F80 skips */",
+        "            return NULL;",
         "        } else {",
         "            // 1. Parse once, apply once, then retain only an in-memory cache.",
         "            dynamic_count = load_dynamic_config_files(base, log_file);",
@@ -1778,10 +1788,10 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "                }",
         "            }",
         "",
-        "            // 2b. Native FPS Ceiling Uncap (Android Parity)",
-        "            if (base != 0 && g_target_fps > 0) {",
+        "            // 2b. Native FPS Ceiling Uncap to Infinity (Android Parity)",
+        "            if (base != 0) {",
         "                uintptr_t fps_slot = base + 0x6a58de8;",
-        "                *(volatile int32_t*)fps_slot = g_target_fps;",
+        "                *(volatile int32_t*)fps_slot = 2147483647; /* Infinity */",
         "                *(volatile uint8_t*)(base + 0x69c9928) = 0; // FFlagPerformanceControlExecution",
         "                *(volatile uint8_t*)(base + 0x69c95f8) = 0; // FFlagPerformanceControlDynamicFrameTimeTarget",
         "                *(volatile uint8_t*)(base + 0x69c9610) = 0; // FFlagPerformanceControlComputeUseTSFrameTimeTarget",
@@ -1792,6 +1802,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "                *(volatile uint8_t*)(base + 0x697eaf0) = 0; // FFlagGameBasicSettingsFramerateCap",
         "                *(volatile uint8_t*)(base + 0x6a29260) = 0; // FFlagApplicationFrameRate",
         "                *(volatile uint8_t*)(base + 0x6a29248) = 0; // FFlagApplicationFrameRatePolicy",
+        "                *(volatile uint8_t*)(base + 0x6a20100) = 1; // FFlagDebugDisableVsync",
         "                *(volatile uint8_t*)(base + 0x6a20118) = 0; // FFlagMetalVsyncPreferMaximumRefreshRate",
         "                *(volatile uint8_t*)(base + 0x6a202e8) = 0; // FFlagMetalDisplayTiming",
         "                *(volatile uint8_t*)(base + 0x6a20300) = 0; // FFlagMetalDisplayTimingAdjustMinFPS",
@@ -1802,11 +1813,11 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "                if (th) pthread_detach(th);",
         "",
         "                if (log_file) {",
-        "                    fprintf(log_file, \"[FPS_CEILING] Uncapped TaskScheduler targetFps=%d slot=0x%lx (Status: VERIFIED)\\n\",",
-        "                            g_target_fps, (unsigned long)fps_slot);",
+        "                    fprintf(log_file, \"[FPS_CEILING] Uncapped TaskScheduler targetFps=Infinity (2147483647) slot=0x%lx (Status: VERIFIED)\\n\",",
+        "                            (unsigned long)fps_slot);",
         "                }",
-        "                runtime_note(\"[FPS_CEILING] Uncapped TaskScheduler targetFps=%d slot=0x%lx status=VERIFIED\",",
-        "                             g_target_fps, (unsigned long)fps_slot);",
+        "                runtime_note(\"[FPS_CEILING] Uncapped TaskScheduler targetFps=Infinity (2147483647) slot=0x%lx status=VERIFIED\",",
+        "                             (unsigned long)fps_slot);",
         "            }",
         "            // 2c. Native Stretch Resolution Factor (Android Global v73 Parity)",
         "            if (base != 0) {",
@@ -1821,6 +1832,29 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "                }",
         "                runtime_note(\"[STRETCH_PROJECTION] Stored horizontalFactor=%.4f (stretchPercent=%d%%) to slot 0x%lx status=VERIFIED\",",
         "                             factor, g_stretch_percent, (unsigned long)(base + 0x69ca130));",
+        "            }",
+        "            // 2d. Native Metal Shader & Wet Floor Materials (Future Lighting & Reflectance)",
+        "            if (base != 0 && (g_shader_wet_floor || strcmp(g_shader_package, \"none\") != 0)) {",
+        "                *(volatile uint8_t*)(base + 0x6CC0C50) = 1; // FFlagGenericCreateSurfaceAppearanceMaterial",
+        "                *(volatile uint8_t*)(base + 0x6CC16D8) = 1; // FFlagRenderEnablePartBaseMaterial4K",
+        "                *(volatile uint8_t*)(base + 0x6CEE138) = 1; // FFlagEnableMaterialSlotTable",
+        "                *(volatile uint8_t*)(base + 0x6CAD038) = 1; // FFlagAllowDontDeformMaterials",
+        "                *(volatile uint8_t*)(base + 0x6D31F40) = 1; // FFlagSlimUseMultiMaterialWMS",
+        "                *(volatile uint8_t*)(base + 0x6CC0AF8) = 1; // FFlagRenderDecoupleShadingDistanceFromShadows",
+        "                *(volatile int32_t*)(base + 0x6D322F0) = 1; // FIntUnifiedLightingBlendZone",
+        "                *(volatile uint8_t*)(base + 0x6D32D20) = 1; // FFlagFutureIsBrightPhase3Vulkan",
+        "                *(volatile uint8_t*)(base + 0x6CC7F98) = 1; // FFlagDebugTerrainForceHQShader",
+        "                *(volatile uint8_t*)(base + 0x6CC7418) = 1; // FFlagRenderInitShadowmaps",
+        "                *(volatile int32_t*)(base + 0x6CC7970) = 2000; // FIntRenderShadowHugeRadius",
+        "                *(volatile int32_t*)(base + 0x6CC7430) = 0; // FIntBloomFrmCutoff",
+        "                *(volatile uint8_t*)(base + 0x6D8B270) = 1; // FFlagMetalRuntimeShaders",
+        "                *(volatile uint8_t*)(base + 0x6D8B478) = 1; // FFlagMTLRuntimeShaderCompilation",
+        "                if (log_file) {",
+        "                    fprintf(log_file, \"[SHADER_APPLY] Activated High-Quality Metal Lighting & PBR Surface Reflectance (package=%s wetFloor=%d)\\n\",",
+        "                            g_shader_package, g_shader_wet_floor);",
+        "                }",
+        "                runtime_note(\"[SHADER_APPLY] Activated High-Quality Metal Lighting & PBR Surface Reflectance (package=%s wetFloor=%d)\",",
+        "                             g_shader_package, g_shader_wet_floor);",
         "            }",
         "            purge_local_launch_configuration(\"cold_launch_applied\", true);",
         "        }",
@@ -2112,7 +2146,7 @@ def insert_load_dylib(macho_bytes: bytes, dylib_path: str) -> bytes:
     return bytes(data)
 
 
-def write_full_inspection_report(out_dir: Path, flags: dict, verified_entries: list, miss_offsets: list, ipa_name: str, out_ipa_name: str, embed_flags: bool = True):
+def write_full_inspection_report(out_dir: Path, flags: dict, verified_entries: list, miss_offsets: list, ipa_name: str, out_ipa_name: str, embed_flags: bool = False):
     out_dir.mkdir(parents=True, exist_ok=True)
     report_text = f"""=====================================================
 === Masterstrap Roblox iOS Build & Inspection Log ===
@@ -2147,7 +2181,7 @@ SUMMARY:
     runtime_log.write_text(report_text, encoding="utf-8")
 
 
-def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir: Path, embed_flags: bool = True):
+def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir: Path, embed_flags: bool = False):
     out_dir.mkdir(parents=True, exist_ok=True)
     
     # IPA builds must use a verified local dump, never a remote version's map.
@@ -2271,26 +2305,6 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         "Payload/Roblox.app/ClientSettings/MasterstrapShaderProfile.json",
                     }
 
-                    # ── Direct Asset Font Loading (Android parity) ──
-                    font_dir = ROOT / "resources" / "fonts"
-                    mc_ttf_data = b""
-                    mc_json_data = b""
-                    mc_ttf_path = font_dir / "PressStart2P-Regular.ttf"
-                    mc_json_path = font_dir / "families" / "PressStart2P.json"
-                    if mc_ttf_path.is_file():
-                        mc_ttf_data = mc_ttf_path.read_bytes()
-                    if mc_json_path.is_file():
-                        mc_json_data = mc_json_path.read_bytes()
-                    replaced_fonts_count = 0
-                    replaced_jsons_count = 0
-
-                    sky_dir = ROOT / "resources" / "sky"
-                    sky_map = {}
-                    if sky_dir.is_dir():
-                        for sf in sky_dir.glob("*.tex"):
-                            sky_map[sf.name] = sf.read_bytes()
-                    replaced_sky_count = 0
-
                     for item in zin.infolist():
                         name = item.filename
                         # Skip embedded settings and dylib from input IPA so they are cleanly re-embedded afresh without duplicate entries
@@ -2304,57 +2318,6 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                             continue
 
                         data = zin.read(name)
-
-                        # Direct Asset Skybox Replacement
-                        sf_name = Path(name).name
-                        if "textures/sky" in name and sf_name in sky_map:
-                            data = sky_map[sf_name]
-                            replaced_sky_count += 1
-
-                        # Direct Asset Font Replacement (Android parity)
-                        # We replace the underlying TTF/OTF binaries for UI fonts with Minecraft PressStart2P TTF,
-                        # while strictly PRESERVING all family JSON files so Roblox's UI font resolver never crashes.
-                        is_font_asset = ("content/fonts/" in name or "/fonts/" in name)
-                        if is_font_asset and mc_ttf_data and name.endswith((".ttf", ".otf")):
-                            # Preserve icon fonts, emoji, and non-latin language fallbacks
-                            is_exempt = any(k in name for k in ["Noto", "Emoji", "Twemoji", "BuilderIcons", "PressStart2P"])
-                            if not is_exempt:
-                                # Target standard UI text fonts (Builder, SourceSans, Arimo, Roboto, Inconsolata)
-                                is_target_ui_font = any(k in name for k in ["Builder", "SourceSans", "Arimo", "Roboto", "Inconsolata"])
-                                if is_target_ui_font:
-                                    data = mc_ttf_data
-                                    replaced_fonts_count += 1
-
-                        # Redirect cloud asset IDs (rbxassetid://) in UI font family JSONs to local Minecraft font files,
-                        # ensuring font variants like bold FPS counter render using local Minecraft font without downloading from cloud
-                        if is_font_asset and name.endswith(".json") and "families/" in name:
-                            is_exempt_family = any(k in name for k in ["Noto", "Emoji", "Twemoji", "BuilderIcons", "PressStart2P"])
-                            if not is_exempt_family:
-                                try:
-                                    family_obj = json.loads(data.decode("utf-8"))
-                                    if isinstance(family_obj, dict) and "faces" in family_obj:
-                                        # Find if there is an existing local rbxasset:// face in this family
-                                        local_asset = None
-                                        for face in family_obj.get("faces", []):
-                                            aid = face.get("assetId", "")
-                                            if isinstance(aid, str) and aid.startswith("rbxasset://fonts/") and aid.endswith((".ttf", ".otf")):
-                                                local_asset = aid
-                                                break
-                                        if not local_asset:
-                                            local_asset = "rbxasset://fonts/PressStart2P-Regular.ttf"
-
-                                        json_modified = False
-                                        for face in family_obj.get("faces", []):
-                                            aid = face.get("assetId", "")
-                                            if isinstance(aid, str) and aid.startswith("rbxassetid://"):
-                                                face["assetId"] = local_asset
-                                                json_modified = True
-
-                                        if json_modified:
-                                            data = json.dumps(family_obj, indent=2).encode("utf-8")
-                                            replaced_jsons_count += 1
-                                except Exception:
-                                    pass
 
                         if name == "Payload/Roblox.app/Roblox":
                             data = remove_load_dylib(data, ["libgloop", "delta.dylib"])
@@ -2380,11 +2343,11 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                                 data[clamp3_offset:clamp3_offset+4] = b'\xe8\x03\x17\x2a'
                                 print(f"[FPS_CEILING] Bypassed RobloxLib third 240 FPS clamp site 3 @ 0x{clamp3_offset:X} (csel -> mov w8, w23)")
 
-                            # 4. TaskScheduler fallback delta time patch (0.0166667s 60Hz -> 0.0001s 10,000 FPS ceiling)
+                            # 4. TaskScheduler fallback delta time patch (0.0s interval -> Infinity FPS)
                             fallback_dt_offset = 0x4A60E28
-                            if len(data) > fallback_dt_offset + 4 and data[fallback_dt_offset:fallback_dt_offset+4] in (b'\x89\x88\x88\x3c', b'\x89\x88\x08\x3c', b'\x17\xb7\xd1\x38'):
-                                data[fallback_dt_offset:fallback_dt_offset+4] = b'\x17\xb7\xd1\x38'
-                                print(f"[FPS_CEILING] Patched RobloxLib fallback delta time @ 0x{fallback_dt_offset:X} (dt -> 0.0001s, 10000 FPS ceiling)")
+                            if len(data) > fallback_dt_offset + 4 and data[fallback_dt_offset:fallback_dt_offset+4] in (b'\x89\x88\x88\x3c', b'\x89\x88\x08\x3c', b'\x17\xb7\xd1\x38', b'\x00\x00\x00\x00'):
+                                data[fallback_dt_offset:fallback_dt_offset+4] = b'\x00\x00\x00\x00'
+                                print(f"[FPS_CEILING] Patched RobloxLib fallback delta time @ 0x{fallback_dt_offset:X} (dt -> 0.0s, Infinity FPS)")
 
                             # 5. DisplayTiming schedule clamp bypass (csel w22, w21, w22, lo -> nop)
                             # Prevents Roblox from clamping TaskScheduler targetFps to screenMax (60Hz in Low Power Mode / 120Hz with ProMotion)
@@ -2451,47 +2414,9 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
 
 
                     # Embed dylib
+                    # Embed dylib
                     dylib_entry = "Payload/Roblox.app/Frameworks/libmasterstrap.dylib"
                     zout.writestr(dylib_entry, dylib_bytes)
-
-                    # Embed fonts directly into both app bundle and framework content/fonts/
-                    if mc_ttf_data:
-                        font_targets = [
-                            "Payload/Roblox.app/content/fonts/PressStart2P-Regular.ttf",
-                            "Payload/Roblox.app/Frameworks/RobloxLib.framework/content/fonts/PressStart2P-Regular.ttf",
-                        ]
-                        for ft in font_targets:
-                            if ft not in seen_entries:
-                                zout.writestr(ft, mc_ttf_data)
-                                seen_entries.add(ft)
-                    if mc_json_data:
-                        json_targets = [
-                            "Payload/Roblox.app/content/fonts/families/PressStart2P.json",
-                            "Payload/Roblox.app/Frameworks/RobloxLib.framework/content/fonts/families/PressStart2P.json",
-                        ]
-                        for jt in json_targets:
-                            if jt not in seen_entries:
-                                zout.writestr(jt, mc_json_data)
-                                seen_entries.add(jt)
-                    if replaced_fonts_count > 0 or replaced_jsons_count > 0:
-                        print(f"[ASSET_FONT] Replaced {replaced_fonts_count} UI font files with Minecraft + redirected {replaced_jsons_count} family JSONs to local assets")
-
-                    # ── Direct Asset Skybox Loading ──
-                    if sky_map:
-                        extra_sky_count = 0
-                        for sf_name, s_data in sky_map.items():
-                            for base_dir in [
-                                "Payload/Roblox.app/Frameworks/RobloxLib.framework/ios/textures/sky/",
-                                "Payload/Roblox.app/ios/textures/sky/",
-                            ]:
-                                entry_name = base_dir + sf_name
-                                if entry_name not in seen_entries:
-                                    zout.writestr(entry_name, s_data)
-                                    seen_entries.add(entry_name)
-                                    extra_sky_count += 1
-                        total_sky = replaced_sky_count + extra_sky_count
-                        if total_sky > 0:
-                            print(f"[ASSET_SKY] Injected/replaced {total_sky} custom skybox cubemap textures into framework assets")
 
                     # Embed baseline JSON only for normal builds. Isolation builds
                     # intentionally depend on the versioned Masterstrap bridge.
@@ -2557,9 +2482,10 @@ def main() -> int:
     ap.add_argument("--hpp", default="")
     ap.add_argument("--out-dir", default=str(DEFAULT_OUT_DIR))
     ap.add_argument(
-        "--no-embedded-flags",
+        "--embed-flags",
         action="store_true",
-        help="Build Roblox patched with zero baseline flags and no packaged settings JSON",
+        default=False,
+        help="Embed baseline flags and packaged settings JSON (default: False, direct launch is 100% vanilla)",
     )
     args = ap.parse_args()
 
@@ -2568,7 +2494,7 @@ def main() -> int:
         Path(args.settings_json) if args.settings_json else None,
         Path(args.hpp) if args.hpp else None,
         Path(args.out_dir),
-        embed_flags=not args.no_embedded_flags,
+        embed_flags=args.embed_flags,
     )
     return 0
 

@@ -35,6 +35,9 @@ typedef struct { long fps; MSFrameRateRange range; int has_range, managed; } MSL
 static void write_runtime_capability_receipt(void);
 static bool fps_runtime_requested(void);
 
+typedef unsigned char (*ProcessInfoLowPowerImp)(id, SEL);
+static ProcessInfoLowPowerImp g_original_is_low_power;
+
 static id ms_string(const char* text) {
     return ((id (*)(id, SEL, const char*))objc_msgSend)(objc_getClass("NSString"),
         sel_registerName("stringWithUTF8String:"), text);
@@ -49,7 +52,14 @@ static int ios_maximum_frames_per_second(void) {
     return rate >= 30 && rate <= 240 ? (int)rate : 60;
 }
 static int ms_low_power(void) {
+    if (fps_runtime_requested()) return 0; /* Always report Low Power Mode is OFF to uncap FPS */
     return ((unsigned char (*)(id, SEL))objc_msgSend)(ms_process_info(), sel_registerName("isLowPowerModeEnabled"));
+}
+static unsigned char process_info_is_low_power_hook(id self, SEL cmd) {
+    if (fps_runtime_requested()) {
+        return 0; /* Disguise Low Power Mode from Roblox engine */
+    }
+    return g_original_is_low_power ? g_original_is_low_power(self, cmd) : 0;
 }
 static int ms_thermal(void) {
     return (int)((long (*)(id, SEL))objc_msgSend)(ms_process_info(), sel_registerName("thermalState"));
@@ -73,12 +83,10 @@ static inline MSFrameRateRange sanitize_frame_rate_range(MSFrameRateRange range)
     return range;
 }
 static MSFrameRateRange ms_target_range(void) {
-    float target = (float)fps_runtime_target();
     int screen_max = ios_maximum_frames_per_second();
-    float link_max = (target >= 120.0f) ? 120.0f : (float)screen_max;
-    if (target < link_max) link_max = target;
-    /* Lock minimum to link_max so iOS ProMotion compositor does not down-throttle to 60Hz */
-    return sanitize_frame_rate_range((MSFrameRateRange){link_max, link_max, link_max});
+    float link_max = (float)screen_max;
+    if (link_max < 120.0f) link_max = 120.0f;
+    return (MSFrameRateRange){link_max, link_max, link_max};
 }
 static bool ms_get_link_request(id link, MSLinkRequest* request) {
     id value = objc_getAssociatedObject(link, &g_ms_link_request_key);
@@ -268,6 +276,14 @@ static bool install_display_link_policy(void) {
         Method screen_max_m = class_getInstanceMethod(screen_cls, sel_registerName("maximumFramesPerSecond"));
         if (screen_max_m && !g_original_screen_max_fps) {
             g_original_screen_max_fps = (ScreenMaxFpsImp)method_setImplementation(screen_max_m, (IMP)screen_max_fps_hook);
+        }
+    }
+
+    Class pi_cls = (Class)objc_getClass("NSProcessInfo");
+    if (pi_cls) {
+        Method lp_m = class_getInstanceMethod(pi_cls, sel_registerName("isLowPowerModeEnabled"));
+        if (lp_m && !g_original_is_low_power) {
+            g_original_is_low_power = (ProcessInfoLowPowerImp)method_setImplementation(lp_m, (IMP)process_info_is_low_power_hook);
         }
     }
 
