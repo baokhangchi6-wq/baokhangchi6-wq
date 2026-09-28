@@ -5760,6 +5760,8 @@ function saveAndLaunch() {
         display_shader_wet_floor: document.getElementById("sw-display-wet-floor").checked,
         display_stretch_screen: parseInt(document.getElementById("slider-stretch-screen").value) || 100,
         display_renderer_mode: document.getElementById("sel-renderer").value,
+        display_font_family: document.getElementById("display-font-family") ? document.getElementById("display-font-family").value : "Default",
+        display_font_size_step: (document.getElementById("display-font-size-step") ? parseInt(document.getElementById("display-font-size-step").value) : 0) || 0,
 
         targetFps: parseInt(document.getElementById("sel-target-fps").value) || 9999
     }, null, 2);
@@ -6318,6 +6320,8 @@ function syncConfigToNative() {
             display_shader_wet_floor: document.getElementById("sw-display-wet-floor")?.checked ?? false,
             display_stretch_screen: parseInt(document.getElementById("slider-stretch-screen")?.value) || 100,
             display_renderer_mode: document.getElementById("sel-renderer")?.value || "auto",
+            display_font_family: document.getElementById("display-font-family")?.value || "Default",
+            display_font_size_step: parseInt(document.getElementById("display-font-size-step")?.value) || 0,
             targetFps: parseInt(document.getElementById("sel-target-fps")?.value) || 9999
         }, null, 2);
 
