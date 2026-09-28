@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="vi" data-theme="dark">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
@@ -1497,15 +1497,7 @@ input:checked + .slider:before { transform: translateX(22px); }
                     <div class="setting-label" data-i18n="fps_target_title">Target frame rate (Global)</div>
                     <div class="setting-desc" data-i18n="fps_target_desc">Enter the FPS target Masterstrap should request on the next launch (30–9999). Actual FPS still depends on the game, GPU and display driver.</div>
                 </div>
-                <select id="sel-target-fps" onchange="updateFlagState()">
-                    <option value="30">30</option>
-                    <option value="60">60</option>
-                    <option value="90">90</option>
-                    <option value="120">120</option>
-                    <option value="144">144</option>
-                    <option value="240">240</option>
-                    <option value="9999" selected>9999</option>
-                </select>
+                <input type="number" id="sel-target-fps" min="30" max="9999" step="1" value="9999" placeholder="9999" oninput="updateFlagState()" onchange="updateFlagState()" style="background:var(--input-bg);border:1.5px solid var(--input-stroke);color:var(--input-text);padding:8px 12px;border-radius:8px;font-size:14px;font-weight:700;outline:none;width:100px;text-align:right;">
             </div>
 
             <div class="setting-row">
@@ -4753,7 +4745,7 @@ function applyGamePreset(preset) {
         return;
     }
 
-    const lang = localStorage.getItem("masterstrap_lang") || "vi";
+    const lang = localStorage.getItem("masterstrap_lang") || "en";
     const isVi = (lang === "vi");
 
     const thumbB64 = PRESET_IMAGES[preset.img] || "";
@@ -4841,7 +4833,7 @@ function applyGamePresetDirectImmediate(preset) {
     const selectedEl = document.getElementById("preset-row-" + preset.id);
     if (selectedEl) selectedEl.classList.add("active");
 
-    const lang = localStorage.getItem("masterstrap_lang") || "vi";
+    const lang = localStorage.getItem("masterstrap_lang") || "en";
     const isVi = (lang === "vi");
     showToast(isVi ? ("Đã tăng tốc " + preset.title + " (" + flagCount + " FastFlags đã áp dụng)!") : ("Boosted " + preset.title + " (" + flagCount + " FastFlags applied to DataGrid)!"));
 }
@@ -4865,7 +4857,7 @@ function renderFlagTable() {
     const container = document.getElementById("flag-table-container");
     container.innerHTML = "";
 
-    const lang = localStorage.getItem("masterstrap_lang") || "vi";
+    const lang = localStorage.getItem("masterstrap_lang") || "en";
     const dict = TRANSLATIONS[lang] || TRANSLATIONS["vi"] || TRANSLATIONS["en"];
 
     const emptyText = dict["empty_flag_msg"] || "No FastFlags active. Click + Add or Boost a Preset!";
@@ -4899,7 +4891,7 @@ function updateFlagValue(key, newVal) {
 function deleteFlag(k) {
     delete activeFlags[k];
     renderFlagTable();
-    const lang = localStorage.getItem("masterstrap_lang") || "vi";
+    const lang = localStorage.getItem("masterstrap_lang") || "en";
     const dict = TRANSLATIONS[lang] || TRANSLATIONS["vi"] || TRANSLATIONS["en"];
     showToast((dict["deleted_flag_msg"] || "Deleted ") + k);
 }
@@ -5288,7 +5280,7 @@ function updateLicenseUI(isActive, plan, expiry) {
             badge.style.background = "rgba(0,165,255,0.15)";
             badge.style.color = "var(--brand-blue)";
             badge.setAttribute("data-i18n", "plan_free");
-            const lang = localStorage.getItem("masterstrap_lang") || "vi";
+            const lang = localStorage.getItem("masterstrap_lang") || "en";
             const dict = (typeof TRANSLATIONS !== "undefined" && TRANSLATIONS[lang]) || {};
             const fallback = (typeof TRANSLATIONS !== "undefined" && TRANSLATIONS["en"]) || {};
             badge.innerText = dict["plan_free"] || fallback["plan_free"] || "Free Plan";
@@ -5320,7 +5312,7 @@ function initAppSettings() {
     const chanSel = document.getElementById("channel-select");
     if (chanSel) chanSel.value = savedChannel;
 
-    const savedLang = localStorage.getItem("masterstrap_lang") || "vi";
+    const savedLang = localStorage.getItem("masterstrap_lang") || "en";
     const langSel = document.getElementById("lang-select");
     if (langSel) langSel.value = savedLang;
     applyLanguage(savedLang);
@@ -6555,13 +6547,13 @@ window.SettingsPersistence = (() => {
 document.addEventListener("change", (e) => {
     const target = e.target;
     if (!target || !target.id) return;
-    if (target.type === "checkbox") {
+    if (target.id === "sel-target-fps") {
+        SettingsPersistence.saveFps(target.value);
+    } else if (target.type === "checkbox") {
         SettingsPersistence.saveToggle(target.id, target.checked);
     } else if (target.tagName === "SELECT") {
         SettingsPersistence.saveDropdown(target.id, target.value);
-        if (target.id === "sel-target-fps") {
-            SettingsPersistence.saveFps(target.value);
-        } else if (target.id === "sel-renderer") {
+        if (target.id === "sel-renderer") {
             localStorage.setItem("masterstrap_renderer_mode", target.value);
         }
     }
@@ -6572,6 +6564,8 @@ document.addEventListener("input", (e) => {
     if (!target || !target.id) return;
     if (target.type === "range") {
         syncConfigToNative();
+    } else if (target.id === "sel-target-fps") {
+        SettingsPersistence.saveFps(target.value);
     }
 });
 

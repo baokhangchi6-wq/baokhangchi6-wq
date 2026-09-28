@@ -1233,6 +1233,19 @@ def configure_ios_runtime_html(html: str) -> str:
     )
     html = html.replace('id="sw-gm-master" onchange=', 'id="sw-gm-master" checked onchange=', 1)
     html = html.replace('id="sw-fps-boost" checked', 'id="sw-fps-boost"', 1)
+    fps_combobox_old = '''                <select id="sel-target-fps" onchange="updateFlagState()">
+                    <option value="30">30</option>
+                    <option value="60">60</option>
+                    <option value="90">90</option>
+                    <option value="120">120</option>
+                    <option value="144">144</option>
+                    <option value="240">240</option>
+                    <option value="9999" selected>9999</option>
+                </select>'''
+    fps_textbox_new = '''                <input type="number" id="sel-target-fps" min="30" max="9999" step="1" value="9999" placeholder="9999" oninput="updateFlagState()" onchange="updateFlagState()" style="background:var(--input-bg);border:1.5px solid var(--input-stroke);color:var(--input-text);padding:8px 12px;border-radius:8px;font-size:14px;font-weight:700;outline:none;width:100px;text-align:right;">'''
+    replace_required(fps_combobox_old, fps_textbox_new, "fps target textbox")
+    html = html.replace('localStorage.getItem("masterstrap_lang") || "vi"', 'localStorage.getItem("masterstrap_lang") || "en"')
+    html = html.replace('<html lang="vi"', '<html lang="en"')
     replace_required(
         '''    if (document.getElementById("sw-fps-boost").checked) {
         activeFlags["DFIntDebugFRMQualityLevelOverride"] = "1";
@@ -1275,7 +1288,9 @@ def configure_ios_runtime_html(html: str) -> str:
             "desc_font_size": "Phóng to hoặc thu nhỏ cỡ chữ trong game cho vừa mắt, giúp dễ đọc hơn trên màn hình điện thoại.",
             "warning_shader_conflicts": "Cài đặt Shader & Phản chiếu có thể xung đột với một số cấu hình đồ họa FastFlag.",
             "ffs_no_vfx_title": "NO VFX",
-            "ffs_no_vfx_desc": "Tắt các hiệu ứng chói sáng và làm mờ phức tạp giúp giảm lag, tăng độ mượt (FPS) tối đa cho máy yếu. Lưu ý: sẽ làm mất hiệu ứng ánh sáng nếu đang bật Gói Shader."
+            "ffs_no_vfx_desc": "Tắt các hiệu ứng chói sáng và làm mờ phức tạp giúp giảm lag, tăng độ mượt (FPS) tối đa cho máy yếu. Lưu ý: sẽ làm mất hiệu ứng ánh sáng nếu đang bật Gói Shader.",
+            "fps_target_title": "FPS mục tiêu (Global)",
+            "fps_target_desc": "Nhập mục tiêu FPS tùy chọn cho lần khởi chạy tiếp theo (30–9999). Tốc độ khung hình thực tế phụ thuộc vào game, GPU và màn hình."
         },
         "en": {
             "title_font_group": "In-Game Font & Size",
@@ -1285,7 +1300,9 @@ def configure_ios_runtime_html(html: str) -> str:
             "desc_font_size": "Scale text size up or down to make reading easier on your screen.",
             "warning_shader_conflicts": "Shader & Reflection settings might conflict with some FastFlag graphics configs.",
             "ffs_no_vfx_title": "NO VFX",
-            "ffs_no_vfx_desc": "Turns off glowing, blur, and heavy visual effects to boost FPS and reduce lag on weaker devices. Note: may disable Shader Package lighting."
+            "ffs_no_vfx_desc": "Turns off glowing, blur, and heavy visual effects to boost FPS and reduce lag on weaker devices. Note: may disable Shader Package lighting.",
+            "fps_target_title": "Target frame rate (Global)",
+            "fps_target_desc": "Enter custom target FPS for next launch (30–9999). Actual frame rate depends on game, GPU and display."
         },
         "es": {
             "title_font_group": "Fuente y tamaño en el juego",
@@ -1295,7 +1312,9 @@ def configure_ios_runtime_html(html: str) -> str:
             "desc_font_size": "Ajusta el tamaño del texto para leer más cómodamente en la pantalla del móvil.",
             "warning_shader_conflicts": "La configuración de sombreado y reflejos puede entrar en conflicto con algunas configuraciones de FastFlag.",
             "ffs_no_vfx_title": "NO VFX (Sin Efectos)",
-            "ffs_no_vfx_desc": "Desactiva brillos intensos, desenfoques y efectos pesados para reducir el lag y aumentar los FPS en dispositivos lentos. Nota: puede desactivar la iluminación del Shader Package."
+            "ffs_no_vfx_desc": "Desactiva brillos intensos, desenfoques y efectos pesados para reducir el lag y aumentar los FPS en dispositivos lentos. Nota: puede desactivar la iluminación del Shader Package.",
+            "fps_target_title": "Tasa de cuadros objetivo (Global)",
+            "fps_target_desc": "Introduce el objetivo de FPS personalizado para el próximo inicio (30–9999). Los FPS reales dependen del juego y pantalla."
         },
         "pt": {
             "title_font_group": "Fonte e Tamanho no Jogo",
@@ -1305,7 +1324,9 @@ def configure_ios_runtime_html(html: str) -> str:
             "desc_font_size": "Aumente ou diminua o texto para facilitar a leitura na tela do celular.",
             "warning_shader_conflicts": "As configurações de Shaders e Reflexos podem entrar em conflito com algumas configurações do FastFlag.",
             "ffs_no_vfx_title": "NO VFX (Sem Efeitos)",
-            "ffs_no_vfx_desc": "Desativa brilhos excessivos, desfoques e efeitos visuais pesados para reduzir o lag e aumentar o FPS em aparelhos fracos. Nota: pode desativar a iluminação do Shader Package."
+            "ffs_no_vfx_desc": "Desativa brilhos excessivos, desfoques e efeitos visuais pesados para reduzir o lag e aumentar o FPS em aparelhos fracos. Nota: pode desativar a iluminação do Shader Package.",
+            "fps_target_title": "Taxa de quadros objetivo (Global)",
+            "fps_target_desc": "Insira o limite de FPS personalizado para a próxima inicialização (30–9999). O FPS real depende do jogo, GPU e tela."
         },
         "ru": {
             "title_font_group": "Шрифт и размер текста в игре",
@@ -1315,7 +1336,9 @@ def configure_ios_runtime_html(html: str) -> str:
             "desc_font_size": "Увеличьте или уменьшите размер текста для комфортного чтения на экране.",
             "warning_shader_conflicts": "Настройки шейдеров и отражений могут конфликтовать с некоторыми конфигурациями графики FastFlag.",
             "ffs_no_vfx_title": "NO VFX (Без лишних эффектов)",
-            "ffs_no_vfx_desc": "Отключает яркое свечение, размытие и тяжелые спецэффекты для устранения лагов и максимального повышения FPS на слабых устройствах. Примечание: может отключить освещение Shader Package."
+            "ffs_no_vfx_desc": "Отключает яркое свечение, размытие и тяжелые спецэффекты для устранения лагов и максимального повышения FPS на слабых устройствах. Примечание: может отключить освещение Shader Package.",
+            "fps_target_title": "Целевая частота кадров (Global)",
+            "fps_target_desc": "Введите желаемый целевой FPS для следующего запуска (30–9999). Фактический FPS зависит от игры и дисплея."
         },
         "ja": {
             "title_font_group": "ゲーム内フォント＆サイズ",
@@ -1325,7 +1348,9 @@ def configure_ios_runtime_html(html: str) -> str:
             "desc_font_size": "画面に合わせて文字サイズを拡大・縮小し、読みやすく調整します。",
             "warning_shader_conflicts": "シェーダーと反射の設定は、一部の FastFlag グラフィックス構成と競合する可能性があります。",
             "ffs_no_vfx_title": "NO VFX (視覚効果オフ)",
-            "ffs_no_vfx_desc": "眩しい光やぼかし、負荷の高い視覚効果をオフにしてラグを減らし、低スペック端末のFPSを最大化します。注意: Shader Packageの照明効果が無効になる場合があります。"
+            "ffs_no_vfx_desc": "眩しい光やぼかし、負荷の高い視覚効果をオフにしてラグを減らし、低スペック端末のFPSを最大化します。注意: Shader Packageの照明効果が無効になる場合があります。",
+            "fps_target_title": "目標フレームレート (Global)",
+            "fps_target_desc": "次回起動時に要求するカスタム FPS を入力します (30–9999)。実際のフレームレートはゲームと画面性能に依存します。"
         },
         "ko": {
             "title_font_group": "인게임 폰트 및 크기",
@@ -1335,7 +1360,9 @@ def configure_ios_runtime_html(html: str) -> str:
             "desc_font_size": "화면에서 읽기 편하도록 텍스트 크기를 확대하거나 축소합니다.",
             "warning_shader_conflicts": "셰이더 및 반사 설정은 일부 FastFlag 그래픽 설정과 충돌할 수 있습니다.",
             "ffs_no_vfx_title": "NO VFX (불필요한 효과 끄기)",
-            "ffs_no_vfx_desc": "눈부심, 블러 및 무거운 시각 효과를 꺼서 렉을 줄이고 저사양 기기의 프레임(FPS)을 극대화합니다. 참고: Shader Package 조명 효과가 사라질 수 있습니다."
+            "ffs_no_vfx_desc": "눈부심, 블러 및 무거운 시각 효과를 꺼서 렉을 줄이고 저사양 기기의 프레임(FPS)을 극대화합니다. 참고: Shader Package 조명 효과가 사라질 수 있습니다.",
+            "fps_target_title": "목표 프레임 속도 (Global)",
+            "fps_target_desc": "다음 실행 시 적용할 맞춤 FPS를 입력하세요 (30–9999). 실제 FPS는 게임, GPU 및 화면에 따라 달라집니다."
         },
         "zh": {
             "title_font_group": "游戏内字体与大小",
@@ -1345,7 +1372,9 @@ def configure_ios_runtime_html(html: str) -> str:
             "desc_font_size": "放大或缩小游戏内文字大小，让手机屏幕阅读更舒适。",
             "warning_shader_conflicts": "光影着色器与倒影设置可能与部分 FastFlag 图形配置发生冲突。",
             "ffs_no_vfx_title": "NO VFX (关闭多余特效)",
-            "ffs_no_vfx_desc": "关闭刺眼光晕、模糊及重度视觉特效，大幅降低卡顿并提升低端设备帧率 (FPS)。注意：开启后将自动禁用 Shader Package 光影效果。"
+            "ffs_no_vfx_desc": "关闭刺眼光晕、模糊及重度视觉特效，大幅降低卡顿并提升低端设备帧率 (FPS)。注意：开启后将自动禁用 Shader Package 光影效果。",
+            "fps_target_title": "目标帧率 (Global)",
+            "fps_target_desc": "输入下次启动时请求的自定义目标 FPS (30–9999)。实际帧率取决于游戏、GPU 和屏幕。"
         }
     }
     for lang, kvs in translations.items():
@@ -1834,13 +1863,13 @@ window.SettingsPersistence = (() => {
 document.addEventListener("change", (e) => {
     const target = e.target;
     if (!target || !target.id) return;
-    if (target.type === "checkbox") {
+    if (target.id === "sel-target-fps") {
+        SettingsPersistence.saveFps(target.value);
+    } else if (target.type === "checkbox") {
         SettingsPersistence.saveToggle(target.id, target.checked);
     } else if (target.tagName === "SELECT") {
         SettingsPersistence.saveDropdown(target.id, target.value);
-        if (target.id === "sel-target-fps") {
-            SettingsPersistence.saveFps(target.value);
-        } else if (target.id === "sel-renderer") {
+        if (target.id === "sel-renderer") {
             localStorage.setItem("masterstrap_renderer_mode", target.value);
         }
     }
@@ -1851,6 +1880,8 @@ document.addEventListener("input", (e) => {
     if (!target || !target.id) return;
     if (target.type === "range") {
         syncConfigToNative();
+    } else if (target.id === "sel-target-fps") {
+        SettingsPersistence.saveFps(target.value);
     }
 });
 
