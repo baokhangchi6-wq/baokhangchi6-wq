@@ -324,6 +324,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "extern int fputs(const char *str, void *stream);",
         "extern int open(const char *path, int oflag, ...);",
         "extern int access(const char *path, int amode);",
+        "extern int mkdir(const char *path, unsigned short mode);",
         "typedef void* id;",
         "typedef void* SEL;",
         "typedef void* Class;",
