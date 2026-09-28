@@ -55,6 +55,7 @@ def download_asset(asset_url, out_path):
         "curl.exe",
         "-f",
         "-L",
+        "-C", "-",
         "--tcp-nodelay",
         *proxy_args,
         "-H", f"Authorization: token {token}",

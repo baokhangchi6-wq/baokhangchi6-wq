@@ -1614,7 +1614,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        *(volatile uint8_t*)(base + 0x697eaf0) = 0; // FFlagGameBasicSettingsFramerateCap",
         "        *(volatile uint8_t*)(base + 0x6a29260) = 0; // FFlagApplicationFrameRate",
         "        *(volatile uint8_t*)(base + 0x6a29248) = 0; // FFlagApplicationFrameRatePolicy",
-        "        *(volatile uint8_t*)(base + 0x6a20118) = 1; // FFlagMetalVsyncPreferMaximumRefreshRate",
+        "        *(volatile uint8_t*)(base + 0x6a20118) = 0; // FFlagMetalVsyncPreferMaximumRefreshRate",
         "        *(volatile uint8_t*)(base + 0x6a202e8) = 0; // FFlagMetalDisplayTiming",
         "        *(volatile uint8_t*)(base + 0x6a20300) = 0; // FFlagMetalDisplayTimingAdjustMinFPS",
         "        *(volatile int32_t*)(base + 0x6a20318) = 0; // FIntMetalDisplayTimingMinFPS",
@@ -1792,7 +1792,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "                *(volatile uint8_t*)(base + 0x697eaf0) = 0; // FFlagGameBasicSettingsFramerateCap",
         "                *(volatile uint8_t*)(base + 0x6a29260) = 0; // FFlagApplicationFrameRate",
         "                *(volatile uint8_t*)(base + 0x6a29248) = 0; // FFlagApplicationFrameRatePolicy",
-        "                *(volatile uint8_t*)(base + 0x6a20118) = 1; // FFlagMetalVsyncPreferMaximumRefreshRate",
+        "                *(volatile uint8_t*)(base + 0x6a20118) = 0; // FFlagMetalVsyncPreferMaximumRefreshRate",
         "                *(volatile uint8_t*)(base + 0x6a202e8) = 0; // FFlagMetalDisplayTiming",
         "                *(volatile uint8_t*)(base + 0x6a20300) = 0; // FFlagMetalDisplayTimingAdjustMinFPS",
         "                *(volatile int32_t*)(base + 0x6a20318) = 0; // FIntMetalDisplayTimingMinFPS",
@@ -2386,9 +2386,17 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                                 data[fallback_dt_offset:fallback_dt_offset+4] = b'\x17\xb7\xd1\x38'
                                 print(f"[FPS_CEILING] Patched RobloxLib fallback delta time @ 0x{fallback_dt_offset:X} (dt -> 0.0001s, 10000 FPS ceiling)")
 
-                            # 5. Stretch Resolution (Architecture v73 Parity with 2D GUI M33 Guard):
+                            # 5. DisplayTiming schedule clamp bypass (csel w22, w21, w22, lo -> nop)
+                            # Prevents Roblox from clamping TaskScheduler targetFps to screenMax (60Hz in Low Power Mode / 120Hz with ProMotion)
+                            dt_clamp_offset = 0x3F64AE4
+                            if len(data) > dt_clamp_offset + 4 and data[dt_clamp_offset:dt_clamp_offset+4] in (b'\xb6\x32\x96\x1a', b'\x1f\x20\x03\xd5'):
+                                data[dt_clamp_offset:dt_clamp_offset+4] = b'\x1f\x20\x03\xd5'
+                                print(f"[FPS_CEILING] Bypassed DisplayTiming schedule clamp @ 0x{dt_clamp_offset:X} (csel -> nop)")
+
+                            # 6. Stretch Resolution (Architecture v73 Parity with 2D GUI M33 Guard):
                             # Hook View-Projection matrix write at 0xB75610 (inside 0xb75500) -> Code Cave at 0x3F80
-                            # Checks M[3][3] at offset 0x3c: 0.0f = 3D perspective world camera (stretch Row 0),
+                            # Checks raw projection M[3][3] at offset 0x7c of camera object (x20):
+                            # 0.0f = 3D perspective world camera (stretch Row 0),
                             # != 0.0f (1.0f) = 2D orthographic GUI/HUD/homepage/joystick (untouched/pristine).
                             stretch_cave_offset = 0x3F80
                             stretch_hook_offset = 0xB75610
@@ -2401,10 +2409,10 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                                 0x1E2E1002,  # 0x3F90: fmov s2, #1.00000000
                                 0x1E222020,  # 0x3F94: fcmp s1, s2
                                 0x540000E0,  # 0x3F98: b.eq #0x3fb4
-                                0xBD403E62,  # 0x3F9C: ldr s2, [x19, #0x3c]
+                                0xBD407E82,  # 0x3F9C: ldr s2, [x20, #0x7c]
                                 0x1E202048,  # 0x3FA0: fcmp s2, #0.0
                                 0x54000081,  # 0x3FA4: b.ne #0x3fb4
-                                0x3DC00260,  # 0x3FA8: ldr q0, [x19]
+                                0x3DC02280,  # 0x3FA8: ldr q0, [x20, #0x80]
                                 0x4F819000,  # 0x3FAC: fmul v0.4s, v0.4s, v1.s[0]
                                 0x3D800260,  # 0x3FB0: str q0, [x19]
                                 0xA94A7BFD,  # 0x3FB4: ldp x29, x30, [sp, #0xa0]
@@ -2413,7 +2421,8 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                             stretch_hook_bytes = bytes.fromhex("5c3ad217")  # b #0x3f80
 
                             if len(data) > stretch_hook_offset + 4 and data[stretch_hook_offset:stretch_hook_offset+4] in (b'\xfd\x7b\x4a\xa9', stretch_hook_bytes):
-                                if data[stretch_cave_offset:stretch_cave_offset + len(stretch_cave_bytes)] == b'\x00' * len(stretch_cave_bytes) or data[stretch_cave_offset:stretch_cave_offset + len(stretch_cave_bytes)] == stretch_cave_bytes:
+                                if (data[stretch_cave_offset:stretch_cave_offset + len(stretch_cave_bytes)] == b'\x00' * len(stretch_cave_bytes)
+                                        or data[stretch_cave_offset:stretch_cave_offset + 8] == b'\x28\x4e\x03\xf0\x01\x31\x41\xbd'):
                                     data[stretch_cave_offset:stretch_cave_offset + len(stretch_cave_bytes)] = stretch_cave_bytes
                                     data[stretch_hook_offset:stretch_hook_offset+4] = stretch_hook_bytes
                                     print(f"[STRETCH_PROJECTION] Installed ARM64 3D camera View-Projection stretch hook @ 0x{stretch_hook_offset:X} -> cave @ 0x{stretch_cave_offset:X} (Architecture v73 Parity with 2D GUI M33 Guard)")

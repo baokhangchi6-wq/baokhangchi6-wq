@@ -44,6 +44,7 @@ static id ms_process_info(void) {
 static int ios_maximum_frames_per_second(void) {
     id screen = ((id (*)(id, SEL))objc_msgSend)(objc_getClass("UIScreen"), sel_registerName("mainScreen"));
     long rate = screen ? ((long (*)(id, SEL))objc_msgSend)(screen, sel_registerName("maximumFramesPerSecond")) : 60;
+    if (fps_runtime_requested() && rate < 120) rate = 120;
     return rate >= 30 && rate <= 240 ? (int)rate : 60;
 }
 static int ms_low_power(void) {
@@ -244,11 +245,31 @@ static void ms_install_observer(void) {
             sel_registerName("addObserver:selector:name:object:"), g_ms_observer,
             sel_registerName("environmentChanged:"), ms_string(names[i]), NULL);
 }
+typedef long (*ScreenMaxFpsImp)(id, SEL);
+static ScreenMaxFpsImp g_original_screen_max_fps;
+
+static long screen_max_fps_hook(id self, SEL cmd) {
+    long rate = g_original_screen_max_fps ? g_original_screen_max_fps(self, cmd) : 60;
+    if (fps_runtime_requested() && rate < 120) {
+        return 120;
+    }
+    return rate;
+}
+
 static bool install_display_link_policy(void);
 static void ms_install_on_main(void* ignored) { (void)ignored; install_display_link_policy(); }
 static bool install_display_link_policy(void) {
     if (!pthread_main_np()) { dispatch_async_f(&_dispatch_main_q, NULL, ms_install_on_main); return false; }
     if (g_display_link_policy_installed) return true;
+
+    Class screen_cls = (Class)objc_getClass("UIScreen");
+    if (screen_cls) {
+        Method screen_max_m = class_getInstanceMethod(screen_cls, sel_registerName("maximumFramesPerSecond"));
+        if (screen_max_m && !g_original_screen_max_fps) {
+            g_original_screen_max_fps = (ScreenMaxFpsImp)method_setImplementation(screen_max_m, (IMP)screen_max_fps_hook);
+        }
+    }
+
     Class cls = (Class)objc_getClass("CADisplayLink");
     if (!cls) { runtime_note("[CAPABILITY][FPS] status=BLOCKED reason=class_missing"); return false; }
     Method setter = class_getInstanceMethod(cls, sel_registerName("setPreferredFramesPerSecond:"));
