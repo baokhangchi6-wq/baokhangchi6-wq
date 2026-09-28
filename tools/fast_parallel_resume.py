@@ -86,7 +86,7 @@ def main():
         ranges.append((i, start, end))
         start = end + 1
 
-    temp_dir = os.path.join(os.path.dirname(TARGET_FILE), "_tmp_chunks_113")
+    temp_dir = os.path.join(os.path.dirname(TARGET_FILE), "_tmp_chunks_114")
     os.makedirs(temp_dir, exist_ok=True)
 
     print(f"Starting {NUM_CHUNKS} parallel download workers over Cloudflare WARP proxy...")
@@ -97,23 +97,22 @@ def main():
         expected_len = r_end - r_start + 1
 
         if os.path.exists(part_file) and os.path.getsize(part_file) == expected_len:
-            print(f"  [Chunk {idx+1}/{NUM_CHUNKS}] Already completed ({expected_len:,} bytes)")
+            print(f"  [Chunk {idx+1}/{NUM_CHUNKS}] Already completed ({expected_len:,} bytes)", flush=True)
             return idx, part_file, True
 
         for attempt in range(1, 5):
             cmd = [
                 "curl.exe", "-s", "-f", "-L",
-                "-x", "socks5h://127.0.0.1:40000",
                 "-r", f"{r_start}-{r_end}",
                 s3_url,
                 "-o", part_file
             ]
             res = subprocess.run(cmd)
             if res.returncode == 0 and os.path.exists(part_file) and os.path.getsize(part_file) == expected_len:
-                print(f"  [Chunk {idx+1}/{NUM_CHUNKS}] Done ({expected_len:,} bytes, range {r_start}-{r_end})")
+                print(f"  [Chunk {idx+1}/{NUM_CHUNKS}] Done ({expected_len:,} bytes, range {r_start}-{r_end})", flush=True)
                 return idx, part_file, True
             else:
-                print(f"  [Chunk {idx+1}/{NUM_CHUNKS}] Attempt {attempt} failed, retrying...")
+                print(f"  [Chunk {idx+1}/{NUM_CHUNKS}] Attempt {attempt} failed, retrying...", flush=True)
                 time.sleep(1)
         return idx, part_file, False
 
@@ -124,12 +123,12 @@ def main():
             res = future.result()
             results.append(res)
             if not res[2]:
-                print(f"[ERROR] Failed to download chunk {res[0]}")
+                print(f"[ERROR] Failed to download chunk {res[0]}", flush=True)
                 sys.exit(1)
 
     t1 = time.time()
     elapsed = max(0.01, t1 - t0)
-    print(f"\nAll {NUM_CHUNKS} chunks downloaded in {elapsed:.2f}s ({remaining_bytes/(1024*1024)/elapsed:.2f} MB/s)!")
+    print(f"\nAll {NUM_CHUNKS} chunks downloaded in {elapsed:.2f}s ({remaining_bytes/(1024*1024)/elapsed:.2f} MB/s)!", flush=True)
 
     # Assemble chunks
     print("Appending chunks to target IPA...")
