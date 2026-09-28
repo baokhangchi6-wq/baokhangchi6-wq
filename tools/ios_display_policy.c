@@ -273,7 +273,23 @@ static bool install_display_link_policy(void) {
 }
 typedef void (*SetDisplaySyncImp)(id, SEL, bool);
 static SetDisplaySyncImp g_original_set_display_sync;
+
+typedef id (*NextDrawableImp)(id, SEL);
+static NextDrawableImp g_original_next_drawable;
+
+#if defined(__arm64__) || defined(__aarch64__)
+typedef struct { double width; double height; } MSSize;
+#else
+typedef struct { float width; float height; } MSSize;
+#endif
+typedef void (*SetDrawableSizeImp)(id, SEL, MSSize);
+static SetDrawableSizeImp g_original_set_drawable_size;
+
+typedef id (*MetalLayerInitImp)(id, SEL);
+static MetalLayerInitImp g_original_metal_layer_init;
+
 static int g_metal_layer_stretch_installed;
+static char g_ms_layer_uncapped_key;
 
 static void ms_apply_metal_layer_policies(id layer) {
     if (!layer) return;
@@ -284,7 +300,20 @@ static void ms_apply_metal_layer_policies(id layer) {
         if (((bool (*)(id, SEL, SEL))objc_msgSend)(layer, sel_registerName("respondsToSelector:"), sync_sel)) {
             ((void (*)(id, SEL, bool))objc_msgSend)(layer, sync_sel, false);
         }
+        SEL max_sel = sel_registerName("setMaximumDrawableCount:");
+        if (((bool (*)(id, SEL, SEL))objc_msgSend)(layer, sel_registerName("respondsToSelector:"), max_sel)) {
+            ((void (*)(id, SEL, unsigned long))objc_msgSend)(layer, max_sel, 3);
+        }
     }
+}
+
+static inline void ms_ensure_layer_vsync_uncapped(id layer) {
+    if (!layer || !fps_runtime_requested()) return;
+    if (objc_getAssociatedObject(layer, &g_ms_layer_uncapped_key)) return;
+
+    ms_apply_metal_layer_policies(layer);
+    objc_setAssociatedObject(layer, &g_ms_layer_uncapped_key, (id)1, 0); /* OBJC_ASSOCIATION_ASSIGN */
+    runtime_note("[METAL][VSYNC] Uncapped CAMetalLayer %p: displaySyncEnabled=NO maxDrawables=3", layer);
 }
 
 static void metal_layer_set_display_sync_hook(id self, SEL cmd, bool enabled) {
@@ -296,16 +325,51 @@ static void metal_layer_set_display_sync_hook(id self, SEL cmd, bool enabled) {
     }
 }
 
+static id metal_layer_next_drawable_hook(id self, SEL cmd) {
+    ms_ensure_layer_vsync_uncapped(self);
+    return g_original_next_drawable ? g_original_next_drawable(self, cmd) : NULL;
+}
+
+static void metal_layer_set_drawable_size_hook(id self, SEL cmd, MSSize size) {
+    ms_ensure_layer_vsync_uncapped(self);
+    if (g_original_set_drawable_size) {
+        g_original_set_drawable_size(self, cmd, size);
+    }
+}
+
+static id metal_layer_init_hook(id self, SEL cmd) {
+    id res = g_original_metal_layer_init ? g_original_metal_layer_init(self, cmd) : self;
+    ms_ensure_layer_vsync_uncapped(res);
+    return res;
+}
+
 static bool install_metal_layer_stretch_policy(void) {
     if (g_metal_layer_stretch_installed) return true;
     Class cls = (Class)objc_getClass("CAMetalLayer");
     if (!cls) return false;
+
     Method sync_m = class_getInstanceMethod(cls, sel_registerName("setDisplaySyncEnabled:"));
     if (sync_m && !g_original_set_display_sync) {
         g_original_set_display_sync = (SetDisplaySyncImp)method_setImplementation(sync_m, (IMP)metal_layer_set_display_sync_hook);
     }
+
+    Method next_m = class_getInstanceMethod(cls, sel_registerName("nextDrawable"));
+    if (next_m && !g_original_next_drawable) {
+        g_original_next_drawable = (NextDrawableImp)method_setImplementation(next_m, (IMP)metal_layer_next_drawable_hook);
+    }
+
+    Method size_m = class_getInstanceMethod(cls, sel_registerName("setDrawableSize:"));
+    if (size_m && !g_original_set_drawable_size) {
+        g_original_set_drawable_size = (SetDrawableSizeImp)method_setImplementation(size_m, (IMP)metal_layer_set_drawable_size_hook);
+    }
+
+    Method init_m = class_getInstanceMethod(cls, sel_registerName("init"));
+    if (init_m && !g_original_metal_layer_init) {
+        g_original_metal_layer_init = (MetalLayerInitImp)method_setImplementation(init_m, (IMP)metal_layer_init_hook);
+    }
+
     g_metal_layer_stretch_installed = 1;
-    runtime_note("[CAPABILITY][STRETCH] backend=%s status=READY hookInstalled=1 surface_geometry=passthrough", kStretchRuntimeBackend);
+    runtime_note("[CAPABILITY][STRETCH] backend=%s status=READY hookInstalled=1 metal_vsync_uncap=ACTIVE surface_geometry=passthrough", kStretchRuntimeBackend);
     return true;
 }
 

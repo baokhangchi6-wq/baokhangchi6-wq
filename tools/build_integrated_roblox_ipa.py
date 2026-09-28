@@ -736,7 +736,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static bool g_game_mode_enabled = false;",
         "static bool g_refresh_requested = false;",
         "static bool g_keep_display_active = false;",
-        "static int g_target_fps = 60;",
+        "static int g_target_fps = 10000;",
         "static int g_stretch_percent = 100;",
         "static char g_renderer_mode[32] = \"Automatic\";",
         "static char g_shader_package[64] = \"none\";",
@@ -915,7 +915,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static void load_and_apply_runtime_profiles(void* log_file) {",
         "    // Every new request replaces the previous profile, including missing fields.",
         "    g_profile_loaded = g_game_mode_enabled = g_refresh_requested = g_keep_display_active = false;",
-        "    g_target_fps = 60; g_stretch_percent = 100; g_shader_wet_floor = false; g_font_size_step = 0;",
+        "    g_target_fps = 10000; g_stretch_percent = 100; g_shader_wet_floor = false; g_font_size_step = 0;",
         "    snprintf(g_renderer_mode, sizeof(g_renderer_mode), \"Automatic\");",
         "    snprintf(g_shader_package, sizeof(g_shader_package), \"none\");",
         "    snprintf(g_font_family, sizeof(g_font_family), \"Default\");",
@@ -926,7 +926,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        g_game_mode_enabled = profile_read_bool(turbo, \"enabled\", \"game_mode_master\", false);",
         "        g_refresh_requested = profile_read_bool(turbo, \"displayRefreshContract\", \"turbo_refresh_contract\", false);",
         "        g_keep_display_active = profile_read_bool(turbo, \"keepDisplayActive\", \"keep_display_active\", false);",
-        "        g_target_fps = profile_read_int(turbo, \"targetFrameRate\", \"targetFps\", 60);",
+        "        g_target_fps = profile_read_int(turbo, \"targetFrameRate\", \"targetFps\", 10000);",
         "        g_stretch_percent = profile_read_int(turbo, \"stretchScreenPercent\", \"display_stretch_screen\", 100);",
         "        profile_read_string(turbo, \"rendererMode\", \"display_renderer_mode\", g_renderer_mode, sizeof(g_renderer_mode));",
         "        if (log_file) fprintf(log_file, \"[PROFILE][TURBO] status=LOADED bytes=%ld enabled=%d targetFps=%d refresh=%d keepDisplay=%d stretch=%d renderer=%s\\n\", turbo_size, g_game_mode_enabled, g_target_fps, g_refresh_requested, g_keep_display_active, g_stretch_percent, g_renderer_mode);",
@@ -1595,14 +1595,13 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    uintptr_t base = (uintptr_t)arg;",
         "    if (!base) return NULL;",
         "    uintptr_t fps_slot = base + 0x6a58de8;",
-        "    for (int cycle = 0; cycle < 120; cycle++) {",
-        "        usleep(2500000);",
-        "        if (g_target_fps > 0) {",
-        "            int current = *(volatile int32_t*)fps_slot;",
-        "            if (current != g_target_fps) {",
-        "                *(volatile int32_t*)fps_slot = g_target_fps;",
-        "                runtime_note(\"[FPS_SLOT_GUARD] Restored targetFps slot from %d to %d (cycle=%d)\", current, g_target_fps, cycle);",
-        "            }",
+        "    while (1) {",
+        "        usleep(100000);",
+        "        int target = g_target_fps > 0 ? g_target_fps : 10000;",
+        "        int current = *(volatile int32_t*)fps_slot;",
+        "        if (current != target) {",
+        "            *(volatile int32_t*)fps_slot = target;",
+        "            runtime_note(\"[FPS_SLOT_GUARD] Restored targetFps slot from %d to %d\", current, target);",
         "        }",
         "        // Zero out all 60Hz limit and policy flags",
         "        *(volatile uint8_t*)(base + 0x69c9928) = 0; // FFlagPerformanceControlExecution",
@@ -2387,26 +2386,29 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                                 data[fallback_dt_offset:fallback_dt_offset+4] = b'\x17\xb7\xd1\x38'
                                 print(f"[FPS_CEILING] Patched RobloxLib fallback delta time @ 0x{fallback_dt_offset:X} (dt -> 0.0001s, 10000 FPS ceiling)")
 
-                            # 5. Stretch Resolution (Architecture v73 Parity):
+                            # 5. Stretch Resolution (Architecture v73 Parity with 2D GUI M33 Guard):
                             # Hook View-Projection matrix write at 0xB75610 (inside 0xb75500) -> Code Cave at 0x3F80
-                            # Rebuilds horizontal clip row (Row 0, offset 0x0) from pristine cameraInput+0x80 every frame.
-                            # Keeps 2D GUI and surface geometry 100% distortion-free and artifact-free.
+                            # Checks M[3][3] at offset 0x3c: 0.0f = 3D perspective world camera (stretch Row 0),
+                            # != 0.0f (1.0f) = 2D orthographic GUI/HUD/homepage/joystick (untouched/pristine).
                             stretch_cave_offset = 0x3F80
                             stretch_hook_offset = 0xB75610
                             stretch_cave_bytes = struct.pack(
-                                '<12I',
+                                '<15I',
                                 0xF0034E28,  # 0x3F80: adrp x8, #0x69ca000
                                 0xBD413101,  # 0x3F84: ldr s1, [x8, #0x130]
                                 0x1E202028,  # 0x3F88: fcmp s1, #0.0
-                                0x540000E0,  # 0x3F8C: b.eq #0x3fa8
+                                0x54000140,  # 0x3F8C: b.eq #0x3fb4
                                 0x1E2E1002,  # 0x3F90: fmov s2, #1.00000000
                                 0x1E222020,  # 0x3F94: fcmp s1, s2
-                                0x54000080,  # 0x3F98: b.eq #0x3fa8
-                                0x3DC02280,  # 0x3F9C: ldr q0, [x20, #0x80]
-                                0x4F819000,  # 0x3FA0: fmul v0.4s, v0.4s, v1.s[0]
-                                0x3D800260,  # 0x3FA4: str q0, [x19]
-                                0xA94A7BFD,  # 0x3FA8: ldp x29, x30, [sp, #0xa0]
-                                0x142DC59A,  # 0x3FAC: b #0xb75614
+                                0x540000E0,  # 0x3F98: b.eq #0x3fb4
+                                0xBD403E62,  # 0x3F9C: ldr s2, [x19, #0x3c]
+                                0x1E202048,  # 0x3FA0: fcmp s2, #0.0
+                                0x54000081,  # 0x3FA4: b.ne #0x3fb4
+                                0x3DC00260,  # 0x3FA8: ldr q0, [x19]
+                                0x4F819000,  # 0x3FAC: fmul v0.4s, v0.4s, v1.s[0]
+                                0x3D800260,  # 0x3FB0: str q0, [x19]
+                                0xA94A7BFD,  # 0x3FB4: ldp x29, x30, [sp, #0xa0]
+                                0x142DC597,  # 0x3FB8: b #0xb75614
                             )
                             stretch_hook_bytes = bytes.fromhex("5c3ad217")  # b #0x3f80
 
@@ -2414,7 +2416,7 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                                 if data[stretch_cave_offset:stretch_cave_offset + len(stretch_cave_bytes)] == b'\x00' * len(stretch_cave_bytes) or data[stretch_cave_offset:stretch_cave_offset + len(stretch_cave_bytes)] == stretch_cave_bytes:
                                     data[stretch_cave_offset:stretch_cave_offset + len(stretch_cave_bytes)] = stretch_cave_bytes
                                     data[stretch_hook_offset:stretch_hook_offset+4] = stretch_hook_bytes
-                                    print(f"[STRETCH_PROJECTION] Installed ARM64 3D camera View-Projection stretch hook @ 0x{stretch_hook_offset:X} -> cave @ 0x{stretch_cave_offset:X} (Architecture v73 Parity)")
+                                    print(f"[STRETCH_PROJECTION] Installed ARM64 3D camera View-Projection stretch hook @ 0x{stretch_hook_offset:X} -> cave @ 0x{stretch_cave_offset:X} (Architecture v73 Parity with 2D GUI M33 Guard)")
                                 else:
                                     print(f"[STRETCH_PROJECTION] Warning: code cave @ 0x{stretch_cave_offset:X} is not empty!")
                             else:
@@ -2489,7 +2491,7 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         turbo_default = {
                             "schema": 1,
                             "enabled": True,
-                            "targetFrameRate": 240,
+                            "targetFrameRate": 10000,
                             "displayRefreshContract": True,
                             "keepDisplayActive": True,
                             "stretchScreenPercent": 100,
