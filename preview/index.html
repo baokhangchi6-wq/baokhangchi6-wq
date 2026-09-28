@@ -4235,18 +4235,34 @@ function updateFlagState() {
         return;
     }
 
-    const targetFps = parseInt(document.getElementById("sel-target-fps").value) || 240;
-    activeFlags["DFIntTaskSchedulerTargetFps"] = String(targetFps);
+    const targetFps = parseInt(document.getElementById("sel-target-fps").value) || 9999;
+    activeFlags["DFIntTaskSchedulerTargetFps"] = targetFps;
     if (targetFps > 60) {
-        activeFlags["FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate"] = "false";
-        activeFlags["FFlagTaskSchedulerLimitTargetFpsTo2402"] = "false";
-        activeFlags["FFlagGameBasicSettingsFramerateCap"] = "false";
-        activeFlags["FFlagDebugDisableVsync"] = "true";
+        activeFlags["FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate"] = false;
+        activeFlags["FFlagTaskSchedulerLimitTargetFpsTo2402"] = false;
+        activeFlags["FFlagGameBasicSettingsFramerateCap"] = false;
+        activeFlags["FFlagAuroraLimit60HzRenderSim"] = false;
+        activeFlags["FFlagApplicationFrameRate"] = false;
+        activeFlags["FFlagApplicationFrameRatePolicy"] = false;
+        activeFlags["FFlagPerformanceControlExecution"] = false;
+        activeFlags["FFlagPerformanceControlDisplayRefreshRate"] = false;
+        activeFlags["FFlagPerformanceControlDisplayRefreshRateInAdaptiveSync"] = false;
+        activeFlags["FFlagPerformanceControlDisplayRefreshRateMigration"] = false;
+        activeFlags["FFlagDebugDisableVsync"] = true;
+        activeFlags["FFlagMetalVsyncPreferMaximumRefreshRate"] = true;
     } else {
         delete activeFlags["FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate"];
         delete activeFlags["FFlagTaskSchedulerLimitTargetFpsTo2402"];
         delete activeFlags["FFlagGameBasicSettingsFramerateCap"];
+        delete activeFlags["FFlagAuroraLimit60HzRenderSim"];
+        delete activeFlags["FFlagApplicationFrameRate"];
+        delete activeFlags["FFlagApplicationFrameRatePolicy"];
+        delete activeFlags["FFlagPerformanceControlExecution"];
+        delete activeFlags["FFlagPerformanceControlDisplayRefreshRate"];
+        delete activeFlags["FFlagPerformanceControlDisplayRefreshRateInAdaptiveSync"];
+        delete activeFlags["FFlagPerformanceControlDisplayRefreshRateMigration"];
         delete activeFlags["FFlagDebugDisableVsync"];
+        delete activeFlags["FFlagMetalVsyncPreferMaximumRefreshRate"];
     }
 
     const msaa = document.getElementById("sel-msaa").value;
@@ -5744,17 +5760,44 @@ function drawTagList(ctx, tags) {
     }
 }
 
+function sanitizeFlagsForRoblox(flags) {
+    const clean = {};
+    for (const [k, v] of Object.entries(flags)) {
+        if (k.startsWith("FInt") || k.startsWith("DFInt")) {
+            const num = parseInt(v, 10);
+            clean[k] = isNaN(num) ? 0 : num;
+        } else if (k.startsWith("FFlag") || k.startsWith("DFFlag")) {
+            if (typeof v === "boolean") {
+                clean[k] = v;
+            } else if (typeof v === "string") {
+                clean[k] = (v.toLowerCase() === "true" || v === "1");
+            } else {
+                clean[k] = Boolean(v);
+            }
+        } else if (k.startsWith("FString") || k.startsWith("DFString")) {
+            clean[k] = String(v);
+        } else {
+            clean[k] = v;
+        }
+    }
+    return clean;
+}
+
 function saveAndLaunch() {
     updateFlagState();
-    activeFlags["FFlagPerformanceControlDisplayRefreshRate"] = "false";
-    activeFlags["FFlagPerformanceControlDisplayRefreshRateInAdaptiveSync"] = "false";
-    activeFlags["FFlagPerformanceControlDisplayRefreshRateMigration"] = "false";
-    activeFlags["FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate"] = "false";
-    activeFlags["FFlagTaskSchedulerLimitTargetFpsTo2402"] = "false";
-    activeFlags["FFlagGameBasicSettingsFramerateCap"] = "false";
-    activeFlags["FFlagDebugDisableVsync"] = "true";
-    activeFlags["FFlagMetalVsyncPreferMaximumRefreshRate"] = "true";
-    const clientJson = JSON.stringify(activeFlags, null, 2);
+    activeFlags["FFlagPerformanceControlDisplayRefreshRate"] = false;
+    activeFlags["FFlagPerformanceControlDisplayRefreshRateInAdaptiveSync"] = false;
+    activeFlags["FFlagPerformanceControlDisplayRefreshRateMigration"] = false;
+    activeFlags["FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate"] = false;
+    activeFlags["FFlagTaskSchedulerLimitTargetFpsTo2402"] = false;
+    activeFlags["FFlagGameBasicSettingsFramerateCap"] = false;
+    activeFlags["FFlagAuroraLimit60HzRenderSim"] = false;
+    activeFlags["FFlagApplicationFrameRate"] = false;
+    activeFlags["FFlagApplicationFrameRatePolicy"] = false;
+    activeFlags["FFlagPerformanceControlExecution"] = false;
+    activeFlags["FFlagDebugDisableVsync"] = true;
+    activeFlags["FFlagMetalVsyncPreferMaximumRefreshRate"] = true;
+    const clientJson = JSON.stringify(sanitizeFlagsForRoblox(activeFlags), null, 2);
 
     const turboProfile = JSON.stringify({
         safe_ram_cleanup: document.getElementById("sw-gm-safe-ram").checked,
