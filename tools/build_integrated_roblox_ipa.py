@@ -315,6 +315,8 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "extern int pthread_create(void **thread, const void *attr, void *(*start_routine)(void *), void *arg);",
         "extern int pthread_detach(void *thread);",
         "extern char* strstr(const char *haystack, const char *needle);",
+        "extern char* strdup(const char *s);",
+        "extern void* memcpy(void *dest, const void *src, size_t n);",
         "extern int fputs(const char *str, void *stream);",
         "typedef void* id;",
         "typedef void* SEL;",
@@ -423,7 +425,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static const char* kFpsRuntimeBackend = \"cadisplaylink-range-policy-v2\";",
         "static const char* kFontRuntimeBackend = \"native-asset-vfs-v1\";",
         "static const char* kShaderRuntimeBackend = \"native-metal-lighting-v1\";",
-        "static const char* kStretchRuntimeBackend = \"metal-layer-drawable-v1\";",
+        "static const char* kStretchRuntimeBackend = \"view-projection-v73\";",
         "",
         "static const char* kMissOffsets[] = {"
     ])
@@ -1130,7 +1132,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "            g_game_mode_enabled ? \"active_turbo_metal\" : \"inactive\",",
         "            g_font_family, g_font_size_step, g_profile_loaded ? \"active_asset_vfs\" : \"inactive\",",
         "            g_shader_package, g_shader_wet_floor ? \"true\" : \"false\", (g_profile_loaded && (g_shader_wet_floor || strcmp(g_shader_package, \"none\") != 0)) ? \"active_native_lighting\" : \"inactive\",",
-        "            g_stretch_percent, (g_profile_loaded && g_stretch_percent != 100) ? \"active_metal_layer\" : \"inactive_100pct\");",
+        "            g_stretch_percent, (g_profile_loaded && g_stretch_percent != 100) ? \"active_view_projection\" : \"inactive_100pct\");",
         "    fflush(file);",
         "    fclose(file);",
         "    runtime_note(\"[RECEIPT] file=MasterstrapRuntimeReceipt.json status=WRITTEN\");",
@@ -1254,7 +1256,21 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    snprintf(path, sizeof(path), \"%s/Documents/%s\", home, file_name);",
         "    void* file = fopen(path, \"w\");",
         "    if (!file) return false;",
-        "    fputs(content, file);",
+        "    if (strcmp(file_name, \"ClientAppSettings.json\") == 0) {",
+        "        char* copy = strdup(content);",
+        "        if (copy) {",
+        "            char* hit = strstr(copy, \"\\\"FFlagPerformanceControlDisplayRefreshRate\\\": \\\"true\\\"\");",
+        "            if (hit) memcpy(hit + 44, \"\\\"false\\\"\", 7);",
+        "            char* hit2 = strstr(copy, \"\\\"FFlagPerformanceControlDisplayRefreshRate\\\": true\");",
+        "            if (hit2) memcpy(hit2 + 44, \"false\", 5);",
+        "            fputs(copy, file);",
+        "            free(copy);",
+        "        } else {",
+        "            fputs(content, file);",
+        "        }",
+        "    } else {",
+        "        fputs(content, file);",
+        "    }",
         "    fflush(file);",
         "    fclose(file);",
         "    return true;",
@@ -1589,6 +1605,9 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "            }",
         "        }",
         "        // Zero out all 60Hz limit and policy flags",
+        "        *(volatile uint8_t*)(base + 0x69c9928) = 0; // FFlagPerformanceControlExecution",
+        "        *(volatile uint8_t*)(base + 0x69c95f8) = 0; // FFlagPerformanceControlDynamicFrameTimeTarget",
+        "        *(volatile uint8_t*)(base + 0x69c9610) = 0; // FFlagPerformanceControlComputeUseTSFrameTimeTarget",
         "        *(volatile uint8_t*)(base + 0x69ca110) = 0; // FFlagPerformanceControlDisplayRefreshRate",
         "        *(volatile uint8_t*)(base + 0x6a1ff20) = 0; // FFlagPerformanceControlDisplayRefreshRateInAdaptiveSync",
         "        *(volatile uint8_t*)(base + 0x69ca120) = 0; // FFlagPerformanceControlDisplayRefreshRateMigration",
@@ -1597,6 +1616,9 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        *(volatile uint8_t*)(base + 0x6a29260) = 0; // FFlagApplicationFrameRate",
         "        *(volatile uint8_t*)(base + 0x6a29248) = 0; // FFlagApplicationFrameRatePolicy",
         "        *(volatile uint8_t*)(base + 0x6a20118) = 1; // FFlagMetalVsyncPreferMaximumRefreshRate",
+        "        *(volatile uint8_t*)(base + 0x6a202e8) = 0; // FFlagMetalDisplayTiming",
+        "        *(volatile uint8_t*)(base + 0x6a20300) = 0; // FFlagMetalDisplayTimingAdjustMinFPS",
+        "        *(volatile int32_t*)(base + 0x6a20318) = 0; // FIntMetalDisplayTimingMinFPS",
         "",
         "        // Maintain stretch horizontal factor slot",
         "        float factor = 1.0f;",
@@ -1628,11 +1650,40 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    if (!engine_identity_matches(base)) { runtime_note(\"[IDENTITY] UUID status=MISMATCH_OR_UNPINNED engineWrites=BLOCKED\"); base = 0; }",
         "    else runtime_note(\"[IDENTITY] UUID status=MATCH expected=%s engineWrites=ALLOWED functionCalls=STILL_GATED\", kExpectedEngineUuidText);",
         "    g_engine_base = base;",
+        "    if (base != 0) { *(volatile float*)(base + 0x69ca130) = 1.0f; }",
         "",
         "    char log_path[512] = {0};",
         "    const char* home = getenv(\"HOME\");",
         "    if (home) {",
         "        snprintf(log_path, sizeof(log_path), \"%s/Documents/masterstrap_ios.log\", home);",
+        "        char cas_path[768];",
+        "        snprintf(cas_path, sizeof(cas_path), \"%s/Documents/ClientAppSettings.json\", home);",
+        "        void* cas_f = fopen(cas_path, \"r+\");",
+        "        if (cas_f) {",
+        "            fseek(cas_f, 0, 2);",
+        "            long cas_len = ftell(cas_f);",
+        "            fseek(cas_f, 0, 0);",
+        "            if (cas_len > 0 && cas_len < 131072) {",
+        "                char* cas_buf = malloc(cas_len + 1);",
+        "                if (cas_buf) {",
+        "                    size_t r_bytes = fread(cas_buf, 1, cas_len, cas_f);",
+        "                    cas_buf[r_bytes] = '\\0';",
+        "                    char* hit = strstr(cas_buf, \"\\\"FFlagPerformanceControlDisplayRefreshRate\\\": \\\"true\\\"\");",
+        "                    bool mod = false;",
+        "                    if (hit) { memcpy(hit + 44, \"\\\"false\\\"\", 7); mod = true; }",
+        "                    char* hit2 = strstr(cas_buf, \"\\\"FFlagPerformanceControlDisplayRefreshRate\\\": true\");",
+        "                    if (hit2) { memcpy(hit2 + 44, \"false\", 5); mod = true; }",
+        "                    if (mod) {",
+        "                        fseek(cas_f, 0, 0);",
+        "                        fputs(cas_buf, cas_f);",
+        "                        fflush(cas_f);",
+        "                        runtime_note(\"[FPS] Sanitized stale ClientAppSettings.json FFlagPerformanceControlDisplayRefreshRate=false\");",
+        "                    }",
+        "                    free(cas_buf);",
+        "                }",
+        "            }",
+        "            fclose(cas_f);",
+        "        }",
         "    } else {",
         "        snprintf(log_path, sizeof(log_path), \"/tmp/masterstrap_ios.log\");",
         "    }",
@@ -1732,6 +1783,9 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "            if (base != 0 && g_target_fps > 0) {",
         "                uintptr_t fps_slot = base + 0x6a58de8;",
         "                *(volatile int32_t*)fps_slot = g_target_fps;",
+        "                *(volatile uint8_t*)(base + 0x69c9928) = 0; // FFlagPerformanceControlExecution",
+        "                *(volatile uint8_t*)(base + 0x69c95f8) = 0; // FFlagPerformanceControlDynamicFrameTimeTarget",
+        "                *(volatile uint8_t*)(base + 0x69c9610) = 0; // FFlagPerformanceControlComputeUseTSFrameTimeTarget",
         "                *(volatile uint8_t*)(base + 0x69ca110) = 0; // FFlagPerformanceControlDisplayRefreshRate",
         "                *(volatile uint8_t*)(base + 0x6a1ff20) = 0; // FFlagPerformanceControlDisplayRefreshRateInAdaptiveSync",
         "                *(volatile uint8_t*)(base + 0x69ca120) = 0; // FFlagPerformanceControlDisplayRefreshRateMigration",
@@ -1740,6 +1794,9 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "                *(volatile uint8_t*)(base + 0x6a29260) = 0; // FFlagApplicationFrameRate",
         "                *(volatile uint8_t*)(base + 0x6a29248) = 0; // FFlagApplicationFrameRatePolicy",
         "                *(volatile uint8_t*)(base + 0x6a20118) = 1; // FFlagMetalVsyncPreferMaximumRefreshRate",
+        "                *(volatile uint8_t*)(base + 0x6a202e8) = 0; // FFlagMetalDisplayTiming",
+        "                *(volatile uint8_t*)(base + 0x6a20300) = 0; // FFlagMetalDisplayTimingAdjustMinFPS",
+        "                *(volatile int32_t*)(base + 0x6a20318) = 0; // FIntMetalDisplayTimingMinFPS",
         "",
         "                void* th = NULL;",
         "                pthread_create(&th, NULL, fps_slot_guard_thread, (void*)base);",
@@ -1817,6 +1874,10 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "                launch_authorized && g_profile_loaded ? \"INACTIVE_IN_PROFILE\" : \"BLOCKED\",",
         "                g_shader_package, g_shader_wet_floor, kShaderRuntimeBackend, launch_authorized, g_profile_loaded,",
         "                !launch_authorized ? \"NO_AUTH\" : !g_profile_loaded ? \"NO_PROFILE\" : (!g_shader_wet_floor && strcmp(g_shader_package, \"none\") == 0) ? \"SHADER_DISABLED\" : \"none\");",
+        "        if (g_shader_wet_floor) {",
+        "            fprintf(log_file, \"[WETFLOOR_V24] status=ACTIVE strategy=bounded_nearby_once radiusStuds=384 maxParts=1024 materials=Plastic,Concrete,Slate,WoodPlanks target=SmoothPlastic reflectance=old+0.25\\n\");",
+        "            runtime_note(\"[WETFLOOR_V24] status=ACTIVE strategy=bounded_nearby_once radiusStuds=384 maxParts=1024 materials=Plastic,Concrete,Slate,WoodPlanks target=SmoothPlastic reflectance=old+0.25\");",
+        "        }",
         "        // FEATURE_07: Font Override",
         "        fprintf(log_file, \"[FEATURE_07_FONT] status=%s family=%s sizeStep=%d backend=%s gate=Auth(%d)&&Profile(%d) blockedReason=%s\\n\",",
         "                launch_authorized && g_profile_loaded ? \"ACTIVE\" : \"BLOCKED\",",
@@ -2111,7 +2172,7 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
         flags = {
             "FFlagDebugDisplayFPS": True,
             "FFlagDebugSkyGray": True,
-            "DFIntTaskSchedulerTargetFps": 2000,
+            "DFIntTaskSchedulerTargetFps": 9999,
             "FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate": False,
             "FFlagTaskSchedulerLimitTargetFpsTo2402": False,
             "FFlagGameBasicSettingsFramerateCap": False,
@@ -2120,6 +2181,9 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
             "FFlagDebugExperimentalVSyncFramePacing": False,
             "FFlagDebugDisableVsync": True,
             "FFlagMetalVsyncPreferMaximumRefreshRate": True,
+            "FFlagPerformanceControlExecution": False,
+            "FFlagPerformanceControlDynamicFrameTimeTarget": False,
+            "FFlagPerformanceControlComputeUseTSFrameTimeTarget": False,
             "FFlagPerformanceControlDisplayRefreshRate": False,
             "FFlagPerformanceControlDisplayRefreshRateInAdaptiveSync": False,
             "FFlagPerformanceControlDisplayRefreshRateMigration": False,
@@ -2221,6 +2285,13 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                     replaced_fonts_count = 0
                     replaced_jsons_count = 0
 
+                    sky_dir = ROOT / "resources" / "sky"
+                    sky_map = {}
+                    if sky_dir.is_dir():
+                        for sf in sky_dir.glob("*.tex"):
+                            sky_map[sf.name] = sf.read_bytes()
+                    replaced_sky_count = 0
+
                     for item in zin.infolist():
                         name = item.filename
                         # Skip embedded settings and dylib from input IPA so they are cleanly re-embedded afresh without duplicate entries
@@ -2234,6 +2305,12 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                             continue
 
                         data = zin.read(name)
+
+                        # Direct Asset Skybox Replacement
+                        sf_name = Path(name).name
+                        if "textures/sky" in name and sf_name in sky_map:
+                            data = sky_map[sf_name]
+                            replaced_sky_count += 1
 
                         # Direct Asset Font Replacement (Android parity)
                         # We replace the underlying TTF/OTF binaries for UI fonts with Minecraft PressStart2P TTF,
@@ -2286,42 +2363,69 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         elif name == "Payload/Roblox.app/Frameworks/RobloxLib.framework/RobloxLib":
                             data = remove_load_dylib(data, ["libgloop", "delta.dylib"])
                             data = bytearray(data)
-                            # Android parity: Bypass 240 FPS clamp in GetDefaultFramerateCap (csel w9, w8, w9, lt -> mov w9, w8)
+                            # 1. Bypass 240 FPS clamp site 1 in GetDefaultFramerateCap (csel w9, w8, w9, lt -> mov w9, w8)
                             clamp_offset = 0x46256c4
-                            if len(data) > clamp_offset + 4 and data[clamp_offset:clamp_offset+4] == b'\x09\xb1\x89\x1a':
+                            if len(data) > clamp_offset + 4 and data[clamp_offset:clamp_offset+4] in (b'\x09\xb1\x89\x1a', b'\xe9\x03\x08\x2a'):
                                 data[clamp_offset:clamp_offset+4] = b'\xe9\x03\x08\x2a'
-                                print(f"[FPS_CEILING] Bypassed RobloxLib 240 FPS clamp site @ 0x{clamp_offset:X} (csel -> mov w9, w8)")
+                                print(f"[FPS_CEILING] Bypassed RobloxLib 240 FPS clamp site 1 @ 0x{clamp_offset:X} (csel -> mov w9, w8)")
 
-                            # Android Global ARM64 parity: Bypass second 240 FPS clamp site in TaskScheduler dt calculator (csel w11, w11, w12, lt -> nop)
+                            # 2. Bypass 240 FPS clamp site 2 in TaskScheduler dt calculator (csel w11, w11, w12, lt -> nop)
                             clamp2_offset = 0x9165fc
-                            if len(data) > clamp2_offset + 4 and data[clamp2_offset:clamp2_offset+4] == b'\x6b\xb1\x8c\x1a':
+                            if len(data) > clamp2_offset + 4 and data[clamp2_offset:clamp2_offset+4] in (b'\x6b\xb1\x8c\x1a', b'\x1f\x20\x03\xd5'):
                                 data[clamp2_offset:clamp2_offset+4] = b'\x1f\x20\x03\xd5'
-                                print(f"[FPS_CEILING] Bypassed RobloxLib second 240 FPS clamp site @ 0x{clamp2_offset:X} (csel -> nop)")
+                                print(f"[FPS_CEILING] Bypassed RobloxLib second 240 FPS clamp site 2 @ 0x{clamp2_offset:X} (csel -> nop)")
 
-                            # Android Global ARM64 parity: Stretch Resolution projection matrix hook via code cave
-                            # Code cave at 0x3fd0 (in header padding right before __TEXT,__text at 0x4000):
-                            #   0x3fd0: adrp x8, #0x69ca000      (28 4e 03 f0)
-                            #   0x3fd4: ldr s1, [x8, #0x130]      (01 31 41 bd)
-                            #   0x3fd8: fcmp s1, #0.0             (28 20 20 1e)
-                            #   0x3fdc: b.eq #0x3ff0              (a0 00 00 54)
-                            #   0x3fe0: add x8, x19, #0x1c8       (68 22 07 91)
-                            #   0x3fe4: ldr q0, [x8]              (00 01 c0 3d)
-                            #   0x3fe8: fmul v0.4s, v0.4s, v1.s[0] (00 90 81 4f)
-                            #   0x3fec: str q0, [x8]              (00 01 80 3d)
-                            #   0x3ff0: mov x0, x19               (e0 03 13 aa)
-                            #   0x3ff4: b #0x34f1bdc              (fa b6 d3 14)
-                            # Hook site at 0x34f1bd8:
-                            #   0x34f1bd8: b #0x3fd0              (fe 48 2c 17)
-                            stretch_cave_offset = 0x3fd0
-                            stretch_hook_offset = 0x34f1bd8
-                            stretch_cave_bytes = bytes.fromhex("284e03f0013141bd2820201ea0000054682207910001c03d0090814f0001803de00313aafab6d314")
-                            stretch_hook_bytes = bytes.fromhex("fe482c17")
+                            # 3. Bypass 240 FPS clamp site 3 in TaskScheduler target frametime calculator (csel w8, w23, w8, cc -> mov w8, w23)
+                            clamp3_offset = 0x4628128
+                            if len(data) > clamp3_offset + 4 and data[clamp3_offset:clamp3_offset+4] in (b'\xe8\x32\x88\x1a', b'\xe8\x03\x17\x2a'):
+                                data[clamp3_offset:clamp3_offset+4] = b'\xe8\x03\x17\x2a'
+                                print(f"[FPS_CEILING] Bypassed RobloxLib third 240 FPS clamp site 3 @ 0x{clamp3_offset:X} (csel -> mov w8, w23)")
 
-                            if len(data) > stretch_hook_offset + 4 and data[stretch_hook_offset:stretch_hook_offset+4] == b'\xe0\x03\x13\xaa':
-                                if data[stretch_cave_offset:stretch_cave_offset + len(stretch_cave_bytes)] == b'\x00' * len(stretch_cave_bytes):
+                            # 4. TaskScheduler fallback delta time patch (0.0166667s 60Hz -> 0.0001s 10,000 FPS ceiling)
+                            fallback_dt_offset = 0x4A60E28
+                            if len(data) > fallback_dt_offset + 4 and data[fallback_dt_offset:fallback_dt_offset+4] in (b'\x89\x88\x88\x3c', b'\x89\x88\x08\x3c', b'\x17\xb7\xd1\x38'):
+                                data[fallback_dt_offset:fallback_dt_offset+4] = b'\x17\xb7\xd1\x38'
+                                print(f"[FPS_CEILING] Patched RobloxLib fallback delta time @ 0x{fallback_dt_offset:X} (dt -> 0.0001s, 10000 FPS ceiling)")
+
+                            # 5. AdaptiveSync DisplayTiming Clamp Bypass (Prevents 120Hz/60Hz clamp during touch/motion)
+                            adapt_sched_offset = 0x3F64A84
+                            if len(data) > adapt_sched_offset + 4 and data[adapt_sched_offset:adapt_sched_offset+4] in (b'\x16\xc5\x9f\x1a', b'\x16\xe2\x84\x52'):
+                                data[adapt_sched_offset:adapt_sched_offset+4] = b'\x16\xe2\x84\x52'
+                                print(f"[FPS_CEILING] Uncapped AdaptiveSync target schedule @ 0x{adapt_sched_offset:X} (csinc -> mov w22, #10000)")
+
+                            adapt_clamp_offset = 0x3F64AE4
+                            if len(data) > adapt_clamp_offset + 4 and data[adapt_clamp_offset:adapt_clamp_offset+4] in (b'\xb6\x32\x96\x1a', b'\x1f\x20\x03\xd5'):
+                                data[adapt_clamp_offset:adapt_clamp_offset+4] = b'\x1f\x20\x03\xd5'
+                                print(f"[FPS_CEILING] Bypassed AdaptiveSync refresh clamp @ 0x{adapt_clamp_offset:X} (csel -> nop)")
+
+                            # 6. Stretch Resolution (Architecture v73 Parity):
+                            # Hook View-Projection matrix write at 0xB75610 (inside 0xb75500) -> Code Cave at 0x3F80
+                            # Rebuilds horizontal clip row (Row 1, offset 0x10) from pristine cameraInput+0x90 every frame.
+                            # Keeps 2D GUI and surface geometry 100% distortion-free and artifact-free.
+                            stretch_cave_offset = 0x3F80
+                            stretch_hook_offset = 0xB75610
+                            stretch_cave_bytes = struct.pack(
+                                '<12I',
+                                0xF0034E28,  # 0x3F80: adrp x8, #0x69ca000
+                                0xBD413101,  # 0x3F84: ldr s1, [x8, #0x130]
+                                0x1E202028,  # 0x3F88: fcmp s1, #0.0
+                                0x540000E0,  # 0x3F8C: b.eq #0x3fa8
+                                0x1E2E1002,  # 0x3F90: fmov s2, #1.00000000
+                                0x1E222020,  # 0x3F94: fcmp s1, s2
+                                0x54000080,  # 0x3F98: b.eq #0x3fa8
+                                0x3DC02680,  # 0x3F9C: ldr q0, [x20, #0x90]
+                                0x4F819000,  # 0x3FA0: fmul v0.4s, v0.4s, v1.s[0]
+                                0x3D800660,  # 0x3FA4: str q0, [x19, #0x10]
+                                0xA94A7BFD,  # 0x3FA8: ldp x29, x30, [sp, #0xa0]
+                                0x142DC59A,  # 0x3FAC: b #0xb75614
+                            )
+                            stretch_hook_bytes = bytes.fromhex("5c3ad217")  # b #0x3f80
+
+                            if len(data) > stretch_hook_offset + 4 and data[stretch_hook_offset:stretch_hook_offset+4] in (b'\xfd\x7b\x4a\xa9', stretch_hook_bytes):
+                                if data[stretch_cave_offset:stretch_cave_offset + len(stretch_cave_bytes)] == b'\x00' * len(stretch_cave_bytes) or data[stretch_cave_offset:stretch_cave_offset + len(stretch_cave_bytes)] == stretch_cave_bytes:
                                     data[stretch_cave_offset:stretch_cave_offset + len(stretch_cave_bytes)] = stretch_cave_bytes
                                     data[stretch_hook_offset:stretch_hook_offset+4] = stretch_hook_bytes
-                                    print(f"[STRETCH_PROJECTION] Installed ARM64 projection matrix hook @ 0x{stretch_hook_offset:X} -> cave @ 0x{stretch_cave_offset:X}")
+                                    print(f"[STRETCH_PROJECTION] Installed ARM64 3D camera View-Projection stretch hook @ 0x{stretch_hook_offset:X} -> cave @ 0x{stretch_cave_offset:X} (Architecture v73 Parity)")
                                 else:
                                     print(f"[STRETCH_PROJECTION] Warning: code cave @ 0x{stretch_cave_offset:X} is not empty!")
                             else:
@@ -2372,6 +2476,23 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                     if replaced_fonts_count > 0 or replaced_jsons_count > 0:
                         print(f"[ASSET_FONT] Replaced {replaced_fonts_count} UI font files with Minecraft + redirected {replaced_jsons_count} family JSONs to local assets")
 
+                    # ── Direct Asset Skybox Loading ──
+                    if sky_map:
+                        extra_sky_count = 0
+                        for sf_name, s_data in sky_map.items():
+                            for base_dir in [
+                                "Payload/Roblox.app/Frameworks/RobloxLib.framework/ios/textures/sky/",
+                                "Payload/Roblox.app/ios/textures/sky/",
+                            ]:
+                                entry_name = base_dir + sf_name
+                                if entry_name not in seen_entries:
+                                    zout.writestr(entry_name, s_data)
+                                    seen_entries.add(entry_name)
+                                    extra_sky_count += 1
+                        total_sky = replaced_sky_count + extra_sky_count
+                        if total_sky > 0:
+                            print(f"[ASSET_SKY] Injected/replaced {total_sky} custom skybox cubemap textures into framework assets")
+
                     # Embed baseline JSON only for normal builds. Isolation builds
                     # intentionally depend on the versioned Masterstrap bridge.
                     if embed_flags:
@@ -2389,7 +2510,7 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         shader_default = {
                             "schema": 1,
                             "enabled": True,
-                            "package": "ultra",
+                            "package": "cyberpunk",
                             "applyMode": "once_after_datamodel",
                             "maxPostEffects": 5,
                             "wetFloor": True,

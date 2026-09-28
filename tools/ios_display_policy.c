@@ -62,7 +62,7 @@ static long fps_runtime_target(void) {
 static MSFrameRateRange ms_target_range(void) {
     float target = (float)fps_runtime_target();
     int screen_max = ios_maximum_frames_per_second();
-    float link_max = (float)screen_max;
+    float link_max = (target >= 120.0f) ? 120.0f : (float)screen_max;
     if (target < link_max) link_max = target;
     /* Lock minimum to link_max so iOS ProMotion compositor does not down-throttle to 60Hz */
     return (MSFrameRateRange){link_max, link_max, link_max};
@@ -259,29 +259,9 @@ static bool install_display_link_policy(void) {
         g_display_link_policy_installed ? "READY" : "PARTIAL");
     return g_display_link_policy_installed;
 }
-typedef struct { double width; double height; } MSSize;
-typedef void (*SetDrawableSizeImp)(id, SEL, MSSize);
 typedef void (*SetDisplaySyncImp)(id, SEL, bool);
-typedef void (*SetContentsGravityImp)(id, SEL, id);
-static SetDrawableSizeImp g_original_set_drawable_size;
 static SetDisplaySyncImp g_original_set_display_sync;
-static SetContentsGravityImp g_original_set_contents_gravity;
 static int g_metal_layer_stretch_installed;
-static char g_ms_stretch_source_size_key;
-typedef struct { double src_w, src_h, dst_w, dst_h; int applied; } MSLayerStretchState;
-
-static id get_ca_gravity_resize(void) {
-    static id s_gravity_resize = NULL;
-    if (!s_gravity_resize) {
-        void* handle = dlopen("/System/Library/Frameworks/QuartzCore.framework/QuartzCore", 0x1 /* RTLD_LAZY */);
-        if (handle) {
-            id* sym = (id*)dlsym(handle, "kCAGravityResize");
-            if (sym && *sym) s_gravity_resize = *sym;
-        }
-        if (!s_gravity_resize) s_gravity_resize = ms_string("resize");
-    }
-    return s_gravity_resize;
-}
 
 static void ms_apply_metal_layer_policies(id layer) {
     if (!layer) return;
@@ -292,35 +272,6 @@ static void ms_apply_metal_layer_policies(id layer) {
         if (((bool (*)(id, SEL, SEL))objc_msgSend)(layer, sel_registerName("respondsToSelector:"), sync_sel)) {
             ((void (*)(id, SEL, bool))objc_msgSend)(layer, sync_sel, false);
         }
-    }
-
-    // 2. Reset any previous CoreAnimation transform so GUI is NEVER distorted/stretched!
-    id num_one = ((id (*)(id, SEL, double))objc_msgSend)(objc_getClass("NSNumber"),
-        sel_registerName("numberWithDouble:"), 1.0);
-    ((void (*)(id, SEL, id, id))objc_msgSend)(layer,
-        sel_registerName("setValue:forKeyPath:"), num_one, ms_string("transform.scale.x"));
-
-    // 3. Android Global ARM64 Parity (v68/v73):
-    // Surface geometry / CAMetalLayer drawableSize MUST REMAIN PASSTHROUGH!
-    // Never modify drawableSize buffer or force kCAGravityResize, which squashes the whole app and distorts 2D UI.
-}
-
-static void metal_layer_set_drawable_size_hook(id self, SEL cmd, MSSize size) {
-    static int s_logged_stretch = 0;
-    if (!s_logged_stretch && g_stretch_percent > 0 && g_stretch_percent != 100) {
-        s_logged_stretch = 1;
-        runtime_note("[APPLY][STRETCH] surface_geometry=passthrough CAMetalLayer size=%.1fx%.1f percent=%d%% UI_preserved=1",
-                     size.width, size.height, g_stretch_percent);
-    }
-    if (g_original_set_drawable_size) {
-        g_original_set_drawable_size(self, cmd, size);
-    }
-    ms_apply_metal_layer_policies(self);
-}
-
-static void metal_layer_set_contents_gravity_hook(id self, SEL cmd, id gravity) {
-    if (g_original_set_contents_gravity) {
-        g_original_set_contents_gravity(self, cmd, gravity);
     }
 }
 
@@ -337,24 +288,13 @@ static bool install_metal_layer_stretch_policy(void) {
     if (g_metal_layer_stretch_installed) return true;
     Class cls = (Class)objc_getClass("CAMetalLayer");
     if (!cls) return false;
-    Method m = class_getInstanceMethod(cls, sel_registerName("setDrawableSize:"));
-    if (m && !g_original_set_drawable_size) {
-        g_original_set_drawable_size = (SetDrawableSizeImp)method_setImplementation(m, (IMP)metal_layer_set_drawable_size_hook);
-    }
     Method sync_m = class_getInstanceMethod(cls, sel_registerName("setDisplaySyncEnabled:"));
     if (sync_m && !g_original_set_display_sync) {
         g_original_set_display_sync = (SetDisplaySyncImp)method_setImplementation(sync_m, (IMP)metal_layer_set_display_sync_hook);
     }
-    Method grav_m = class_getInstanceMethod(cls, sel_registerName("setContentsGravity:"));
-    if (grav_m && !g_original_set_contents_gravity) {
-        g_original_set_contents_gravity = (SetContentsGravityImp)method_setImplementation(grav_m, (IMP)metal_layer_set_contents_gravity_hook);
-    }
-    if (m || sync_m || grav_m) {
-        g_metal_layer_stretch_installed = 1;
-        runtime_note("[CAPABILITY][STRETCH] backend=%s status=READY hookInstalled=1 surface_geometry=passthrough", kStretchRuntimeBackend);
-        return true;
-    }
-    return false;
+    g_metal_layer_stretch_installed = 1;
+    runtime_note("[CAPABILITY][STRETCH] backend=%s status=READY hookInstalled=1 surface_geometry=passthrough", kStretchRuntimeBackend);
+    return true;
 }
 
 static void ms_apply_stretch_to_layer_tree(id layer, Class metalClass) {

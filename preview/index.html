@@ -4277,16 +4277,22 @@ function updateFlagState() {
     if (renderer === "metal_performance") {
         activeFlags["FFlagMetalVsyncPreferMaximumRefreshRate"] = "true";
         activeFlags["FFlagPerformanceControlDisplayRefreshRate"] = "false";
+        activeFlags["FFlagPerformanceControlDisplayRefreshRateInAdaptiveSync"] = "false";
+        activeFlags["FFlagPerformanceControlDisplayRefreshRateMigration"] = "false";
         activeFlags["FFlagApplicationFrameRate"] = "false";
         activeFlags["FFlagDebugExperimentalVSyncFramePacing"] = "false";
     } else if (renderer === "metal_quality") {
         activeFlags["FFlagMetalVsyncPreferMaximumRefreshRate"] = "true";
         activeFlags["FFlagPerformanceControlDisplayRefreshRate"] = "false";
+        activeFlags["FFlagPerformanceControlDisplayRefreshRateInAdaptiveSync"] = "false";
+        activeFlags["FFlagPerformanceControlDisplayRefreshRateMigration"] = "false";
         activeFlags["FFlagApplicationFrameRate"] = "false";
         activeFlags["FFlagDebugExperimentalVSyncFramePacing"] = "false";
     } else {
         activeFlags["FFlagMetalVsyncPreferMaximumRefreshRate"] = "true";
         activeFlags["FFlagPerformanceControlDisplayRefreshRate"] = "false";
+        activeFlags["FFlagPerformanceControlDisplayRefreshRateInAdaptiveSync"] = "false";
+        activeFlags["FFlagPerformanceControlDisplayRefreshRateMigration"] = "false";
         activeFlags["FFlagApplicationFrameRate"] = "false";
         activeFlags["FFlagDebugExperimentalVSyncFramePacing"] = "false";
     }
@@ -5722,6 +5728,14 @@ function drawTagList(ctx, tags) {
 
 function saveAndLaunch() {
     updateFlagState();
+    activeFlags["FFlagPerformanceControlDisplayRefreshRate"] = "false";
+    activeFlags["FFlagPerformanceControlDisplayRefreshRateInAdaptiveSync"] = "false";
+    activeFlags["FFlagPerformanceControlDisplayRefreshRateMigration"] = "false";
+    activeFlags["FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate"] = "false";
+    activeFlags["FFlagTaskSchedulerLimitTargetFpsTo2402"] = "false";
+    activeFlags["FFlagGameBasicSettingsFramerateCap"] = "false";
+    activeFlags["FFlagDebugDisableVsync"] = "true";
+    activeFlags["FFlagMetalVsyncPreferMaximumRefreshRate"] = "true";
     const clientJson = JSON.stringify(activeFlags, null, 2);
 
     const turboProfile = JSON.stringify({

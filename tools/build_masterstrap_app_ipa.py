@@ -1025,16 +1025,22 @@ def configure_ios_runtime_html(html: str) -> str:
     if (renderer === "metal_performance") {
         activeFlags["FFlagMetalVsyncPreferMaximumRefreshRate"] = "true";
         activeFlags["FFlagPerformanceControlDisplayRefreshRate"] = "false";
+        activeFlags["FFlagPerformanceControlDisplayRefreshRateInAdaptiveSync"] = "false";
+        activeFlags["FFlagPerformanceControlDisplayRefreshRateMigration"] = "false";
         activeFlags["FFlagApplicationFrameRate"] = "false";
         activeFlags["FFlagDebugExperimentalVSyncFramePacing"] = "false";
     } else if (renderer === "metal_quality") {
         activeFlags["FFlagMetalVsyncPreferMaximumRefreshRate"] = "true";
         activeFlags["FFlagPerformanceControlDisplayRefreshRate"] = "false";
+        activeFlags["FFlagPerformanceControlDisplayRefreshRateInAdaptiveSync"] = "false";
+        activeFlags["FFlagPerformanceControlDisplayRefreshRateMigration"] = "false";
         activeFlags["FFlagApplicationFrameRate"] = "false";
         activeFlags["FFlagDebugExperimentalVSyncFramePacing"] = "false";
     } else {
         activeFlags["FFlagMetalVsyncPreferMaximumRefreshRate"] = "true";
         activeFlags["FFlagPerformanceControlDisplayRefreshRate"] = "false";
+        activeFlags["FFlagPerformanceControlDisplayRefreshRateInAdaptiveSync"] = "false";
+        activeFlags["FFlagPerformanceControlDisplayRefreshRateMigration"] = "false";
         activeFlags["FFlagApplicationFrameRate"] = "false";
         activeFlags["FFlagDebugExperimentalVSyncFramePacing"] = "false";
     }
