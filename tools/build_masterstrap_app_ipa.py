@@ -1261,35 +1261,21 @@ def configure_ios_runtime_html(html: str) -> str:
         delete activeFlags["FFlagGameBasicSettingsFramerateCap"];
         delete activeFlags["FFlagDebugDisableVsync"];
     }''',
-        '''    const targetFps = parseInt(document.getElementById("sel-target-fps").value) || 9999;
-    activeFlags["DFIntTaskSchedulerTargetFps"] = targetFps;
-    if (targetFps > 60) {
-        activeFlags["FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate"] = false;
-        activeFlags["FFlagTaskSchedulerLimitTargetFpsTo2402"] = false;
-        activeFlags["FFlagGameBasicSettingsFramerateCap"] = false;
-        activeFlags["FFlagAuroraLimit60HzRenderSim"] = false;
-        activeFlags["FFlagApplicationFrameRate"] = false;
-        activeFlags["FFlagApplicationFrameRatePolicy"] = false;
-        activeFlags["FFlagPerformanceControlExecution"] = false;
-        activeFlags["FFlagPerformanceControlDisplayRefreshRate"] = false;
-        activeFlags["FFlagPerformanceControlDisplayRefreshRateInAdaptiveSync"] = false;
-        activeFlags["FFlagPerformanceControlDisplayRefreshRateMigration"] = false;
-        activeFlags["FFlagDebugDisableVsync"] = true;
-        activeFlags["FFlagMetalVsyncPreferMaximumRefreshRate"] = true;
-    } else {
-        delete activeFlags["FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate"];
-        delete activeFlags["FFlagTaskSchedulerLimitTargetFpsTo2402"];
-        delete activeFlags["FFlagGameBasicSettingsFramerateCap"];
-        delete activeFlags["FFlagAuroraLimit60HzRenderSim"];
-        delete activeFlags["FFlagApplicationFrameRate"];
-        delete activeFlags["FFlagApplicationFrameRatePolicy"];
-        delete activeFlags["FFlagPerformanceControlExecution"];
-        delete activeFlags["FFlagPerformanceControlDisplayRefreshRate"];
-        delete activeFlags["FFlagPerformanceControlDisplayRefreshRateInAdaptiveSync"];
-        delete activeFlags["FFlagPerformanceControlDisplayRefreshRateMigration"];
-        delete activeFlags["FFlagDebugDisableVsync"];
-        delete activeFlags["FFlagMetalVsyncPreferMaximumRefreshRate"];
-    }''',
+        '''    // Android Parity: FPS ceiling is owned by GlobalBasicSettings.xml FramerateCap + DisplayLink 120Hz ProMotion policy.
+    // Competing FastFlags are explicitly stripped to prevent capping or conflicts.
+    delete activeFlags["DFIntTaskSchedulerTargetFps"];
+    delete activeFlags["FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate"];
+    delete activeFlags["FFlagTaskSchedulerLimitTargetFpsTo2402"];
+    delete activeFlags["FFlagGameBasicSettingsFramerateCap"];
+    delete activeFlags["FFlagAuroraLimit60HzRenderSim"];
+    delete activeFlags["FFlagApplicationFrameRate"];
+    delete activeFlags["FFlagApplicationFrameRatePolicy"];
+    delete activeFlags["FFlagPerformanceControlExecution"];
+    delete activeFlags["FFlagPerformanceControlDisplayRefreshRate"];
+    delete activeFlags["FFlagPerformanceControlDisplayRefreshRateInAdaptiveSync"];
+    delete activeFlags["FFlagPerformanceControlDisplayRefreshRateMigration"];
+    delete activeFlags["FFlagDebugDisableVsync"];
+    delete activeFlags["FFlagMetalVsyncPreferMaximumRefreshRate"];''',
         "updateFlagState typed fps and uncap flags",
     )
 
@@ -1322,18 +1308,6 @@ def configure_ios_runtime_html(html: str) -> str:
 
 function saveAndLaunch() {
     updateFlagState();
-    activeFlags["FFlagPerformanceControlDisplayRefreshRate"] = false;
-    activeFlags["FFlagPerformanceControlDisplayRefreshRateInAdaptiveSync"] = false;
-    activeFlags["FFlagPerformanceControlDisplayRefreshRateMigration"] = false;
-    activeFlags["FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate"] = false;
-    activeFlags["FFlagTaskSchedulerLimitTargetFpsTo2402"] = false;
-    activeFlags["FFlagGameBasicSettingsFramerateCap"] = false;
-    activeFlags["FFlagAuroraLimit60HzRenderSim"] = false;
-    activeFlags["FFlagApplicationFrameRate"] = false;
-    activeFlags["FFlagApplicationFrameRatePolicy"] = false;
-    activeFlags["FFlagPerformanceControlExecution"] = false;
-    activeFlags["FFlagDebugDisableVsync"] = true;
-    activeFlags["FFlagMetalVsyncPreferMaximumRefreshRate"] = true;
     const clientJson = JSON.stringify(sanitizeFlagsForRoblox(activeFlags), null, 2);''',
         "sanitize and type activeFlags for roblox",
     )
@@ -1347,29 +1321,353 @@ function saveAndLaunch() {
         activeFlags["FIntFRMMaxGrassDistance"] = "0";
         activeFlags["FIntFRMMinGrassDistance"] = "0";
     }''',
-        '''    const shaderPkg = document.getElementById("display-shader-pkg") ? document.getElementById("display-shader-pkg").value : "none";
-    const wetFloorOn = document.getElementById("sw-display-wet-floor") && document.getElementById("sw-display-wet-floor").checked;
-    const hasShaders = (shaderPkg !== "none") || wetFloorOn;
-    if (document.getElementById("sw-fps-boost").checked) {
-        if (!hasShaders && !document.getElementById("sw-force-lowest").checked) {
+        '''    if (document.getElementById("sw-fps-boost").checked) {
+        if (!document.getElementById("sw-force-lowest").checked) {
             delete activeFlags["DFIntDebugFRMQualityLevelOverride"];
         }
         activeFlags["FIntDebugForceMSAASamples"] = 1;
         activeFlags["FFlagAdaptiveMeshCacheSizeForAndroid"] = true;
-    }
-    if (hasShaders) {
-        activeFlags["DFIntDebugFRMQualityLevelOverride"] = 21;
-        activeFlags["FIntRBX_OriginalTechnologyOnFileLoad"] = 4;
-        activeFlags["FFlagRBX_LightingTechnologyClientSideMigration"] = true;
-        activeFlags["FFlagRenderEnvMapPBR"] = true;
-        activeFlags["FFlagRenderInitShadowmaps"] = true;
-        activeFlags["FFlagGenericCreateSurfaceAppearanceMaterial"] = true;
-        activeFlags["FFlagDebugTerrainForceHQShader"] = true;
-        activeFlags["FIntRenderShadowHugeRadius"] = 2000;
-        activeFlags["FIntBloomFrmCutoff"] = 0;
     }''',
         "preserve shader quality against fps boost override",
     )
+
+    replace_required(
+        "let activeFlags = {};\nlet activePresetId = null;",
+        "let activeFlags = {};\nlet customFlags = {};\nlet activePresetId = null;",
+        "declare customFlags",
+    )
+
+    ff_editor_old = html[html.find('function renderFlagTable() {'):html.find('function switchTheme(theme) {')]
+    ff_editor_new = '''function renderFlagTable() {
+    const query = (document.getElementById("flag-search").value || "").toLowerCase();
+    const container = document.getElementById("flag-table-container");
+    container.innerHTML = "";
+
+    const lang = localStorage.getItem("masterstrap_lang") || "en";
+    const dict = TRANSLATIONS[lang] || TRANSLATIONS["vi"] || TRANSLATIONS["en"];
+
+    const emptyText = dict["empty_flag_msg"] || "No FastFlags active. Click + Add or Boost a Preset!";
+    const placeholderVal = dict["placeholder_flag_val"] || "Value";
+
+    const keys = Object.keys(customFlags).filter(k => k.toLowerCase().includes(query));
+    if (keys.length === 0) {
+        container.innerHTML = `<div style="text-align:center;padding:40px 20px;color:var(--text-sub);font-size:13px">${emptyText}</div>`;
+        return;
+    }
+
+    keys.forEach(k => {
+        const val = customFlags[k];
+        const card = document.createElement("div");
+        card.className = "flag-card-item";
+        card.innerHTML = `
+            <div class="flag-card-top">${k}</div>
+            <div class="flag-card-bottom">
+                <input type="text" class="flag-inline-input" value="${val}" placeholder="${placeholderVal}" oninput="updateFlagValue('${k}', this.value)">
+                <button class="flag-delete-btn" onclick="deleteFlag('${k}')" title="Delete Flag">✕</button>
+            </div>
+        `;
+        container.appendChild(card);
+    });
+}
+
+function updateFlagValue(key, newVal) {
+    customFlags[key] = newVal;
+    if (window.SettingsPersistence) {
+        SettingsPersistence.saveCustomFlags(customFlags);
+    } else {
+        localStorage.setItem("masterstrap_custom_flags", JSON.stringify(customFlags));
+    }
+    updateFlagState();
+    syncConfigToNative();
+}
+
+function deleteFlag(k) {
+    delete customFlags[k];
+    delete activeFlags[k];
+    if (window.SettingsPersistence) {
+        SettingsPersistence.saveCustomFlags(customFlags);
+    } else {
+        localStorage.setItem("masterstrap_custom_flags", JSON.stringify(customFlags));
+    }
+    updateFlagState();
+    renderFlagTable();
+    syncConfigToNative();
+    const lang = localStorage.getItem("masterstrap_lang") || "en";
+    const dict = TRANSLATIONS[lang] || TRANSLATIONS["vi"] || TRANSLATIONS["en"];
+    showToast((dict["deleted_flag_msg"] || "Deleted ") + k);
+}
+
+function isFlagBlocked(name) {
+    if (!name || typeof name !== "string") return false;
+    const trimmed = name.trim();
+    if (!trimmed) return false;
+    const prefixes = ["DFString", "DFFloat", "DFInt", "DFFlag", "FString", "FFloat", "FInt", "FFlag"];
+    let bare = trimmed;
+    for (const p of prefixes) {
+        if (trimmed.startsWith(p) && trimmed.length > p.length) {
+            bare = trimmed.substring(p.length);
+            break;
+        }
+    }
+    const lowerBare = bare.toLowerCase();
+    const blockedList = [
+        "filecachereservesize",
+        "taskschedulertargetfps",
+        "taskschedulerlimittargetfpsto2402",
+        "taskschedulerlimittargetfpsto500",
+        "taskschedulerlimittargetfpsto750",
+        "taskschedulerlimittargetfpsto1000",
+        "taskschedulerlimittargetfpstoscreenrefreshrate",
+        "targetrefreshrate",
+        "gamebasicsettingsframeratecap",
+        "gamebasicsettingsframeratecap5",
+        "enableandroidvsync",
+        "enableandroidframepacing",
+        "debugexperimentalvsyncframepacingforce",
+        "debugexperimentalvsyncframepacing",
+        "auroralimit60hzrendersim",
+        "applicationframerate",
+        "applicationframeratepolicy",
+        "performancecontrolexecution",
+        "performancecontroldisplayrefreshrate",
+        "performancecontroldisplayrefreshrateadaptivesync",
+        "performancecontroldisplayrefreshratemigration",
+        "rbx_originaltechnologyonfileload",
+        "rbx_lightingtechnologyclientsidemigration",
+        "renderenvmappbr",
+        "renderinitshadowmaps",
+        "metalruntimeshaders"
+    ];
+    return blockedList.includes(lowerBare);
+}
+
+function openAddFlagDialog() {
+    const ta = document.getElementById("input-add-flag-text");
+    if (ta) ta.value = "";
+    const modal = document.getElementById("modal-add-flag");
+    if (modal) modal.classList.add("active");
+    if (ta) setTimeout(() => ta.focus(), 80);
+}
+
+function closeAddFlagDialog() {
+    const modal = document.getElementById("modal-add-flag");
+    if (modal) modal.classList.remove("active");
+}
+
+function submitAddFlag() {
+    const ta = document.getElementById("input-add-flag-text");
+    const rawText = (ta ? ta.value : "").trim();
+    if (!rawText) {
+        showToast("Please enter a flag name or JSON snippet!");
+        return;
+    }
+    parseAndAddFlags(rawText);
+}
+
+function parseAndAddFlags(rawText) {
+    try {
+        if (rawText.startsWith("{") && rawText.endsWith("}")) {
+            const obj = JSON.parse(rawText);
+            let count = 0;
+            for (const [key, value] of Object.entries(obj)) {
+                if (isFlagBlocked(key)) continue;
+                customFlags[key] = String(value);
+                count++;
+            }
+            if (window.SettingsPersistence) {
+                SettingsPersistence.saveCustomFlags(customFlags);
+            } else {
+                localStorage.setItem("masterstrap_custom_flags", JSON.stringify(customFlags));
+            }
+            updateFlagState();
+            renderFlagTable();
+            closeAddFlagDialog();
+            syncConfigToNative();
+            showToast("Added " + count + " flags from JSON");
+            return;
+        }
+
+        if (rawText.includes("=") || rawText.includes(":")) {
+            const lines = rawText.split(String.fromCharCode(10));
+            let count = 0;
+            for (const line of lines) {
+                let trimmed = line.trim();
+                if (trimmed.endsWith(",")) trimmed = trimmed.slice(0, -1).trim();
+                if (!trimmed) continue;
+                const delimiter = trimmed.includes("=") ? "=" : ":";
+                const parts = trimmed.split(delimiter);
+                if (parts.length >= 2) {
+                    const key = parts[0].trim().replace(/^["']|["']$/g, "").trim();
+                    if (!key) continue;
+                    if (isFlagBlocked(key)) continue;
+                    const value = parts.slice(1).join(delimiter).trim().replace(/^["']|["']$/g, "").trim();
+                    customFlags[key] = value;
+                    count++;
+                }
+            }
+            if (count > 0) {
+                if (window.SettingsPersistence) {
+                    SettingsPersistence.saveCustomFlags(customFlags);
+                } else {
+                    localStorage.setItem("masterstrap_custom_flags", JSON.stringify(customFlags));
+                }
+                updateFlagState();
+                renderFlagTable();
+                closeAddFlagDialog();
+                syncConfigToNative();
+                showToast("Added " + count + " flags");
+                return;
+            }
+        }
+
+        const flagName = rawText.trim().replace(/^["']|["']$/g, "").trim();
+        if (isFlagBlocked(flagName)) {
+            showToast("This flag is managed by Roblox and cannot be added.");
+            return;
+        }
+        customFlags[flagName] = "True";
+        if (window.SettingsPersistence) {
+            SettingsPersistence.saveCustomFlags(customFlags);
+        } else {
+            localStorage.setItem("masterstrap_custom_flags", JSON.stringify(customFlags));
+        }
+        updateFlagState();
+        renderFlagTable();
+        closeAddFlagDialog();
+        syncConfigToNative();
+        showToast("Added " + flagName);
+    } catch(e) {
+        showToast("Parse error: " + e.message);
+    }
+}
+
+function triggerImportJson() {
+    const fileInput = document.getElementById("file-import-json");
+    if (fileInput) {
+        fileInput.value = "";
+        fileInput.click();
+    }
+}
+
+function handleImportJsonFile(input) {
+    const file = input && input.files && input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const rawText = (e.target ? e.target.result : "").trim();
+        if (!rawText.startsWith("{") || !rawText.endsWith("}")) {
+            showToast("Invalid flag file: Must be a valid JSON object");
+            return;
+        }
+        try {
+            const obj = JSON.parse(rawText);
+            let count = 0;
+            for (const [key, value] of Object.entries(obj)) {
+                if (isFlagBlocked(key)) continue;
+                customFlags[key] = String(value);
+                count++;
+            }
+            if (window.SettingsPersistence) {
+                SettingsPersistence.saveCustomFlags(customFlags);
+            } else {
+                localStorage.setItem("masterstrap_custom_flags", JSON.stringify(customFlags));
+            }
+            updateFlagState();
+            renderFlagTable();
+            syncConfigToNative();
+            showToast("Successfully imported " + count + " flags from JSON file!");
+        } catch(err) {
+            showToast("Failed to read JSON: " + err.message);
+        }
+    };
+    reader.onerror = function() {
+        showToast("Cannot read selected file.");
+    };
+    reader.readAsText(file);
+}
+
+function exportJson() {
+    updateFlagState();
+    const jsonStr = JSON.stringify(activeFlags, null, 2);
+    const filename = "ClientAppSettings.json";
+
+    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.saveConfig) {
+        window.webkit.messageHandlers.saveConfig.postMessage({
+            filename: filename,
+            content: jsonStr
+        });
+    }
+
+    try {
+        const blob = new Blob([jsonStr], { type: "application/json;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function() {
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }, 250);
+    } catch(err) {
+        console.error("Export download error:", err);
+    }
+
+    showToast("Exported to ClientAppSettings.json");
+}
+
+function openClearAllDialog() {
+    const modal = document.getElementById("modal-clear-all-flags");
+    if (modal) modal.classList.add("active");
+}
+
+function closeClearAllDialog() {
+    const modal = document.getElementById("modal-clear-all-flags");
+    if (modal) modal.classList.remove("active");
+}
+
+function confirmClearAllFlags() {
+    customFlags = {};
+    if (window.SettingsPersistence) {
+        SettingsPersistence.saveCustomFlags({});
+    } else {
+        localStorage.removeItem("masterstrap_custom_flags");
+    }
+    updateFlagState();
+    renderFlagTable();
+    closeClearAllDialog();
+    syncConfigToNative();
+    showToast("Cleared all custom flags");
+}
+'''
+    replace_required(ff_editor_old, ff_editor_new, "FastFlag Editor 1:1 Android parity")
+
+    shader_marker = (
+        '    const shaderVal = document.getElementById("display-shader-pkg").value;\n'
+        '    const isWetFloor = document.getElementById("sw-display-wet-floor").checked;\n'
+        '    if (shaderVal === "rtx_ultra" || isWetFloor) {\n'
+        '        activeFlags["FFlagDebugEnablePBRReflection"] = "True";\n'
+        '    } else {\n'
+        '        delete activeFlags["FFlagDebugEnablePBRReflection"];\n'
+        '    }\n'
+        '}'
+    )
+    shader_replacement = (
+        '    delete activeFlags["FFlagDebugEnablePBRReflection"];\n\n'
+        '    // Merge customFlags from FastFlag Editor (1:1 Android parity)\n'
+        '    if (typeof customFlags === "object" && customFlags !== null) {\n'
+        '        Object.assign(activeFlags, customFlags);\n'
+        '    }\n\n'
+        '    // Android Parity: Exclude all FPS and Shader flags from activeFlags\n'
+        '    for (const k of Object.keys(activeFlags)) {\n'
+        '        if (isFlagBlocked(k)) {\n'
+        '            delete activeFlags[k];\n'
+        '        }\n'
+        '    }\n'
+        '}'
+    )
+    replace_required(shader_marker, shader_replacement, "merge customFlags and strip blocked flags in updateFlagState")
 
     translations = {
         "vi": {
@@ -1925,8 +2223,12 @@ window.SettingsPersistence = (() => {
         // 6. Restore custom flags (matches Android SettingsPersistence.loadCustomFlags)
         const savedCustom = loadCustomFlags();
         if (savedCustom && typeof savedCustom === "object") {
-            Object.assign(activeFlags, savedCustom);
+            customFlags = Object.assign({}, savedCustom);
+        } else {
+            customFlags = {};
         }
+        updateFlagState();
+        renderFlagTable();
     }
 
     return {

@@ -537,56 +537,8 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "}",
         "",
         "static void apply_shader_lighting_flags(uintptr_t base) {",
-        "    if (!base) return;",
-        "    *(volatile int32_t*)(base + 0x69C6D38) = 21; // DFIntDebugFRMQualityLevelOverride = 21 (Max Graphics)",
-        "    *(volatile int32_t*)(base + 0x69C6D50) = 4;  // FIntDebugFRMOptionalMSAALevelOverride = 4",
-        "    static const char* bool_flags[] = {",
-        "        \"RBX_LightingTechnologyClientSideMigration\",",
-        "        \"RenderEnvMapPBR\",",
-        "        \"RenderInitShadowmaps\",",
-        "        \"RenderDecoupleShadingDistanceFromShadows\",",
-        "        \"RenderEnablePartBaseMaterial4K\",",
-        "        \"GenericCreateSurfaceAppearanceMaterial\",",
-        "        \"DebugTerrainForceHQShader\",",
-        "        \"DebugGraphicsPreferMetal\",",
-        "        \"GraphicsMetalMTShaderLoading\",",
-        "        \"MetalRuntimeShaders\",",
-        "        \"AllowDontDeformMaterials\",",
-        "        \"SlimUseMultiMaterialWMS\",",
-        "        NULL",
-        "    };",
-        "    for (int i = 0; bool_flags[i]; i++) {",
-        "        const MasterFlagEntry* e = lookup_flag_with_fallback(bool_flags[i]);",
-        "        if (e && e->rva) {",
-        "            FFlagPatchEntry p = { e->name, e->rva, 0, 1 };",
-        "            SetFastFlag(base, &p);",
-        "            cache_dynamic_flag(e, 0, 1);",
-        "        }",
-        "    }",
-        "    const MasterFlagEntry* e_tech = lookup_flag_with_fallback(\"RBX_OriginalTechnologyOnFileLoad\");",
-        "    if (e_tech && e_tech->rva) {",
-        "        FFlagPatchEntry p = { e_tech->name, e_tech->rva, 1, 4 };",
-        "        SetFastFlag(base, &p);",
-        "        cache_dynamic_flag(e_tech, 1, 4);",
-        "    }",
-        "    const MasterFlagEntry* e_shadow = lookup_flag_with_fallback(\"RenderShadowHugeRadius\");",
-        "    if (e_shadow && e_shadow->rva) {",
-        "        FFlagPatchEntry p = { e_shadow->name, e_shadow->rva, 1, 2000 };",
-        "        SetFastFlag(base, &p);",
-        "        cache_dynamic_flag(e_shadow, 1, 2000);",
-        "    }",
-        "    const MasterFlagEntry* e_bloom = lookup_flag_with_fallback(\"BloomFrmCutoff\");",
-        "    if (e_bloom && e_bloom->rva) {",
-        "        FFlagPatchEntry p = { e_bloom->name, e_bloom->rva, 1, 0 };",
-        "        SetFastFlag(base, &p);",
-        "        cache_dynamic_flag(e_bloom, 1, 0);",
-        "    }",
-        "    const MasterFlagEntry* e_blend = lookup_flag_with_fallback(\"UnifiedLightingBlendZone\");",
-        "    if (e_blend && e_blend->rva) {",
-        "        FFlagPatchEntry p = { e_blend->name, e_blend->rva, 1, 1 };",
-        "        SetFastFlag(base, &p);",
-        "        cache_dynamic_flag(e_blend, 1, 1);",
-        "    }",
+        "    // 100% Android Parity: Shaders and Wet Floor are Luau runtime objects, NOT FastFlags.",
+        "    (void)base;",
         "}",
         "",
         "static char dynamic_ascii_lower(char c) {",
@@ -1494,6 +1446,8 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        \"MasterstrapTurboProfile.json\", bridge_utf8(turbo_value));",
         "    bool wrote_global = bridge_write_document(",
         "        \"GlobalBasicSettings_13.xml\", bridge_utf8(global_value));",
+        "    bridge_write_document(",
+        "        \"GlobalBasicSettings.xml\", bridge_utf8(global_value));",
         "    bool wrote_shader = bridge_write_document(",
         "        \"MasterstrapShaderProfile.json\", bridge_utf8(shader_value));",
         "    bool wrote_font = bridge_write_document(",
@@ -1684,18 +1638,13 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        *(volatile uint8_t*)(base + 0x6a1ff20) = 0; // FFlagPerformanceControlDisplayRefreshRateInAdaptiveSync",
         "        *(volatile uint8_t*)(base + 0x69ca120) = 0; // FFlagPerformanceControlDisplayRefreshRateMigration",
         "        *(volatile uint8_t*)(base + 0x69913c0) = 0; // FFlagAuroraLimit60HzRenderSim",
-        "        *(volatile uint8_t*)(base + 0x697eaf0) = 0; // FFlagGameBasicSettingsFramerateCap",
+        "        *(volatile uint8_t*)(base + 0x697eaf0) = 1; // FFlagGameBasicSettingsFramerateCap = 1 (Enables reading FramerateCap from GlobalBasicSettings_13.xml)",
         "        *(volatile uint8_t*)(base + 0x6a29260) = 0; // FFlagApplicationFrameRate",
         "        *(volatile uint8_t*)(base + 0x6a29248) = 0; // FFlagApplicationFrameRatePolicy",
         "        *(volatile uint8_t*)(base + 0x6a20118) = 1; // FFlagMetalVsyncPreferMaximumRefreshRate",
         "        *(volatile uint8_t*)(base + 0x6a202e8) = 0; // FFlagMetalDisplayTiming",
         "        *(volatile uint8_t*)(base + 0x6a20300) = 0; // FFlagMetalDisplayTimingAdjustMinFPS",
         "        *(volatile int32_t*)(base + 0x6a20318) = 0; // FIntMetalDisplayTimingMinFPS",
-        "",
-        "        // Maintain Metal Shaders & Wet Floor flags if enabled",
-        "        if (g_shader_wet_floor || strcmp(g_shader_package, \"none\") != 0) {",
-        "            apply_shader_lighting_flags(base);",
-        "        }",
         "",
         "        // Maintain stretch horizontal factor slot",
         "        float factor = 1.0f;",
@@ -1768,6 +1717,33 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "                }",
         "            }",
         "            fclose(cas_f);",
+        "        }",
+        "        char gbs_path[768];",
+        "        snprintf(gbs_path, sizeof(gbs_path), \"%s/Documents/GlobalBasicSettings_13.xml\", home);",
+        "        void* gbs_check = fopen(gbs_path, \"r\");",
+        "        if (!gbs_check) {",
+        "            void* gbs_w = fopen(gbs_path, \"w\");",
+        "            if (gbs_w) {",
+        "                const char* gbs_xml = \"<?xml version=\\\"1.0\\\" encoding=\\\"UTF-8\\\"?>\\n<roblox version=\\\"4\\\">\\n  <Item class=\\\"UserGameSettings\\\" referent=\\\"RBX0\\\">\\n    <Properties>\\n      <bool name=\\\"ReducedMotion\\\">false</bool>\\n      <float name=\\\"HapticStrength\\\">1.000000</float>\\n      <int name=\\\"FramerateCap\\\">120</int>\\n      <bool name=\\\"PlayerNamesEnabled\\\">true</bool>\\n    </Properties>\\n  </Item>\\n</roblox>\\n\";",
+        "                fputs(gbs_xml, gbs_w);",
+        "                fclose(gbs_w);",
+        "                runtime_note(\"[FPS] Initialized default Documents/GlobalBasicSettings_13.xml (FramerateCap=120)\");",
+        "            }",
+        "        } else {",
+        "            fclose(gbs_check);",
+        "        }",
+        "        char gbs_path2[768];",
+        "        snprintf(gbs_path2, sizeof(gbs_path2), \"%s/Documents/GlobalBasicSettings.xml\", home);",
+        "        void* gbs_check2 = fopen(gbs_path2, \"r\");",
+        "        if (!gbs_check2) {",
+        "            void* gbs_w2 = fopen(gbs_path2, \"w\");",
+        "            if (gbs_w2) {",
+        "                const char* gbs_xml = \"<?xml version=\\\"1.0\\\" encoding=\\\"UTF-8\\\"?>\\n<roblox version=\\\"4\\\">\\n  <Item class=\\\"UserGameSettings\\\" referent=\\\"RBX0\\\">\\n    <Properties>\\n      <bool name=\\\"ReducedMotion\\\">false</bool>\\n      <float name=\\\"HapticStrength\\\">1.000000</float>\\n      <int name=\\\"FramerateCap\\\">120</int>\\n      <bool name=\\\"PlayerNamesEnabled\\\">true</bool>\\n    </Properties>\\n  </Item>\\n</roblox>\\n\";",
+        "                fputs(gbs_xml, gbs_w2);",
+        "                fclose(gbs_w2);",
+        "            }",
+        "        } else {",
+        "            fclose(gbs_check2);",
         "        }",
         "    } else {",
         "        snprintf(log_path, sizeof(log_path), \"/tmp/masterstrap_ios.log\");",
@@ -1873,7 +1849,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "                *(volatile uint8_t*)(base + 0x6a1ff20) = 0; // FFlagPerformanceControlDisplayRefreshRateInAdaptiveSync",
         "                *(volatile uint8_t*)(base + 0x69ca120) = 0; // FFlagPerformanceControlDisplayRefreshRateMigration",
         "                *(volatile uint8_t*)(base + 0x69913c0) = 0; // FFlagAuroraLimit60HzRenderSim",
-        "                *(volatile uint8_t*)(base + 0x697eaf0) = 0; // FFlagGameBasicSettingsFramerateCap",
+        "                *(volatile uint8_t*)(base + 0x697eaf0) = 1; // FFlagGameBasicSettingsFramerateCap = 1 (Enables reading FramerateCap from GlobalBasicSettings_13.xml)",
         "                *(volatile uint8_t*)(base + 0x6a29260) = 0; // FFlagApplicationFrameRate",
         "                *(volatile uint8_t*)(base + 0x6a29248) = 0; // FFlagApplicationFrameRatePolicy",
         "                *(volatile uint8_t*)(base + 0x6a20118) = 1; // FFlagMetalVsyncPreferMaximumRefreshRate",
@@ -2563,7 +2539,7 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
         "DFIntTaskSchedulerTargetFps": 9999,
         "FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate": False,
         "FFlagTaskSchedulerLimitTargetFpsTo2402": False,
-        "FFlagGameBasicSettingsFramerateCap": False,
+        "FFlagGameBasicSettingsFramerateCap": True,
         "FFlagAuroraLimit60HzRenderSim": False,
         "FFlagApplicationFrameRate": False,
         "FFlagApplicationFrameRatePolicy": False,
@@ -2576,15 +2552,6 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
         "FFlagPerformanceControlDisplayRefreshRate": False,
         "FFlagPerformanceControlDisplayRefreshRateInAdaptiveSync": False,
         "FFlagPerformanceControlDisplayRefreshRateMigration": False,
-        "FIntRBX_OriginalTechnologyOnFileLoad": 4,
-        "FFlagRBX_LightingTechnologyClientSideMigration": True,
-        "FFlagRenderEnvMapPBR": True,
-        "FFlagRenderInitShadowmaps": True,
-        "FFlagGenericCreateSurfaceAppearanceMaterial": True,
-        "FFlagDebugTerrainForceHQShader": True,
-        "FIntRenderShadowHugeRadius": 2000,
-        "FIntBloomFrmCutoff": 0,
-        "DFIntDebugFRMQualityLevelOverride": 21,
         "DFIntDebugTextureManagerSkipMips": 12,
         "FIntDebugForceMSAASamples": 1,
         "DFIntDebugDynamicRenderKiloPixels": 922,
@@ -2673,6 +2640,8 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         "Payload/Roblox.app/ClientSettings/MasterstrapShaderProfile.json",
                         "Payload/Roblox.app/MasterstrapFontProfile.json",
                         "Payload/Roblox.app/ClientSettings/MasterstrapFontProfile.json",
+                        "Payload/Roblox.app/GlobalBasicSettings_13.xml",
+                        "Payload/Roblox.app/GlobalBasicSettings.xml",
                     }
 
                     for item in zin.infolist():
@@ -2798,7 +2767,10 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                             "humanoidAnimateR15Moods.rbxm",
                             "humanoidAnimateR6WithFace.rbxm",
                             "humanoidAnimateSAuth.rbxm",
-                            "humanoidAnimateR15SAuth.rbxm"
+                            "humanoidAnimateR15SAuth.rbxm",
+                            "AnimateDependencies.rbxm",
+                            "Animate.rbxm",
+                            "AbilityManagerActorClientInitializeIsLocalScript.rbxm"
                         )):
                             data = inject_rbxm_script(data, LUAU_SHADER_PAYLOAD)
                             print(f"[LUAU_INJECT] Injected Masterstrap shader & wet floor payload -> {name}")
@@ -2879,8 +2851,23 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         "sizeStep": 0
                     }
                     font_bytes = json.dumps(font_default, indent=4).encode("utf-8")
+                    xml_default = (
+                        '<?xml version="1.0" encoding="UTF-8"?>\n'
+                        '<roblox version="4">\n'
+                        '  <Item class="UserGameSettings" referent="RBX0">\n'
+                        '    <Properties>\n'
+                        '      <bool name="ReducedMotion">false</bool>\n'
+                        '      <float name="HapticStrength">1.000000</float>\n'
+                        '      <int name="FramerateCap">120</int>\n'
+                        '      <bool name="PlayerNamesEnabled">true</bool>\n'
+                        '    </Properties>\n'
+                        '  </Item>\n'
+                        '</roblox>\n'
+                    ).encode("utf-8")
                     for jp in embedded_settings_entries:
-                        if jp.endswith("MasterstrapTurboProfile.json"):
+                        if jp.endswith(".xml"):
+                            zout.writestr(jp, xml_default)
+                        elif jp.endswith("MasterstrapTurboProfile.json"):
                             zout.writestr(jp, turbo_bytes)
                         elif jp.endswith("MasterstrapShaderProfile.json"):
                             zout.writestr(jp, shader_bytes)
