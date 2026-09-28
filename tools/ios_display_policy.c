@@ -65,7 +65,7 @@ static int ms_thermal(void) {
     return (int)((long (*)(id, SEL))objc_msgSend)(ms_process_info(), sel_registerName("thermalState"));
 }
 static bool fps_runtime_requested(void) {
-    return (g_ms_policy.loaded && (g_ms_policy.refresh || g_ms_policy.target > 60)) || g_target_fps > 60;
+    return (g_ms_policy.loaded && (g_ms_policy.refresh || g_ms_policy.target > 0)) || g_target_fps > 0;
 }
 static long fps_runtime_target(void) {
     int target = (g_ms_policy.target > 0) ? g_ms_policy.target : (g_target_fps > 0 ? g_target_fps : 60);
@@ -82,11 +82,17 @@ static inline MSFrameRateRange sanitize_frame_rate_range(MSFrameRateRange range)
     if (range.preferred > range.maximum) range.preferred = range.maximum;
     return range;
 }
-static MSFrameRateRange ms_target_range(void) {
+static MSFrameRateRange ms_target_range(long target) {
     int screen_max = ios_maximum_frames_per_second();
-    float link_max = (float)screen_max;
-    if (link_max < 120.0f) link_max = 120.0f;
-    return (MSFrameRateRange){link_max, link_max, link_max};
+    if (screen_max <= 0) screen_max = 60;
+    if (target >= 9999) {
+        float max_fps = (float)(screen_max >= 120 ? screen_max : 120);
+        return sanitize_frame_rate_range((MSFrameRateRange){60.0f, max_fps, max_fps});
+    }
+    float pref = (float)target;
+    float min_fps = pref < 60.0f ? pref : 60.0f;
+    float max_fps = pref > (float)screen_max ? pref : (float)screen_max;
+    return sanitize_frame_rate_range((MSFrameRateRange){min_fps, max_fps, pref});
 }
 static bool ms_get_link_request(id link, MSLinkRequest* request) {
     id value = objc_getAssociatedObject(link, &g_ms_link_request_key);
@@ -135,7 +141,7 @@ static void apply_display_link_policy(id link, const char* source) {
     g_ms_applying = 1;
     long target = fps_runtime_target();
     if (g_original_display_link_set_range) {
-        MSFrameRateRange range = ms_target_range();
+        MSFrameRateRange range = ms_target_range(target);
         g_original_display_link_set_range(link, sel_registerName("setPreferredFrameRateRange:"), range);
         if (g_display_link_rewrite_count < 16) {
             MSFrameRateRange actual = ((MSFrameRateRange (*)(id, SEL))objc_msgSend)(link, sel_registerName("preferredFrameRateRange"));
@@ -143,11 +149,13 @@ static void apply_display_link_policy(id link, const char* source) {
                 source, (double)actual.minimum, (double)actual.maximum, (double)actual.preferred, target,
                 actual.preferred == range.preferred ? "MATCH" : "OS_ADJUSTED");
         }
-    } else if (g_original_display_link_set_fps) {
-        g_original_display_link_set_fps(link, sel_registerName("setPreferredFramesPerSecond:"), target);
+    }
+    if (g_original_display_link_set_fps) {
+        long link_fps = (target >= 9999) ? (long)ios_maximum_frames_per_second() : target;
+        g_original_display_link_set_fps(link, sel_registerName("setPreferredFramesPerSecond:"), link_fps);
         if (g_display_link_rewrite_count < 16) {
             long actual = ((long (*)(id, SEL))objc_msgSend)(link, sel_registerName("preferredFramesPerSecond"));
-            runtime_note("[READBACK][FPS] source=%s api=preferredFramesPerSecond requested=%ld readback=%ld presentedFps=UNMEASURED", source, target, actual);
+            runtime_note("[READBACK][FPS] source=%s api=preferredFramesPerSecond requested=%ld readback=%ld presentedFps=UNMEASURED", source, link_fps, actual);
         }
     }
     if (g_display_link_rewrite_count < 16) {

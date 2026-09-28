@@ -4464,10 +4464,36 @@ function updateFlagState() {
 
     const shaderVal = document.getElementById("display-shader-pkg").value;
     const isWetFloor = document.getElementById("sw-display-wet-floor").checked;
-    if (shaderVal === "rtx_ultra" || isWetFloor) {
-        activeFlags["FFlagDebugEnablePBRReflection"] = "True";
+    if (shaderVal !== "none" || isWetFloor) {
+        activeFlags["FIntRBX_OriginalTechnologyOnFileLoad"] = "4";
+        activeFlags["FFlagRBX_LightingTechnologyClientSideMigration"] = "True";
+        activeFlags["FFlagRenderEnvMapPBR"] = "True";
+        activeFlags["FFlagRenderInitShadowmaps"] = "True";
+        activeFlags["FFlagRenderDecoupleShadingDistanceFromShadows"] = "True";
+        activeFlags["FFlagRenderEnablePartBaseMaterial4K"] = "True";
+        activeFlags["FFlagGenericCreateSurfaceAppearanceMaterial"] = "True";
+        activeFlags["FIntRenderShadowHugeRadius"] = "2000";
+        activeFlags["FIntBloomFrmCutoff"] = "0";
+        activeFlags["FIntUnifiedLightingBlendZone"] = "1";
+        activeFlags["FFlagDebugTerrainForceHQShader"] = "True";
+        activeFlags["FFlagDebugGraphicsPreferMetal"] = "True";
+        activeFlags["FFlagGraphicsMetalMTShaderLoading"] = "True";
+        activeFlags["FFlagMetalRuntimeShaders"] = "True";
     } else {
-        delete activeFlags["FFlagDebugEnablePBRReflection"];
+        delete activeFlags["FIntRBX_OriginalTechnologyOnFileLoad"];
+        delete activeFlags["FFlagRBX_LightingTechnologyClientSideMigration"];
+        delete activeFlags["FFlagRenderEnvMapPBR"];
+        delete activeFlags["FFlagRenderInitShadowmaps"];
+        delete activeFlags["FFlagRenderDecoupleShadingDistanceFromShadows"];
+        delete activeFlags["FFlagRenderEnablePartBaseMaterial4K"];
+        delete activeFlags["FFlagGenericCreateSurfaceAppearanceMaterial"];
+        delete activeFlags["FIntRenderShadowHugeRadius"];
+        delete activeFlags["FIntBloomFrmCutoff"];
+        delete activeFlags["FIntUnifiedLightingBlendZone"];
+        delete activeFlags["FFlagDebugTerrainForceHQShader"];
+        delete activeFlags["FFlagDebugGraphicsPreferMetal"];
+        delete activeFlags["FFlagGraphicsMetalMTShaderLoading"];
+        delete activeFlags["FFlagMetalRuntimeShaders"];
     }
 }
 

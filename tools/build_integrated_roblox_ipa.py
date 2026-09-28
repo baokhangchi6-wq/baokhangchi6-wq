@@ -315,9 +315,13 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "extern int pthread_create(void **thread, const void *attr, void *(*start_routine)(void *), void *arg);",
         "extern int pthread_detach(void *thread);",
         "extern char* strstr(const char *haystack, const char *needle);",
+        "extern char* strrchr(const char *s, int c);",
+        "extern char* strcpy(char *dest, const char *src);",
         "extern char* strdup(const char *s);",
         "extern void* memcpy(void *dest, const void *src, size_t n);",
         "extern int fputs(const char *str, void *stream);",
+        "extern int open(const char *path, int oflag, ...);",
+        "extern int access(const char *path, int amode);",
         "typedef void* id;",
         "typedef void* SEL;",
         "typedef void* Class;",
@@ -532,17 +536,18 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static void apply_shader_lighting_flags(uintptr_t base) {",
         "    if (!base) return;",
         "    static const char* bool_flags[] = {",
-        "        \"GenericCreateSurfaceAppearanceMaterial\",",
+        "        \"RBX_LightingTechnologyClientSideMigration\",",
+        "        \"RenderEnvMapPBR\",",
+        "        \"RenderInitShadowmaps\",",
+        "        \"RenderDecoupleShadingDistanceFromShadows\",",
         "        \"RenderEnablePartBaseMaterial4K\",",
-        "        \"EnableMaterialSlotTable\",",
+        "        \"GenericCreateSurfaceAppearanceMaterial\",",
+        "        \"DebugTerrainForceHQShader\",",
+        "        \"DebugGraphicsPreferMetal\",",
+        "        \"GraphicsMetalMTShaderLoading\",",
+        "        \"MetalRuntimeShaders\",",
         "        \"AllowDontDeformMaterials\",",
         "        \"SlimUseMultiMaterialWMS\",",
-        "        \"RenderDecoupleShadingDistanceFromShadows\",",
-        "        \"FutureIsBrightPhase3Vulkan\",",
-        "        \"DebugTerrainForceHQShader\",",
-        "        \"RenderInitShadowmaps\",",
-        "        \"MetalRuntimeShaders\",",
-        "        \"MTLRuntimeShaderCompilation\",",
         "        NULL",
         "    };",
         "    for (int i = 0; bool_flags[i]; i++) {",
@@ -553,11 +558,11 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "            cache_dynamic_flag(e, 0, 1);",
         "        }",
         "    }",
-        "    const MasterFlagEntry* e_blend = lookup_flag_with_fallback(\"UnifiedLightingBlendZone\");",
-        "    if (e_blend && e_blend->rva) {",
-        "        FFlagPatchEntry p = { e_blend->name, e_blend->rva, 1, 1 };",
+        "    const MasterFlagEntry* e_tech = lookup_flag_with_fallback(\"RBX_OriginalTechnologyOnFileLoad\");",
+        "    if (e_tech && e_tech->rva) {",
+        "        FFlagPatchEntry p = { e_tech->name, e_tech->rva, 1, 4 };",
         "        SetFastFlag(base, &p);",
-        "        cache_dynamic_flag(e_blend, 1, 1);",
+        "        cache_dynamic_flag(e_tech, 1, 4);",
         "    }",
         "    const MasterFlagEntry* e_shadow = lookup_flag_with_fallback(\"RenderShadowHugeRadius\");",
         "    if (e_shadow && e_shadow->rva) {",
@@ -570,6 +575,12 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        FFlagPatchEntry p = { e_bloom->name, e_bloom->rva, 1, 0 };",
         "        SetFastFlag(base, &p);",
         "        cache_dynamic_flag(e_bloom, 1, 0);",
+        "    }",
+        "    const MasterFlagEntry* e_blend = lookup_flag_with_fallback(\"UnifiedLightingBlendZone\");",
+        "    if (e_blend && e_blend->rva) {",
+        "        FFlagPatchEntry p = { e_blend->name, e_blend->rva, 1, 1 };",
+        "        SetFastFlag(base, &p);",
+        "        cache_dynamic_flag(e_blend, 1, 1);",
         "    }",
         "}",
         "",
@@ -791,7 +802,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static int g_font_size_step = 0;",
         "static inline int get_effective_target_fps(void) {",
         "    if (g_target_fps > 0 && g_target_fps < 9999) return g_target_fps;",
-        "    return 2147483647; /* Infinity */",
+        "    return 9999;",
         "}",
         "static void runtime_note(const char* fmt, ...);",
         "static void ensure_fps_slot_guard_thread(uintptr_t base);",
@@ -860,6 +871,73 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    output[count] = '\\0';",
         "    return (unsigned char)value[count] == 34;",
         "}",
+        "",
+        "static const char* get_target_font_filename(void) {",
+        "    if (strcmp(g_font_family, \"Minecraft\") == 0) return \"Minecraft.ttf\";",
+        "    if (strcmp(g_font_family, \"GothamBold\") == 0) return \"Montserrat-Bold.ttf\";",
+        "    if (strcmp(g_font_family, \"Cyberpunk\") == 0) return \"zekton_rg.ttf\";",
+        "    if (strcmp(g_font_family, \"Fredoka\") == 0) return \"FredokaOne-Regular.ttf\";",
+        "    if (strcmp(g_font_family, \"AnimeHand\") == 0) return \"PatrickHand-Regular.ttf\";",
+        "    if (strcmp(g_font_family, \"ComicBangers\") == 0) return \"Bangers-Regular.ttf\";",
+        "    if (strcmp(g_font_family, \"Typewriter\") == 0) return \"SpecialElite-Regular.ttf\";",
+        "    if (strcmp(g_font_family, \"Creepster\") == 0) return \"Creepster-Regular.ttf\";",
+        "    if (strcmp(g_font_family, \"Merriweather\") == 0) return \"Merriweather-Italic.ttf\";",
+        "    if (strcmp(g_font_family, \"Highway\") == 0) return \"HWYGOTH.ttf\";",
+        "    return NULL;",
+        "}",
+        "",
+        "static const char* redirect_font_path(const char* original_path, char* buffer, size_t buf_size) {",
+        "    if (!original_path || strcmp(g_font_family, \"Default\") == 0 || g_font_family[0] == '\\0') {",
+        "        return original_path;",
+        "    }",
+        "    const char* target_filename = get_target_font_filename();",
+        "    if (!target_filename) return original_path;",
+        "    if (strstr(original_path, \"BuilderSans-\") != NULL || strstr(original_path, \"SourceSansPro-\") != NULL) {",
+        "        const char* last_slash = strrchr(original_path, '/');",
+        "        if (last_slash) {",
+        "            size_t dir_len = (size_t)(last_slash - original_path + 1);",
+        "            if (dir_len + strlen(target_filename) < buf_size) {",
+        "                memcpy(buffer, original_path, dir_len);",
+        "                strcpy(buffer + dir_len, target_filename);",
+        "                if (access(buffer, 0) == 0) {",
+        "                    static int logged_font = 0;",
+        "                    if (!logged_font) {",
+        "                        logged_font = 1;",
+        "                        runtime_note(\"[FONT_VFS] Redirected font: %s -> %s (family=%s)\", original_path, buffer, g_font_family);",
+        "                    }",
+        "                    return buffer;",
+        "                }",
+        "            }",
+        "        }",
+        "    }",
+        "    return original_path;",
+        "}",
+        "",
+        "static void* ms_interpose_fopen(const char* path, const char* mode) {",
+        "    char redirected[1024];",
+        "    const char* actual_path = redirect_font_path(path, redirected, sizeof(redirected));",
+        "    return fopen(actual_path, mode);",
+        "}",
+        "",
+        "static int ms_interpose_open(const char* path, int oflag, int mode) {",
+        "    char redirected[1024];",
+        "    const char* actual_path = redirect_font_path(path, redirected, sizeof(redirected));",
+        "    return open(actual_path, oflag, mode);",
+        "}",
+        "",
+        "static int ms_interpose_access(const char* path, int amode) {",
+        "    char redirected[1024];",
+        "    const char* actual_path = redirect_font_path(path, redirected, sizeof(redirected));",
+        "    return access(actual_path, amode);",
+        "}",
+        "",
+        "#define DYLD_INTERPOSE(_replacement,_replacee) \\",
+        "   __attribute__((used)) static struct{ const void* replacement; const void* replacee; } _interpose_##_replacee \\",
+        "            __attribute__((section (\"__DATA,__interpose\"))) = { (const void*)(uintptr_t)&_replacement, (const void*)(uintptr_t)&_replacee };",
+        "",
+        "DYLD_INTERPOSE(ms_interpose_fopen, fopen);",
+        "DYLD_INTERPOSE(ms_interpose_open, open);",
+        "DYLD_INTERPOSE(ms_interpose_access, access);",
         "",
         "static char* read_profile_file(const char* file_name, long* size_out) {",
         "    const char* home = getenv(\"HOME\");",
@@ -2058,6 +2136,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        if (base == 0) { base = get_robloxlib_base(); if (!engine_identity_matches(base)) base = 0; g_engine_base = base; }",
         "        if (base != 0) {",
         "            for (size_t i = 0; i < kVerifiedCount; i++) {",
+        "                if (kVerifiedFlags[i].rva == 0x6a58de8) continue;",
         "                SetFastFlag(base, &kVerifiedFlags[i]);",
         "            }",
         "            apply_cached_dynamic_flags(base);",
@@ -2075,6 +2154,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        if (base != 0) {",
         "            // Watchdog lock: if Roblox engine resets TaskSchedulerTargetFps to 60 upon server join, reassert instantly",
         "            for (size_t i = 0; i < kVerifiedCount; i++) {",
+        "                if (kVerifiedFlags[i].rva == 0x6a58de8) continue;",
         "                if (kVerifiedFlags[i].kind == 1) {",
         "                    int32_t cur = *(volatile int32_t*)(base + kVerifiedFlags[i].rva);",
         "                    if (cur != (int32_t)kVerifiedFlags[i].value) {",
@@ -2415,6 +2495,8 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         "Payload/Roblox.app/ClientSettings/MasterstrapTurboProfile.json",
                         "Payload/Roblox.app/MasterstrapShaderProfile.json",
                         "Payload/Roblox.app/ClientSettings/MasterstrapShaderProfile.json",
+                        "Payload/Roblox.app/MasterstrapFontProfile.json",
+                        "Payload/Roblox.app/ClientSettings/MasterstrapFontProfile.json",
                     }
 
                     for item in zin.infolist():
@@ -2455,11 +2537,11 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                                 data[clamp3_offset:clamp3_offset+4] = b'\xe8\x03\x17\x2a'
                                 print(f"[FPS_CEILING] Bypassed RobloxLib third 240 FPS clamp site 3 @ 0x{clamp3_offset:X} (csel -> mov w8, w23)")
 
-                            # 4. TaskScheduler fallback delta time patch (0.0s interval -> Infinity FPS)
+                            # 4. TaskScheduler fallback delta time (preserve standard 60 FPS fallback 0.0166s to prevent 30,000 FPS spinlock)
                             fallback_dt_offset = 0x4A60E28
-                            if len(data) > fallback_dt_offset + 4 and data[fallback_dt_offset:fallback_dt_offset+4] in (b'\x89\x88\x88\x3c', b'\x89\x88\x08\x3c', b'\x17\xb7\xd1\x38', b'\x00\x00\x00\x00'):
-                                data[fallback_dt_offset:fallback_dt_offset+4] = b'\x00\x00\x00\x00'
-                                print(f"[FPS_CEILING] Patched RobloxLib fallback delta time @ 0x{fallback_dt_offset:X} (dt -> 0.0s, Infinity FPS)")
+                            if len(data) > fallback_dt_offset + 4 and data[fallback_dt_offset:fallback_dt_offset+4] == b'\x00\x00\x00\x00':
+                                data[fallback_dt_offset:fallback_dt_offset+4] = b'\x89\x88\x88\x3c'
+                                print(f"[FPS_CEILING] Restored RobloxLib fallback delta time @ 0x{fallback_dt_offset:X} (dt -> 0.0166s standard fallback)")
 
                             # 5. DisplayTiming schedule clamp bypass (csel w22, w21, w22, lo -> nop)
                             # Prevents Roblox from clamping TaskScheduler targetFps to screenMax (60Hz in Low Power Mode / 120Hz with ProMotion)
@@ -2526,9 +2608,24 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
 
 
                     # Embed dylib
-                    # Embed dylib
                     dylib_entry = "Payload/Roblox.app/Frameworks/libmasterstrap.dylib"
                     zout.writestr(dylib_entry, dylib_bytes)
+
+                    # Embed custom font files into both RobloxLib.framework and Roblox.app content/fonts
+                    fonts_dir = ROOT / "resources" / "fonts"
+                    if fonts_dir.is_dir():
+                        for font_file in fonts_dir.iterdir():
+                            if font_file.is_file() and font_file.suffix.lower() in (".ttf", ".otf"):
+                                f_bytes = font_file.read_bytes()
+                                for prefix in [
+                                    "Payload/Roblox.app/Frameworks/RobloxLib.framework/content/fonts/",
+                                    "Payload/Roblox.app/content/fonts/"
+                                ]:
+                                    f_entry = prefix + font_file.name
+                                    if f_entry not in seen_entries:
+                                        zout.writestr(f_entry, f_bytes)
+                                        seen_entries.add(f_entry)
+                                        print(f"[FONT_BUNDLE] Injected font {font_file.name} -> {f_entry} ({len(f_bytes)} bytes)")
 
                     # Embed baseline JSON only for normal builds. Isolation builds
                     # intentionally depend on the versioned Masterstrap bridge.
@@ -2558,11 +2655,20 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                             "allowPeriodicWorker": False
                         }
                         shader_bytes = json.dumps(shader_default, indent=4).encode("utf-8")
+                        font_default = {
+                            "schema": 1,
+                            "enabled": False,
+                            "font": "Default",
+                            "sizeStep": 0
+                        }
+                        font_bytes = json.dumps(font_default, indent=4).encode("utf-8")
                         for jp in embedded_settings_entries:
                             if jp.endswith("MasterstrapTurboProfile.json"):
                                 zout.writestr(jp, turbo_bytes)
                             elif jp.endswith("MasterstrapShaderProfile.json"):
                                 zout.writestr(jp, shader_bytes)
+                            elif jp.endswith("MasterstrapFontProfile.json"):
+                                zout.writestr(jp, font_bytes)
                             else:
                                 zout.writestr(jp, json_bytes)
 
@@ -2597,7 +2703,7 @@ def main() -> int:
         "--embed-flags",
         action="store_true",
         default=False,
-        help="Embed baseline flags and packaged settings JSON (default: False, direct launch is 100% vanilla)",
+        help="Embed baseline flags and packaged settings JSON (default: False, direct launch is 100%% vanilla)",
     )
     args = ap.parse_args()
 
