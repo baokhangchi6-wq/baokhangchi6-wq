@@ -1231,6 +1231,7 @@ def configure_ios_runtime_html(html: str) -> str:
         globalSettings: globalSettingsXml,''',
         "bridge profile payload",
     )
+    html = html.replace('id="sw-gm-master" onchange=', 'id="sw-gm-master" checked onchange=', 1)
 
     translations = {
         "vi": {
@@ -2570,12 +2571,7 @@ def build_masterstrap_ipa(
                 )
         plist_bytes = plistlib.dumps(plist_dict)
 
-        preview_file = ROOT / "preview" / "index.html"
-        if preview_file.is_file():
-            raw_html = preview_file.read_text(encoding="utf-8", errors="surrogatepass")
-        else:
-            raw_html = HTML_TEMPLATE_RAW
-        html_ui = configure_ios_runtime_html(raw_html)
+        html_ui = configure_ios_runtime_html(HTML_TEMPLATE_RAW)
         html_ui = html_ui.replace("POPULAR_PRESETS_PLACEHOLDER", POPULAR_PRESETS_JSON)
         html_ui = html_ui.replace("HOT_PRESETS_PLACEHOLDER", HOT_PRESETS_JSON)
         html_ui = html_ui.replace("PRESET_IMAGES_PLACEHOLDER", PRESET_IMAGES_JSON)
