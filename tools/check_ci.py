@@ -137,13 +137,17 @@ def watch_latest_run_and_download():
     out_file = out_dir / ipa_asset.get("name")
     download_asset(ipa_asset.get("url"), out_file)
 
-    # Also copy to MuMu shared folder if available
-    mumu_dir = Path(r"C:\Users\Administrator\Documents\MuMuSharedFolder\Download\Masterstrap")
-    if mumu_dir.is_dir():
-        import shutil
-        mumu_target = mumu_dir / ipa_asset.get("name")
-        shutil.copy2(out_file, mumu_target)
-        print(f"Copied to MuMu Shared Folder: {mumu_target}")
+    # Copy directly into Download directory with NO extra subdirectories
+    import shutil
+    ipa_filename = ipa_asset.get("name")
+    for dl_path in [
+        Path(r"C:\Users\Administrator\Documents\MuMuSharedFolder\Download"),
+        Path(r"C:\Users\Administrator\Downloads")
+    ]:
+        if dl_path.is_dir():
+            target_dest = dl_path / ipa_filename
+            shutil.copy2(out_file, target_dest)
+            print(f"Copied to Download directory: {target_dest}")
 
     print(f"\n==========================================")
     print(f"[SUCCESS] Downloaded IPA to: {out_file.resolve()}")
