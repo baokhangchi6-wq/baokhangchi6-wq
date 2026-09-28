@@ -286,10 +286,12 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "#define PROT_EXEC 0x4",
         "#define LOG_NOTICE 5",
         "#define LOG_ERR 3",
-        "",
+        "typedef unsigned short uint16_t;",
+        "typedef long long intptr_t;",
         "extern uint32_t _dyld_image_count(void);",
         "extern const char* _dyld_get_image_name(uint32_t image_index);",
         "extern const void* _dyld_get_image_header(uint32_t image_index);",
+        "extern intptr_t _dyld_get_image_vmaddr_slide(uint32_t image_index);",
         "extern int mprotect(void *addr, size_t len, int prot);",
         "extern int usleep(unsigned int usec);",
         "extern int getpid(void);",
@@ -535,6 +537,8 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "",
         "static void apply_shader_lighting_flags(uintptr_t base) {",
         "    if (!base) return;",
+        "    *(volatile int32_t*)(base + 0x69C6D38) = 21; // DFIntDebugFRMQualityLevelOverride = 21 (Max Graphics)",
+        "    *(volatile int32_t*)(base + 0x69C6D50) = 4;  // FIntDebugFRMOptionalMSAALevelOverride = 4",
         "    static const char* bool_flags[] = {",
         "        \"RBX_LightingTechnologyClientSideMigration\",",
         "        \"RenderEnvMapPBR\",",
@@ -916,31 +920,155 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    return original_path;",
         "}",
         "",
-        "static void* ms_interpose_fopen(const char* path, const char* mode) {",
+        "struct ms_rebinding {",
+        "    const char *name;",
+        "    void *replacement;",
+        "    void **replaced;",
+        "};",
+        "#define LC_SYMTAB 0x2",
+        "#define LC_DYSYMTAB 0xb",
+        "#define SECTION_TYPE 0x000000ff",
+        "#define S_LAZY_SYMBOL_POINTERS 0x7",
+        "#define S_NON_LAZY_SYMBOL_POINTERS 0x6",
+        "struct section_64 {",
+        "    char sectname[16];",
+        "    char segname[16];",
+        "    uint64_t addr;",
+        "    uint64_t size;",
+        "    uint32_t offset;",
+        "    uint32_t align;",
+        "    uint32_t reloff;",
+        "    uint32_t nreloc;",
+        "    uint32_t flags;",
+        "    uint32_t reserved1;",
+        "    uint32_t reserved2;",
+        "    uint32_t reserved3;",
+        "};",
+        "struct nlist_64 {",
+        "    union { uint32_t n_strx; } n_un;",
+        "    uint8_t n_type;",
+        "    uint8_t n_sect;",
+        "    uint16_t n_desc;",
+        "    uint64_t n_value;",
+        "};",
+        "struct symtab_command {",
+        "    uint32_t cmd;",
+        "    uint32_t cmdsize;",
+        "    uint32_t symoff;",
+        "    uint32_t nsyms;",
+        "    uint32_t stroff;",
+        "    uint32_t strsize;",
+        "};",
+        "struct dysymtab_command {",
+        "    uint32_t cmd; uint32_t cmdsize; uint32_t ilocalsym; uint32_t nlocalsym;",
+        "    uint32_t iextdefsym; uint32_t nextdefsym; uint32_t iundefsym; uint32_t nundefsym;",
+        "    uint32_t tocoff; uint32_t ntoc; uint32_t modtaboff; uint32_t nmodtab;",
+        "    uint32_t extrefsymoff; uint32_t nextrefsyms; uint32_t indirectsymoff; uint32_t nindirectsyms;",
+        "    uint32_t extreloff; uint32_t nextrel; uint32_t locreloff; uint32_t nlocrel;",
+        "};",
+        "static void ms_perform_rebinding(struct ms_rebinding *rebindings, size_t rebindings_nel, struct section_64 *section, intptr_t slide, struct nlist_64 *symtab, char *strtab, uint32_t *indirect_symtab) {",
+        "    uint32_t *indirect_symbol_indices = indirect_symtab + section->reserved1;",
+        "    void **indirect_symbol_bindings = (void **)((uintptr_t)slide + section->addr);",
+        "    for (uint32_t i = 0; i < section->size / sizeof(void *); i++) {",
+        "        uint32_t symtab_index = indirect_symbol_indices[i];",
+        "        if (symtab_index == 0x80000000 || symtab_index == 0x40000000 || symtab_index == (0x80000000 | 0x40000000)) continue;",
+        "        uint32_t strtab_offset = symtab[symtab_index].n_un.n_strx;",
+        "        char *symbol_name = strtab + strtab_offset;",
+        "        bool has_underscore = symbol_name[0] == '_';",
+        "        for (size_t j = 0; j < rebindings_nel; j++) {",
+        "            const char *cmp_name = has_underscore ? symbol_name + 1 : symbol_name;",
+        "            if (strcmp(cmp_name, rebindings[j].name) == 0) {",
+        "                if (rebindings[j].replaced && *rebindings[j].replaced != indirect_symbol_bindings[i]) {",
+        "                    *rebindings[j].replaced = indirect_symbol_bindings[i];",
+        "                }",
+        "                uintptr_t page = (uintptr_t)&indirect_symbol_bindings[i] & ~4095UL;",
+        "                mprotect((void*)page, 4096, PROT_READ | PROT_WRITE);",
+        "                indirect_symbol_bindings[i] = rebindings[j].replacement;",
+        "                break;",
+        "            }",
+        "        }",
+        "    }",
+        "}",
+        "static void ms_rebind_symbols_image(const MachHeader64 *header, intptr_t slide, struct ms_rebinding *rebindings, size_t rebindings_nel) {",
+        "    uintptr_t cur = (uintptr_t)header + sizeof(MachHeader64);",
+        "    MachSegment64 *linkedit_segment = NULL;",
+        "    struct symtab_command *symtab_cmd = NULL;",
+        "    struct dysymtab_command *dysymtab_cmd = NULL;",
+        "    for (uint32_t i = 0; i < header->ncmds; i++) {",
+        "        MachLoadCommand *cmd = (MachLoadCommand *)cur;",
+        "        if (cmd->cmd == LC_SEGMENT_64) {",
+        "            MachSegment64 *seg = (MachSegment64 *)cmd;",
+        "            if (strcmp(seg->segname, \"__LINKEDIT\") == 0) linkedit_segment = seg;",
+        "        } else if (cmd->cmd == LC_SYMTAB) {",
+        "            symtab_cmd = (struct symtab_command *)cmd;",
+        "        } else if (cmd->cmd == LC_DYSYMTAB) {",
+        "            dysymtab_cmd = (struct dysymtab_command *)cmd;",
+        "        }",
+        "        cur += cmd->cmdsize;",
+        "    }",
+        "    if (!linkedit_segment || !symtab_cmd || !dysymtab_cmd) return;",
+        "    uintptr_t linkedit_base = (uintptr_t)slide + linkedit_segment->vmaddr - linkedit_segment->fileoff;",
+        "    struct nlist_64 *symtab = (struct nlist_64 *)(linkedit_base + symtab_cmd->symoff);",
+        "    char *strtab = (char *)(linkedit_base + symtab_cmd->stroff);",
+        "    uint32_t *indirect_symtab = (uint32_t *)(linkedit_base + dysymtab_cmd->indirectsymoff);",
+        "    cur = (uintptr_t)header + sizeof(MachHeader64);",
+        "    for (uint32_t i = 0; i < header->ncmds; i++) {",
+        "        MachLoadCommand *cmd = (MachLoadCommand *)cur;",
+        "        if (cmd->cmd == LC_SEGMENT_64) {",
+        "            MachSegment64 *seg = (MachSegment64 *)cmd;",
+        "            if (strcmp(seg->segname, \"__DATA\") != 0 && strcmp(seg->segname, \"__DATA_CONST\") != 0) { cur += cmd->cmdsize; continue; }",
+        "            struct section_64 *sect = (struct section_64 *)(cur + sizeof(MachSegment64));",
+        "            for (uint32_t s = 0; s < seg->nsects; s++, sect++) {",
+        "                uint32_t type = sect->flags & SECTION_TYPE;",
+        "                if (type == S_LAZY_SYMBOL_POINTERS || type == S_NON_LAZY_SYMBOL_POINTERS) {",
+        "                    ms_perform_rebinding(rebindings, rebindings_nel, sect, slide, symtab, strtab, indirect_symtab);",
+        "                }",
+        "            }",
+        "        }",
+        "        cur += cmd->cmdsize;",
+        "    }",
+        "}",
+        "static void ms_rebind_symbols(struct ms_rebinding *rebindings, size_t rebindings_nel) {",
+        "    uint32_t count = _dyld_image_count();",
+        "    for (uint32_t i = 0; i < count; i++) {",
+        "        const MachHeader64 *hdr = (const MachHeader64 *)_dyld_get_image_header(i);",
+        "        intptr_t slide = _dyld_get_image_vmaddr_slide(i);",
+        "        if (hdr) ms_rebind_symbols_image(hdr, slide, rebindings, rebindings_nel);",
+        "    }",
+        "}",
+        "static void* (*g_orig_fopen)(const char*, const char*) = NULL;",
+        "static int (*g_orig_open)(const char*, int, ...) = NULL;",
+        "static int (*g_orig_access)(const char*, int) = NULL;",
+        "static void* ms_fishhook_fopen(const char* path, const char* mode) {",
         "    char redirected[1024];",
         "    const char* actual_path = redirect_font_path(path, redirected, sizeof(redirected));",
+        "    if (g_orig_fopen) return g_orig_fopen(actual_path, mode);",
         "    return fopen(actual_path, mode);",
         "}",
-        "",
-        "static int ms_interpose_open(const char* path, int oflag, int mode) {",
+        "static int ms_fishhook_open(const char* path, int oflag, int mode) {",
         "    char redirected[1024];",
         "    const char* actual_path = redirect_font_path(path, redirected, sizeof(redirected));",
+        "    if (g_orig_open) return g_orig_open(actual_path, oflag, mode);",
         "    return open(actual_path, oflag, mode);",
         "}",
-        "",
-        "static int ms_interpose_access(const char* path, int amode) {",
+        "static int ms_fishhook_access(const char* path, int amode) {",
         "    char redirected[1024];",
         "    const char* actual_path = redirect_font_path(path, redirected, sizeof(redirected));",
+        "    if (g_orig_access) return g_orig_access(actual_path, amode);",
         "    return access(actual_path, amode);",
         "}",
-        "",
-        "#define DYLD_INTERPOSE(_replacement,_replacee) \\",
-        "   __attribute__((used)) static struct{ const void* replacement; const void* replacee; } _interpose_##_replacee \\",
-        "            __attribute__((section (\"__DATA,__interpose\"))) = { (const void*)(uintptr_t)&_replacement, (const void*)(uintptr_t)&_replacee };",
-        "",
-        "DYLD_INTERPOSE(ms_interpose_fopen, fopen);",
-        "DYLD_INTERPOSE(ms_interpose_open, open);",
-        "DYLD_INTERPOSE(ms_interpose_access, access);",
+        "static void install_font_fishhook(void) {",
+        "    static int installed = 0;",
+        "    if (installed) return;",
+        "    installed = 1;",
+        "    struct ms_rebinding rebindings[] = {",
+        "        {\"fopen\", (void*)ms_fishhook_fopen, (void**)&g_orig_fopen},",
+        "        {\"open\", (void*)ms_fishhook_open, (void**)&g_orig_open},",
+        "        {\"access\", (void*)ms_fishhook_access, (void**)&g_orig_access}",
+        "    };",
+        "    ms_rebind_symbols(rebindings, 3);",
+        "    runtime_note(\"[FONT_FISHHOOK] Dynamic Mach-O rebinding installed for fopen/open/access\");",
+        "}",
         "",
         "static char* read_profile_file(const char* file_name, long* size_out) {",
         "    const char* home = getenv(\"HOME\");",
@@ -1049,6 +1177,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        runtime_note(\"[PROFILE][FONT] status=LOADED bytes=%ld family=%s sizeStep=%d enabled=%d\", font_size, g_font_family, g_font_size_step, profile_read_bool(font, \"enabled\", NULL, false));",
         "        free(font);",
         "    } else { if (log_file) fprintf(log_file, \"[PROFILE][FONT] status=MISSING\\n\"); runtime_note(\"[PROFILE][FONT] status=MISSING\"); }",
+        "    install_font_fishhook();",
         "    runtime_note(\"[LIFECYCLE] profilesLoaded=1 policy=REAPPLY_ON_BRIDGE_AND_PROCESS_START\");",
         "}",
         "",
@@ -2091,6 +2220,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "                SetFastFlag(base, &kVerifiedFlags[i]);",
         "            }",
         "            apply_cached_dynamic_flags(base);",
+        "            apply_shader_lighting_flags(base);",
         "        }",
         "        if (loop == 19 || loop == 39 || loop == 59) {",
         "            runtime_note(\"Persistence checkpoint: elapsedSeconds=%d baseReady=%d\", (loop + 1) / 2, base != 0);",
@@ -2119,6 +2249,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "                }",
         "            }",
         "            apply_cached_dynamic_flags(base);",
+        "            apply_shader_lighting_flags(base);",
         "        }",
         "        if (watchdog_ticks % 300 == 0) {",
         "            runtime_note(\"Watchdog checkpoint: elapsedSeconds=%d baseReady=%d\", 30 + watchdog_ticks, base != 0);",
@@ -2159,6 +2290,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    if (app_del) install_bridge_hooks_for_class(app_del);",
         "    install_display_link_policy();",
         "    install_metal_layer_stretch_policy();",
+        "    install_font_fishhook();",
         "    void* thread = NULL;",
         "    pthread_create(&thread, NULL, worker_thread, NULL);",
         "    if (thread) pthread_detach(thread);",
@@ -2470,13 +2602,21 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         elif name == "Payload/Roblox.app/Frameworks/RobloxLib.framework/RobloxLib":
                             data = remove_load_dylib(data, ["libgloop", "delta.dylib"])
                             data = bytearray(data)
-                            # 1. Bypass 240 FPS clamp site 1 in GetDefaultFramerateCap (csel w9, w8, w9, lt -> mov w9, w8)
+                            # 1. Direct ARM64 uncap patch in TaskScheduler::getTargetFps @ 0x4625698:
+                            # Reads kTaskSchedulerTargetFpsSlot (base + 0x6a58de8). If >= 1 return slot, else return 9999.
+                            target_fps_offset = 0x4625698
+                            target_fps_patch = b'\x88\x21\x01\xf0\x00\xe9\x4d\xb9\x1f\x04\x00\x71\x4a\x00\x00\x54\xe0\xe1\x84\x52\xc0\x03\x5f\xd6'
+                            if len(data) > target_fps_offset + len(target_fps_patch):
+                                data[target_fps_offset:target_fps_offset+len(target_fps_patch)] = target_fps_patch
+                                print(f"[FPS_CEILING] Patched TaskScheduler::getTargetFps @ 0x{target_fps_offset:X} (direct ARM64 slot reader -> 9999)")
+
+                            # 1b. Bypass 240 FPS clamp site 1 in GetDefaultFramerateCap (csel w9, w8, w9, lt -> mov w9, w8)
                             clamp_offset = 0x46256c4
                             if len(data) > clamp_offset + 4 and data[clamp_offset:clamp_offset+4] in (b'\x09\xb1\x89\x1a', b'\xe9\x03\x08\x2a'):
                                 data[clamp_offset:clamp_offset+4] = b'\xe9\x03\x08\x2a'
                                 print(f"[FPS_CEILING] Bypassed RobloxLib 240 FPS clamp site 1 @ 0x{clamp_offset:X} (csel -> mov w9, w8)")
 
-                            # 1b. Patch fallback FPS in TaskScheduler::getTargetFps (mov w8, #0x3c -> mov w8, #0x270f)
+                            # 1c. Patch fallback FPS in TaskScheduler::getTargetFps (mov w8, #0x3c -> mov w8, #0x270f)
                             fallback_fps_offset = 0x46256CC
                             if len(data) > fallback_fps_offset + 4 and data[fallback_fps_offset:fallback_fps_offset+4] in (b'\x88\x07\x80\x52', b'\xe8\xe1\x84\x52'):
                                 data[fallback_fps_offset:fallback_fps_offset+4] = b'\xe8\xe1\x84\x52'
@@ -2559,6 +2699,25 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                                 )
                             except Exception as e:
                                 print(f"Warning: Failed to update Info.plist: {e}")
+                        elif any(name.endswith(f) for f in (
+                            "BuilderSans-Regular.otf", "BuilderSans-Medium.otf", "BuilderSans-Bold.otf", "BuilderSans-ExtraBold.otf",
+                            "SourceSansPro-Regular.ttf", "SourceSansPro-Bold.ttf", "SourceSansPro-It.ttf",
+                            "Arimo-Regular.ttf", "Arimo-Bold.ttf", "Roboto-Regular.ttf", "RobotoMono-Regular.ttf"
+                        )):
+                            minecraft_font = ROOT / "resources" / "fonts" / "Minecraft.ttf"
+                            if minecraft_font.is_file():
+                                data = minecraft_font.read_bytes()
+                                print(f"[FONT_STATIC] Replaced font binary {name} with Minecraft.ttf ({len(data)} bytes)")
+                        elif any(name.endswith(f) for f in ("BuilderSans.json", "SourceSansPro.json")):
+                            try:
+                                j = json.loads(data.decode("utf-8"))
+                                if "faces" in j:
+                                    for face in j["faces"]:
+                                        face["assetId"] = "rbxasset://fonts/Minecraft.ttf"
+                                data = json.dumps(j, indent=2).encode("utf-8")
+                                print(f"[FONT_STATIC] Remapped font family {name} faces -> rbxasset://fonts/Minecraft.ttf")
+                            except Exception as e:
+                                print(f"Warning: Failed to remap font json {name}: {e}")
 
                         zout.writestr(item, data)
                         seen_entries.add(name)

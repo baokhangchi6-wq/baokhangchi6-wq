@@ -1232,6 +1232,39 @@ def configure_ios_runtime_html(html: str) -> str:
         "bridge profile payload",
     )
     html = html.replace('id="sw-gm-master" onchange=', 'id="sw-gm-master" checked onchange=', 1)
+    html = html.replace('id="sw-fps-boost" checked', 'id="sw-fps-boost"', 1)
+    replace_required(
+        '''    if (document.getElementById("sw-fps-boost").checked) {
+        activeFlags["DFIntDebugFRMQualityLevelOverride"] = "1";
+        activeFlags["FIntDebugForceMSAASamples"] = "1";
+        activeFlags["FFlagAdaptiveMeshCacheSizeForAndroid"] = "True";
+        activeFlags["DFIntRenderPostFxBasePixelCount"] = "0";
+        activeFlags["FIntFRMMaxGrassDistance"] = "0";
+        activeFlags["FIntFRMMinGrassDistance"] = "0";
+    }''',
+        '''    const shaderPkg = document.getElementById("display-shader-pkg") ? document.getElementById("display-shader-pkg").value : "none";
+    const wetFloorOn = document.getElementById("sw-display-wet-floor") && document.getElementById("sw-display-wet-floor").checked;
+    const hasShaders = (shaderPkg !== "none") || wetFloorOn;
+    if (document.getElementById("sw-fps-boost").checked) {
+        if (!hasShaders && !document.getElementById("sw-force-lowest").checked) {
+            delete activeFlags["DFIntDebugFRMQualityLevelOverride"];
+        }
+        activeFlags["FIntDebugForceMSAASamples"] = "1";
+        activeFlags["FFlagAdaptiveMeshCacheSizeForAndroid"] = "True";
+    }
+    if (hasShaders) {
+        activeFlags["DFIntDebugFRMQualityLevelOverride"] = "21";
+        activeFlags["RBX_OriginalTechnologyOnFileLoad"] = "4";
+        activeFlags["RBX_LightingTechnologyClientSideMigration"] = "1";
+        activeFlags["RenderEnvMapPBR"] = "1";
+        activeFlags["RenderInitShadowmaps"] = "1";
+        activeFlags["GenericCreateSurfaceAppearanceMaterial"] = "1";
+        activeFlags["DebugTerrainForceHQShader"] = "1";
+        activeFlags["RenderShadowHugeRadius"] = "2000";
+        activeFlags["BloomFrmCutoff"] = "0";
+    }''',
+        "preserve shader quality against fps boost override",
+    )
 
     translations = {
         "vi": {
