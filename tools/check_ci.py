@@ -150,6 +150,9 @@ def watch_latest_run_and_download():
     download_dir = Path(r"C:\Users\Administrator\Downloads")
     download_dir.mkdir(parents=True, exist_ok=True)
     out_file = download_dir / ipa_asset.get("name")
+    if out_file.exists():
+        print(f"Removing previous build at {out_file} before downloading new build...")
+        out_file.unlink()
     download_asset(ipa_asset.get("url"), out_file)
 
     print(f"\n==========================================")

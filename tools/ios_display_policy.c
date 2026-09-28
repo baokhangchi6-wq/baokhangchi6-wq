@@ -33,6 +33,7 @@ static unsigned g_ms_generation;
 static char g_ms_link_request_key;
 typedef struct { long fps; MSFrameRateRange range; int has_range, managed; } MSLinkRequest;
 static void write_runtime_capability_receipt(void);
+static bool fps_runtime_requested(void);
 
 static id ms_string(const char* text) {
     return ((id (*)(id, SEL, const char*))objc_msgSend)(objc_getClass("NSString"),
