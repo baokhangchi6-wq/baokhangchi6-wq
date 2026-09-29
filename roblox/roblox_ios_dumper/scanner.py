@@ -116,6 +116,7 @@ class Arm64Scanner:
             self._section_words.append((section, words))
         self._xref_index: dict[int, list[StringXref]] = {}
         self.offset_candidates: list[dict[str, object]] = []
+        self._flag_conflicts: set[str] = set()
 
     def _word(self, address: int) -> int | None:
         for section, words in self._section_words:
@@ -630,8 +631,8 @@ class Arm64Scanner:
         preferred_name: str | None = None,
     ) -> FastFlagResult | None:
         references = self._references_before(call_site)
-        string_candidates: list[tuple[int, str, str, str]] = []
-        storage_candidates: list[tuple[int, str, bool, str, int]] = []
+        string_candidates: list[tuple[int, str, str, str, int]] = []
+        storage_candidates: list[tuple[int, str, bool, str, int, int]] = []
         prefix_candidates: list[str] = []
 
         for ref in references:
@@ -642,12 +643,12 @@ class Arm64Scanner:
                     prefix, suffix = classified
                     canonical = self._canonical_flag_name(value)
                     canonical_prefix, canonical_suffix = self._classify_string(canonical) or (prefix, suffix)
-                    string_candidates.append((ref.target_address, canonical_prefix, canonical_suffix, canonical))
+                    string_candidates.append((ref.target_address, canonical_prefix, canonical_suffix, canonical, ref.instruction_address))
                 elif value in KNOWN_PREFIXES:
                     prefix_candidates.append(value)
                 else:
                     # Some binaries pass prefix and suffix separately.
-                    string_candidates.append((ref.target_address, "", value, value))
+                    string_candidates.append((ref.target_address, "", value, value, ref.instruction_address))
 
             segment = self.image.segment_for_va(ref.target_address)
             if segment and segment.is_writable:
@@ -660,6 +661,7 @@ class Arm64Scanner:
                             segment.is_writable,
                             direct[0],
                             direct[1],
+                            ref.instruction_address,
                         )
                     )
 
@@ -675,15 +677,16 @@ class Arm64Scanner:
 
         full = [item for item in string_candidates if item[1]]
         if full:
-            name_address, prefix, suffix, full_name = full[-1]
+            name_address, prefix, suffix, full_name, name_ref_pc = full[-1]
             name_source = "binary-full-name"
         else:
-            name_address, _empty, suffix, _value = string_candidates[-1]
+            name_address, _empty, suffix, _value, name_ref_pc = string_candidates[-1]
             prefix = prefix_candidates[-1] if prefix_candidates else ""
             name_source = "binary-split-prefix" if prefix else ""
 
-        storage_address, segment_name, writable, storage_kind, store_pc = min(
-            storage_candidates, key=lambda item: abs(item[0] - name_address)
+        storage_address, segment_name, writable, storage_kind, store_pc, storage_ref_pc = min(
+            storage_candidates,
+            key=lambda item: (abs(item[5] - name_ref_pc), abs(item[0] - name_address)),
         )
         if not prefix:
             full_name, prefix, name_source = self._resolve_flag_name(suffix, storage_kind)
@@ -694,9 +697,11 @@ class Arm64Scanner:
             f"call-site:{call_site:#x}",
             f"register-function:{register_function:#x}",
             f"name-address:{name_address:#x}",
+            f"name-ref-pc:{name_ref_pc:#x}",
             f"storage-segment:{segment_name}",
             f"storage-writable:{int(writable)}",
             f"storage-write:{storage_kind}@{store_pc:#x}",
+            f"storage-ref-pc:{storage_ref_pc:#x}",
             f"name-source:{name_source}",
             f"reference-window:{len(references)}",
         )
@@ -750,10 +755,27 @@ class Arm64Scanner:
                 candidate = self._decode_registration(call_site, 0, canonical)
                 if candidate is None:
                     continue
-                old = results.get(candidate.name)
-                if old is None or (old.confidence != "high" and candidate.confidence == "high"):
-                    results[candidate.name] = candidate
+                self._merge_flag_candidate(results, candidate)
         return list(results.values())
+
+    def _merge_flag_candidate(
+        self, target: dict[str, FastFlagResult], candidate: FastFlagResult
+    ) -> None:
+        """Keep only one unambiguous storage RVA per logical flag."""
+        if candidate.name in self._flag_conflicts:
+            return
+        old = target.get(candidate.name)
+        if old is None:
+            target[candidate.name] = candidate
+            return
+        if old.rva == candidate.rva:
+            if old.confidence != "high" and candidate.confidence == "high":
+                target[candidate.name] = candidate
+            return
+        # A fuzzy XREF must never silently replace a different writable cell.
+        # Drop both candidates and let the build report the flag as missing.
+        self._flag_conflicts.add(candidate.name)
+        target.pop(candidate.name, None)
 
     def scan_fast_flags(self) -> tuple[list[FastFlagResult], dict[str, object]]:
         register_function, anchor_evidence = self.find_register_function()
@@ -763,14 +785,10 @@ class Arm64Scanner:
             for call_site in call_sites:
                 result = self._decode_registration(call_site, register_function)
                 if result is not None:
-                    old = decoded.get(result.name)
-                    if old is None or (old.confidence != "high" and result.confidence == "high"):
-                        decoded[result.name] = result
+                    self._merge_flag_candidate(decoded, result)
         fallback_flags = self._scan_fallback_flags()
         for result in fallback_flags:
-            old = decoded.get(result.name)
-            if old is None or (old.confidence != "high" and result.confidence == "high"):
-                decoded[result.name] = result
+            self._merge_flag_candidate(decoded, result)
         results = sorted(decoded.values(), key=lambda item: item.name)
         return results, {
             "register_function": register_function,
@@ -778,5 +796,6 @@ class Arm64Scanner:
             "registration_calls": len(call_sites),
             "decoded_calls": len(results),
             "fallback_xref_flags": len(fallback_flags),
+            "ambiguous_flags": sorted(self._flag_conflicts),
             "anchor_evidence": anchor_evidence,
         }

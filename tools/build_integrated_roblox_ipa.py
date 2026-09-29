@@ -194,7 +194,7 @@ def run_local_dumper(ipa_path: Path, out_dir: Path) -> Path:
     return dumped_fflags
 
 
-def verify_ipa_profile(input_ipa: Path, header: Path) -> str:
+def verify_ipa_profile(input_ipa: Path, header: Path) -> tuple[str, str]:
     """Recheck binary identity AND generated maps; a filename is not evidence."""
     import uuid
     if header.name != "FFlags.hpp":
@@ -205,8 +205,9 @@ def verify_ipa_profile(input_ipa: Path, header: Path) -> str:
     if not result.ok:
         raise RuntimeError("iOS profile verification failed: " + "; ".join(result.errors))
     identity = str(uuid.UUID(str(result.checks["uuid"])))
-    print(f"Verified local iOS profile: UUID={identity} SHA256={result.checks['sha256']}")
-    return identity
+    sha256 = str(result.checks["sha256"])
+    print(f"Verified local iOS profile: UUID={identity} SHA256={sha256}")
+    return identity, sha256
 
 
 def resolve_flags_with_miss_report(flags: dict, table: dict):
@@ -523,6 +524,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "#define MS_OWNED_FPS_COUNT 24",
         "static MSOwnedFpsFlag g_owned_fps[MS_OWNED_FPS_COUNT];",
         "static size_t g_owned_fps_count = 0;",
+        "static int g_fps_critical_missing = 0;",
         "static bool SetOwnedFastFlag(uintptr_t base, const FFlagPatchEntry* entry) {",
         "    if (!base || !entry || !entry->rva) return false;",
         "    if (macho_rva_is_executable(base, entry->rva)) return false;",
@@ -543,7 +545,10 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "",
         "static void remember_owned_flag(const char* name, int kind, int64_t value) {",
         "    const MasterFlagEntry* flag = lookup_flag_with_fallback(name);",
-        "    if (!flag) { runtime_note(\"[FPS_FLAG_MISS] %s status=NO_VERIFIED_RVA\", name); return; }",
+        "    if (!flag) {",
+        "        if (strcmp(name, \"DFIntTaskSchedulerTargetFps\") == 0 || strcmp(name, \"FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate\") == 0 || strcmp(name, \"FFlagTaskSchedulerLimitTargetFpsTo2402\") == 0 || strcmp(name, \"FFlagDebugDisableVsync\") == 0) g_fps_critical_missing = 1;",
+        "        runtime_note(\"[FPS_FLAG_MISS] %s status=NO_VERIFIED_RVA\", name); return;",
+        "    }",
         "    if (g_owned_fps_count >= MS_OWNED_FPS_COUNT) return;",
         "    g_owned_fps[g_owned_fps_count++] = (MSOwnedFpsFlag){name, kind, value, (uintptr_t)flag->rva};",
         "}",
@@ -551,6 +556,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static int apply_native_fps_registry(uintptr_t base) {",
         "    if (!base) return 0;",
         "    g_owned_fps_count = 0;",
+        "    g_fps_critical_missing = 0;",
         "    remember_owned_flag(\"DFIntTaskSchedulerTargetFps\", 1, get_effective_target_fps());",
         "    remember_owned_flag(\"FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate\", 0, 0);",
         "    remember_owned_flag(\"FFlagTaskSchedulerLimitTargetFpsTo2402\", 0, 0);",
@@ -2034,10 +2040,10 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "                ensure_fps_slot_guard_thread(base);",
         "",
         "                if (log_file) {",
-        "                    fprintf(log_file, \"[FPS_CEILING] Set TaskScheduler targetFps=%d nativeFlags=%d (Status: VERIFIED)\\n\",",
-        "                            target, native_fps_flags);",
+        "                    fprintf(log_file, \"[FPS_CEILING] targetFps=%d nativeFlags=%d status=%s\\n\",",
+        "                            target, native_fps_flags, g_fps_critical_missing ? \"PARTIAL_MISSING_LIMITERS\" : \"VERIFIED\");",
         "                }",
-        "                runtime_note(\"[FPS_CEILING] targetFps=%d nativeFlags=%d status=VERIFIED\", target, native_fps_flags);",
+        "                runtime_note(\"[FPS_CEILING] targetFps=%d nativeFlags=%d status=%s\", target, native_fps_flags, g_fps_critical_missing ? \"PARTIAL_MISSING_LIMITERS\" : \"VERIFIED\");",
         "            }",
         "            // 2c. Native Stretch Resolution Factor (Android Global v73 Parity)",
         "            if (base != 0) {",
@@ -2085,9 +2091,9 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        fprintf(log_file, \"\\n=== [10/10 FEATURE DIAGNOSTIC MATRIX] ===\\n\");",
         "        // FEATURE_01: FPS Unlock",
         "        fprintf(log_file, \"[FEATURE_01_FPS] status=%s backend=%s targetFps=%d renderedFps=UNMEASURED gate=ProfileLoaded(%d)&&Auth(%d) blockedReason=%s\\n\",",
-        "                g_target_fps != 60 ? \"REQUESTED\" : \"DEFAULT_60\", kFpsRuntimeBackend, g_target_fps,",
+        "                g_fps_critical_missing ? \"BLOCKED_OFFSET_AUDIT\" : g_target_fps != 60 ? \"REQUESTED\" : \"DEFAULT_60\", kFpsRuntimeBackend, g_target_fps,",
         "                g_profile_loaded, launch_authorized,",
-        "                !launch_authorized ? \"NO_AUTH\" : !g_profile_loaded ? \"NO_TURBO_PROFILE\" : \"none\");",
+        "                !launch_authorized ? \"NO_AUTH\" : !g_profile_loaded ? \"NO_TURBO_PROFILE\" : g_fps_critical_missing ? \"CRITICAL_LIMITER_RVA_MISSING\" : \"none\");",
         "        // FEATURE_02: Game Mode",
         "        fprintf(log_file, \"[FEATURE_02_GAME_MODE] status=%s enabled=%d verifiedFlags=%d/%zu gate=Auth(%d) blockedReason=%s\\n\",",
         "                launch_authorized && g_game_mode_enabled ? \"ACTIVE\" : \"INACTIVE\",",
@@ -2571,7 +2577,27 @@ task.defer(function()
                 sky.Parent = lighting
             end
             local fields = {"SkyboxBk", "SkyboxDn", "SkyboxFt", "SkyboxLf", "SkyboxRt", "SkyboxUp"}
-            for i, field in ipairs(fields) do sky[field] = "rbxasset://textures/sky/" .. skyIds[i] end
+            local skyReapplying = false
+            local function reapplySkybox()
+                if skyReapplying then return end
+                skyReapplying = true
+                if not sky.Parent then sky.Parent = lighting end
+                local readback = true
+                for i, field in ipairs(fields) do
+                    local value = "rbxasset://textures/sky/" .. skyIds[i]
+                    sky[field] = value
+                    if sky[field] ~= value then readback = false end
+                end
+                warn("MASTERSTRAP_SKYBOX_APPLIED_LOCAL:" .. tostring(selector) .. ":readback=" .. tostring(readback))
+                skyReapplying = false
+            end
+            reapplySkybox()
+            lighting.ChildRemoved:Connect(function(child)
+                if child == sky then task.defer(reapplySkybox) end
+            end)
+            lighting.ChildAdded:Connect(function(child)
+                if child.Name == "Sky" and child ~= sky then task.defer(reapplySkybox) end
+            end)
 
             pcall(function() lighting.Technology = Enum.Technology.Future end)
             lighting.GlobalShadows = true
@@ -2665,9 +2691,10 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
     # IPA builds must use a verified local dump, never a remote version's map.
     dumped_header = None
     expected_uuid = None
+    expected_sha256 = None
     if input_ipa and input_ipa.is_file():
         dumped_header = hpp_path if hpp_path and hpp_path.is_file() else run_local_dumper(input_ipa, out_dir)
-        expected_uuid = verify_ipa_profile(input_ipa, dumped_header)
+        expected_uuid, expected_sha256 = verify_ipa_profile(input_ipa, dumped_header)
 
     # 2. Resolve FFlags table (dumped or remote)
     target_header = dumped_header if dumped_header else hpp_path
@@ -2750,6 +2777,11 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
     if expected_uuid and profile_uuid != expected_uuid.lower():
         raise RuntimeError(
             f"iOS workflow profile UUID mismatch: profile={profile_uuid or 'missing'} ipa={expected_uuid}"
+        )
+    profile_sha256 = str(workflow_profile.get("sha256") or "").lower()
+    if expected_sha256 and profile_sha256 != expected_sha256.lower():
+        raise RuntimeError(
+            f"iOS workflow profile SHA256 mismatch: profile={profile_sha256 or 'missing'} ipa={expected_sha256}"
         )
     offsets_entries = sorted(offsets_table.items(), key=lambda x: x[0])
     print(f"Loaded Engine Offsets: {len(offsets_entries)} functions")
