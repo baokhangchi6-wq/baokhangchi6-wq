@@ -143,8 +143,7 @@ jobs:
           PYTHONPATH=roblox python -m roblox_ios_dumper dump \
             "${{ steps.prepare_ipa.outputs.ipa_path }}" \
             --patterns patterns.ios.json \
-            -o output \
-            --verbose
+            -o output
           PYTHONPATH=roblox python -m roblox_ios_dumper verify output \
             --input "${{ steps.prepare_ipa.outputs.ipa_path }}" \
             --patterns patterns.ios.json
