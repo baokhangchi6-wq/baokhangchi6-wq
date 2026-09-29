@@ -35,9 +35,6 @@ typedef struct { long fps; MSFrameRateRange range; int has_range, managed; } MSL
 static void write_runtime_capability_receipt(void);
 static bool fps_runtime_requested(void);
 
-typedef unsigned char (*ProcessInfoLowPowerImp)(id, SEL);
-static ProcessInfoLowPowerImp g_original_is_low_power;
-
 static id ms_string(const char* text) {
     return ((id (*)(id, SEL, const char*))objc_msgSend)(objc_getClass("NSString"),
         sel_registerName("stringWithUTF8String:"), text);
@@ -48,24 +45,16 @@ static id ms_process_info(void) {
 static int ios_maximum_frames_per_second(void) {
     id screen = ((id (*)(id, SEL))objc_msgSend)(objc_getClass("UIScreen"), sel_registerName("mainScreen"));
     long rate = screen ? ((long (*)(id, SEL))objc_msgSend)(screen, sel_registerName("maximumFramesPerSecond")) : 60;
-    if (fps_runtime_requested() && rate < 120) rate = 120;
     return rate >= 30 && rate <= 240 ? (int)rate : 60;
 }
 static int ms_low_power(void) {
-    if (fps_runtime_requested()) return 0; /* Always report Low Power Mode is OFF to uncap FPS */
     return ((unsigned char (*)(id, SEL))objc_msgSend)(ms_process_info(), sel_registerName("isLowPowerModeEnabled"));
-}
-static unsigned char process_info_is_low_power_hook(id self, SEL cmd) {
-    if (fps_runtime_requested()) {
-        return 0; /* Disguise Low Power Mode from Roblox engine */
-    }
-    return g_original_is_low_power ? g_original_is_low_power(self, cmd) : 0;
 }
 static int ms_thermal(void) {
     return (int)((long (*)(id, SEL))objc_msgSend)(ms_process_info(), sel_registerName("thermalState"));
 }
 static bool fps_runtime_requested(void) {
-    return (g_ms_policy.loaded && (g_ms_policy.refresh || g_ms_policy.target > 0)) || g_target_fps > 0;
+    return g_ms_policy.loaded && (g_ms_policy.refresh || g_ms_policy.target > 0);
 }
 static long fps_runtime_target(void) {
     int target = (g_ms_policy.target > 0) ? g_ms_policy.target : (g_target_fps > 0 ? g_target_fps : 60);
@@ -85,10 +74,6 @@ static inline MSFrameRateRange sanitize_frame_rate_range(MSFrameRateRange range)
 static MSFrameRateRange ms_target_range(long target) {
     int screen_max = ios_maximum_frames_per_second();
     if (screen_max <= 0) screen_max = 60;
-    if (target >= 9999) {
-        float max_fps = (float)(screen_max >= 120 ? screen_max : 120);
-        return sanitize_frame_rate_range((MSFrameRateRange){60.0f, max_fps, max_fps});
-    }
     float pref = (float)target;
     float min_fps = pref < 60.0f ? pref : 60.0f;
     float max_fps = pref > (float)screen_max ? pref : (float)screen_max;
@@ -149,9 +134,8 @@ static void apply_display_link_policy(id link, const char* source) {
                 source, (double)actual.minimum, (double)actual.maximum, (double)actual.preferred, target,
                 actual.preferred == range.preferred ? "MATCH" : "OS_ADJUSTED");
         }
-    }
-    if (g_original_display_link_set_fps) {
-        long link_fps = (target >= 9999) ? (long)ios_maximum_frames_per_second() : target;
+    } else if (g_original_display_link_set_fps) {
+        long link_fps = target;
         g_original_display_link_set_fps(link, sel_registerName("setPreferredFramesPerSecond:"), link_fps);
         if (g_display_link_rewrite_count < 16) {
             long actual = ((long (*)(id, SEL))objc_msgSend)(link, sel_registerName("preferredFramesPerSecond"));
@@ -262,38 +246,11 @@ static void ms_install_observer(void) {
             sel_registerName("addObserver:selector:name:object:"), g_ms_observer,
             sel_registerName("environmentChanged:"), ms_string(names[i]), NULL);
 }
-typedef long (*ScreenMaxFpsImp)(id, SEL);
-static ScreenMaxFpsImp g_original_screen_max_fps;
-
-static long screen_max_fps_hook(id self, SEL cmd) {
-    long rate = g_original_screen_max_fps ? g_original_screen_max_fps(self, cmd) : 60;
-    if (fps_runtime_requested() && rate < 120) {
-        return 120;
-    }
-    return rate;
-}
-
 static bool install_display_link_policy(void);
 static void ms_install_on_main(void* ignored) { (void)ignored; install_display_link_policy(); }
 static bool install_display_link_policy(void) {
     if (!pthread_main_np()) { dispatch_async_f(&_dispatch_main_q, NULL, ms_install_on_main); return false; }
     if (g_display_link_policy_installed) return true;
-
-    Class screen_cls = (Class)objc_getClass("UIScreen");
-    if (screen_cls) {
-        Method screen_max_m = class_getInstanceMethod(screen_cls, sel_registerName("maximumFramesPerSecond"));
-        if (screen_max_m && !g_original_screen_max_fps) {
-            g_original_screen_max_fps = (ScreenMaxFpsImp)method_setImplementation(screen_max_m, (IMP)screen_max_fps_hook);
-        }
-    }
-
-    Class pi_cls = (Class)objc_getClass("NSProcessInfo");
-    if (pi_cls) {
-        Method lp_m = class_getInstanceMethod(pi_cls, sel_registerName("isLowPowerModeEnabled"));
-        if (lp_m && !g_original_is_low_power) {
-            g_original_is_low_power = (ProcessInfoLowPowerImp)method_setImplementation(lp_m, (IMP)process_info_is_low_power_hook);
-        }
-    }
 
     Class cls = (Class)objc_getClass("CADisplayLink");
     if (!cls) { runtime_note("[CAPABILITY][FPS] status=BLOCKED reason=class_missing"); return false; }
@@ -337,13 +294,39 @@ static MetalLayerInitImp g_original_metal_layer_init;
 static int g_metal_layer_stretch_installed;
 static char g_ms_layer_uncapped_key;
 
+#ifndef NDEBUG
+typedef struct { uint32_t numer, denom; } MSMachTimebase;
+extern uint64_t mach_absolute_time(void);
+extern int mach_timebase_info(MSMachTimebase*);
+static MSMachTimebase g_ms_timebase;
+static uint64_t g_ms_probe_start, g_ms_drawable_calls, g_ms_drawable_wait, g_ms_drawable_nil;
+
+static void ms_log_fps_drawable_sample(void) {
+    uint64_t start = __atomic_load_n(&g_ms_probe_start, __ATOMIC_ACQUIRE);
+    if (!start || !g_ms_timebase.denom) return;
+    uint64_t now = mach_absolute_time();
+    double seconds = (double)(now - start) * g_ms_timebase.numer / g_ms_timebase.denom / 1e9;
+    if (seconds < 5.0) return;
+    uint64_t calls = __atomic_exchange_n(&g_ms_drawable_calls, 0, __ATOMIC_RELAXED);
+    uint64_t wait = __atomic_exchange_n(&g_ms_drawable_wait, 0, __ATOMIC_RELAXED);
+    uint64_t missing = __atomic_exchange_n(&g_ms_drawable_nil, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&g_ms_probe_start, now, __ATOMIC_RELEASE);
+    runtime_note("[FPS][DRAWABLE] engineTarget=%d calls=%llu nil=%llu seconds=%.3f acquisitionsPerSecond=%.1f averageWaitMs=%.3f renderedFps=UNMEASURED",
+        get_effective_target_fps(), calls, missing, seconds, (calls >= missing ? calls - missing : 0) / seconds,
+        calls ? (double)wait * g_ms_timebase.numer / g_ms_timebase.denom / 1e6 / calls : 0.0);
+}
+#else
+static void ms_log_fps_drawable_sample(void) {}
+#endif
+
 static void ms_apply_metal_layer_policies(id layer) {
     if (!layer) return;
 
-    // 1. Uncap Metal VSync (iOS equivalent of eglSwapInterval(0) on Android)
+    // Request earliest presentation where supported; iOS still controls display cadence.
     if (fps_runtime_requested()) {
         SEL sync_sel = sel_registerName("setDisplaySyncEnabled:");
-        if (((bool (*)(id, SEL, SEL))objc_msgSend)(layer, sel_registerName("respondsToSelector:"), sync_sel)) {
+        bool sync_available = ((bool (*)(id, SEL, SEL))objc_msgSend)(layer, sel_registerName("respondsToSelector:"), sync_sel);
+        if (sync_available) {
             ((void (*)(id, SEL, bool))objc_msgSend)(layer, sync_sel, false);
         }
         SEL max_sel = sel_registerName("setMaximumDrawableCount:");
@@ -359,7 +342,8 @@ static inline void ms_ensure_layer_vsync_uncapped(id layer) {
 
     ms_apply_metal_layer_policies(layer);
     objc_setAssociatedObject(layer, &g_ms_layer_uncapped_key, (id)1, 0); /* OBJC_ASSOCIATION_ASSIGN */
-    runtime_note("[METAL][VSYNC] Uncapped CAMetalLayer %p: displaySyncEnabled=NO maxDrawables=3", layer);
+    runtime_note("[METAL][PRESENT] layer=%p displaySyncSelector=%d displayFps=UNMEASURED", layer,
+        ((bool (*)(id, SEL, SEL))objc_msgSend)(layer, sel_registerName("respondsToSelector:"), sel_registerName("setDisplaySyncEnabled:")));
 }
 
 static void metal_layer_set_display_sync_hook(id self, SEL cmd, bool enabled) {
@@ -373,7 +357,21 @@ static void metal_layer_set_display_sync_hook(id self, SEL cmd, bool enabled) {
 
 static id metal_layer_next_drawable_hook(id self, SEL cmd) {
     ms_ensure_layer_vsync_uncapped(self);
-    return g_original_next_drawable ? g_original_next_drawable(self, cmd) : NULL;
+#ifndef NDEBUG
+    uintptr_t caller = (uintptr_t)__builtin_return_address(0);
+    bool measure = g_engine_base && caller >= g_engine_base &&
+        macho_rva_is_executable(g_engine_base, caller - g_engine_base);
+    uint64_t begin = measure ? mach_absolute_time() : 0;
+#endif
+    id drawable = g_original_next_drawable ? g_original_next_drawable(self, cmd) : NULL;
+#ifndef NDEBUG
+    if (measure) {
+        __atomic_fetch_add(&g_ms_drawable_wait, mach_absolute_time() - begin, __ATOMIC_RELAXED);
+        __atomic_fetch_add(&g_ms_drawable_calls, 1, __ATOMIC_RELAXED);
+        if (!drawable) __atomic_fetch_add(&g_ms_drawable_nil, 1, __ATOMIC_RELAXED);
+    }
+#endif
+    return drawable;
 }
 
 static void metal_layer_set_drawable_size_hook(id self, SEL cmd, MSSize size) {
@@ -393,6 +391,10 @@ static bool install_metal_layer_stretch_policy(void) {
     if (g_metal_layer_stretch_installed) return true;
     Class cls = (Class)objc_getClass("CAMetalLayer");
     if (!cls) return false;
+#ifndef NDEBUG
+    if (!__atomic_load_n(&g_ms_probe_start, __ATOMIC_ACQUIRE) && mach_timebase_info(&g_ms_timebase) == 0)
+        __atomic_store_n(&g_ms_probe_start, mach_absolute_time(), __ATOMIC_RELEASE);
+#endif
 
     Method sync_m = class_getInstanceMethod(cls, sel_registerName("setDisplaySyncEnabled:"));
     if (sync_m && !g_original_set_display_sync) {
@@ -415,7 +417,7 @@ static bool install_metal_layer_stretch_policy(void) {
     }
 
     g_metal_layer_stretch_installed = 1;
-    runtime_note("[CAPABILITY][STRETCH] backend=%s status=READY hookInstalled=1 metal_vsync_uncap=ACTIVE surface_geometry=passthrough", kStretchRuntimeBackend);
+    runtime_note("[CAPABILITY][STRETCH] backend=%s status=READY hookInstalled=1 surface_geometry=passthrough", kStretchRuntimeBackend);
     return true;
 }
 

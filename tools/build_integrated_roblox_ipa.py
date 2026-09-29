@@ -446,8 +446,29 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "",
         "static bool macho_rva_is_executable(uintptr_t base, uintptr_t rva);",
         "",
+        "static bool native_fps_owns_flag(const char* name) {",
+        "    if (!name) return false;",
+        "    const char* prefixes[] = {\"DFInt\", \"DFFlag\", \"FFlag\", \"FInt\", NULL};",
+        "    for (int i = 0; prefixes[i]; ++i) {",
+        "        size_t n = strlen(prefixes[i]);",
+        "        if (strncmp(name, prefixes[i], n) == 0) { name += n; break; }",
+        "    }",
+        "    const char* owned[] = {\"TaskSchedulerTargetFps\", \"TaskSchedulerLimitTargetFpsToScreenRefreshRate\",",
+        "        \"TaskSchedulerLimitTargetFpsTo2402\", \"GameBasicSettingsFramerateCap\",",
+        "        \"PerformanceControlExecution\", \"PerformanceControlDynamicFrameTimeTarget\",",
+        "        \"PerformanceControlComputeUseTSFrameTimeTarget\", \"PerformanceControlDisplayRefreshRate\",",
+        "        \"PerformanceControlDisplayRefreshRateInAdaptiveSync\", \"PerformanceControlDisplayRefreshRateMigration\",",
+        "        \"AuroraLimit60HzRenderSim\", \"ApplicationFrameRate\", \"ApplicationFrameRatePolicy\",",
+        "        \"MetalVsyncPreferMaximumRefreshRate\", \"MetalDisplayTiming\", \"MetalDisplayTimingAdjustMinFPS\",",
+        "        \"MetalDisplayTimingMinFPS\", \"DebugDisableVsync\",",
+        "        \"DebugExperimentalVSyncFramePacing\", \"DebugExperimentalVSyncFramePacingForce\", NULL};",
+        "    for (int i = 0; owned[i]; ++i) if (strcmp(name, owned[i]) == 0) return true;",
+        "    return false;",
+        "}",
+        "",
         "static bool SetFastFlag(uintptr_t base, const FFlagPatchEntry* entry) {",
         "    if (!base || !entry || !entry->rva) return false;",
+        "    if (native_fps_owns_flag(entry->name)) return false;",
         "    if (macho_rva_is_executable(base, entry->rva)) return false;",
         "    uintptr_t target = base + entry->rva;",
         "    uintptr_t page_size = 16384;",
@@ -630,6 +651,10 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "            continue;",
         "        }",
         "        const MasterFlagEntry* flag = lookup_flag_with_fallback(key);",
+        "        if (native_fps_owns_flag(key)) {",
+        "            if (log_file) fprintf(log_file, \"[DYNAMIC_JSON_SKIP] %s source=NATIVE_FPS_PROFILE\\n\", key);",
+        "            continue;",
+        "        }",
         "        if (flag) {",
         "            FFlagPatchEntry entry;",
         "            entry.name = flag->name;",
@@ -750,16 +775,17 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static bool g_game_mode_enabled = false;",
         "static bool g_refresh_requested = false;",
         "static bool g_keep_display_active = false;",
-        "static int g_target_fps = 10000;",
+        "static int g_target_fps = 60;",
         "static int g_stretch_percent = 100;",
         "static char g_renderer_mode[32] = \"Automatic\";",
         "static char g_shader_package[64] = \"none\";",
         "static bool g_shader_wet_floor = false;",
         "static char g_font_family[64] = \"Default\";",
         "static int g_font_size_step = 0;",
+        "static int ms_ios_engine_fps(int requested);",
+        "static int ms_ios_xml_fps(const char* xml, int fallback);",
         "static inline int get_effective_target_fps(void) {",
-        "    if (g_target_fps > 0 && g_target_fps < 9999) return g_target_fps;",
-        "    return 9999;",
+        "    return ms_ios_engine_fps(g_target_fps);",
         "}",
         "static void runtime_note(const char* fmt, ...);",
         "static void ensure_fps_slot_guard_thread(uintptr_t base);",
@@ -891,7 +917,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static void load_and_apply_runtime_profiles(void* log_file) {",
         "    // Every new request replaces the previous profile, including missing fields.",
         "    g_profile_loaded = g_game_mode_enabled = g_refresh_requested = g_keep_display_active = false;",
-        "    g_target_fps = 10000; g_stretch_percent = 100; g_shader_wet_floor = false; g_font_size_step = 0;",
+        "    g_target_fps = 60; g_stretch_percent = 100; g_shader_wet_floor = false; g_font_size_step = 0;",
         "    snprintf(g_renderer_mode, sizeof(g_renderer_mode), \"Automatic\");",
         "    snprintf(g_shader_package, sizeof(g_shader_package), \"none\");",
         "    snprintf(g_font_family, sizeof(g_font_family), \"Default\");",
@@ -902,7 +928,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        g_game_mode_enabled = profile_read_bool(turbo, \"enabled\", \"game_mode_master\", true);",
         "        g_refresh_requested = profile_read_bool(turbo, \"displayRefreshContract\", \"turbo_refresh_contract\", true);",
         "        g_keep_display_active = profile_read_bool(turbo, \"keepDisplayActive\", \"keep_display_active\", true);",
-        "        g_target_fps = profile_read_int(turbo, \"targetFrameRate\", \"targetFps\", 10000);",
+        "        g_target_fps = profile_read_int(turbo, \"targetFps\", \"targetFrameRate\", 9999);",
         "        g_stretch_percent = profile_read_int(turbo, \"stretchScreenPercent\", \"display_stretch_screen\", 100);",
         "        profile_read_string(turbo, \"rendererMode\", \"display_renderer_mode\", g_renderer_mode, sizeof(g_renderer_mode));",
         "        profile_read_string(turbo, \"display_shader_package\", \"package\", g_shader_package, sizeof(g_shader_package));",
@@ -915,6 +941,19 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    } else {",
         "        if (log_file) fprintf(log_file, \"[PROFILE][TURBO] status=MISSING\\n\");",
         "        runtime_note(\"[PROFILE][TURBO] status=MISSING defaults=ACTIVE\");",
+        "    }",
+        "",
+        "    // Match Android: FramerateCap owns engine FPS; targetFrameRate is a legacy performance hint.",
+        "    long global_size = 0;",
+        "    char* global_xml = read_profile_file(\"GlobalBasicSettings_13.xml\", &global_size);",
+        "    if (!global_xml) global_xml = read_profile_file(\"GlobalBasicSettings.xml\", &global_size);",
+        "    if (global_xml) {",
+        "        int xml_target = ms_ios_xml_fps(global_xml, -1);",
+        "        if (xml_target >= 30) {",
+        "            g_target_fps = xml_target; g_profile_loaded = true;",
+        "            runtime_note(\"[PROFILE][FPS] source=GLOBAL_XML engineTarget=%d displayBound=0\", g_target_fps);",
+        "        } else runtime_note(\"[PROFILE][FPS] source=GLOBAL_XML status=INVALID_VALUE\");",
+        "        free(global_xml);",
         "    }",
         "",
         "    long shader_size = 0;",
@@ -1624,6 +1663,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    uintptr_t fps_slot = base + 0x6a58de8;",
         "    while (1) {",
         "        usleep(100000);",
+        "        ms_log_fps_drawable_sample();",
         "        int target = get_effective_target_fps();",
         "        int current = *(volatile int32_t*)fps_slot;",
         "        if (current != target) {",
@@ -1724,10 +1764,10 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        if (!gbs_check) {",
         "            void* gbs_w = fopen(gbs_path, \"w\");",
         "            if (gbs_w) {",
-        "                const char* gbs_xml = \"<?xml version=\\\"1.0\\\" encoding=\\\"UTF-8\\\"?>\\n<roblox version=\\\"4\\\">\\n  <Item class=\\\"UserGameSettings\\\" referent=\\\"RBX0\\\">\\n    <Properties>\\n      <bool name=\\\"ReducedMotion\\\">false</bool>\\n      <float name=\\\"HapticStrength\\\">1.000000</float>\\n      <int name=\\\"FramerateCap\\\">120</int>\\n      <bool name=\\\"PlayerNamesEnabled\\\">true</bool>\\n    </Properties>\\n  </Item>\\n</roblox>\\n\";",
+        "                const char* gbs_xml = \"<?xml version=\\\"1.0\\\" encoding=\\\"UTF-8\\\"?>\\n<roblox version=\\\"4\\\">\\n  <Item class=\\\"UserGameSettings\\\" referent=\\\"RBX0\\\">\\n    <Properties>\\n      <bool name=\\\"ReducedMotion\\\">false</bool>\\n      <float name=\\\"HapticStrength\\\">1.000000</float>\\n      <int name=\\\"FramerateCap\\\">9999</int>\\n      <bool name=\\\"PlayerNamesEnabled\\\">true</bool>\\n    </Properties>\\n  </Item>\\n</roblox>\\n\";",
         "                fputs(gbs_xml, gbs_w);",
         "                fclose(gbs_w);",
-        "                runtime_note(\"[FPS] Initialized default Documents/GlobalBasicSettings_13.xml (FramerateCap=120)\");",
+        "                runtime_note(\"[FPS] Initialized default Documents/GlobalBasicSettings_13.xml (FramerateCap=9999)\");",
         "            }",
         "        } else {",
         "            fclose(gbs_check);",
@@ -1738,7 +1778,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        if (!gbs_check2) {",
         "            void* gbs_w2 = fopen(gbs_path2, \"w\");",
         "            if (gbs_w2) {",
-        "                const char* gbs_xml = \"<?xml version=\\\"1.0\\\" encoding=\\\"UTF-8\\\"?>\\n<roblox version=\\\"4\\\">\\n  <Item class=\\\"UserGameSettings\\\" referent=\\\"RBX0\\\">\\n    <Properties>\\n      <bool name=\\\"ReducedMotion\\\">false</bool>\\n      <float name=\\\"HapticStrength\\\">1.000000</float>\\n      <int name=\\\"FramerateCap\\\">120</int>\\n      <bool name=\\\"PlayerNamesEnabled\\\">true</bool>\\n    </Properties>\\n  </Item>\\n</roblox>\\n\";",
+        "                const char* gbs_xml = \"<?xml version=\\\"1.0\\\" encoding=\\\"UTF-8\\\"?>\\n<roblox version=\\\"4\\\">\\n  <Item class=\\\"UserGameSettings\\\" referent=\\\"RBX0\\\">\\n    <Properties>\\n      <bool name=\\\"ReducedMotion\\\">false</bool>\\n      <float name=\\\"HapticStrength\\\">1.000000</float>\\n      <int name=\\\"FramerateCap\\\">9999</int>\\n      <bool name=\\\"PlayerNamesEnabled\\\">true</bool>\\n    </Properties>\\n  </Item>\\n</roblox>\\n\";",
         "                fputs(gbs_xml, gbs_w2);",
         "                fclose(gbs_w2);",
         "            }",
@@ -1820,6 +1860,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "",
         "            // 2. Apply verified baseline flags only inside an authorized launch.",
         "            for (size_t i = 0; i < kVerifiedCount; i++) {",
+        "                if (native_fps_owns_flag(kVerifiedFlags[i].name)) continue;",
         "                bool ok = SetFastFlag(base, &kVerifiedFlags[i]);",
         "                if (ok) success_count++;",
         "                if (log_file) {",
@@ -1910,8 +1951,8 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    if (log_file) {",
         "        fprintf(log_file, \"\\n=== [10/10 FEATURE DIAGNOSTIC MATRIX] ===\\n\");",
         "        // FEATURE_01: FPS Unlock",
-        "        fprintf(log_file, \"[FEATURE_01_FPS] status=%s backend=%s targetFps=%d gate=ProfileLoaded(%d)&&Auth(%d) blockedReason=%s\\n\",",
-        "                g_target_fps != 60 ? \"ACTIVE\" : \"DEFAULT_60\", kFpsRuntimeBackend, g_target_fps,",
+        "        fprintf(log_file, \"[FEATURE_01_FPS] status=%s backend=%s targetFps=%d renderedFps=UNMEASURED gate=ProfileLoaded(%d)&&Auth(%d) blockedReason=%s\\n\",",
+        "                g_target_fps != 60 ? \"REQUESTED\" : \"DEFAULT_60\", kFpsRuntimeBackend, g_target_fps,",
         "                g_profile_loaded, launch_authorized,",
         "                !launch_authorized ? \"NO_AUTH\" : !g_profile_loaded ? \"NO_TURBO_PROFILE\" : \"none\");",
         "        // FEATURE_02: Game Mode",
@@ -2005,7 +2046,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        if (base == 0) { base = get_robloxlib_base(); if (!engine_identity_matches(base)) base = 0; g_engine_base = base; }",
         "        if (base != 0) {",
         "            for (size_t i = 0; i < kVerifiedCount; i++) {",
-        "                if (kVerifiedFlags[i].rva == 0x6a58de8) continue;",
+        "                if (native_fps_owns_flag(kVerifiedFlags[i].name)) continue;",
         "                SetFastFlag(base, &kVerifiedFlags[i]);",
         "            }",
         "            apply_cached_dynamic_flags(base);",
@@ -2024,7 +2065,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        if (base != 0) {",
         "            // Watchdog lock: if Roblox engine resets TaskSchedulerTargetFps to 60 upon server join, reassert instantly",
         "            for (size_t i = 0; i < kVerifiedCount; i++) {",
-        "                if (kVerifiedFlags[i].rva == 0x6a58de8) continue;",
+        "                if (native_fps_owns_flag(kVerifiedFlags[i].name)) continue;",
         "                if (kVerifiedFlags[i].kind == 1) {",
         "                    int32_t cur = *(volatile int32_t*)(base + kVerifiedFlags[i].rva);",
         "                    if (cur != (int32_t)kVerifiedFlags[i].value) {",
@@ -2088,7 +2129,10 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
     return "\n".join(lines)
 
 
-def compile_dylib(c_source: str, out_dylib: Path) -> Path:
+def compile_dylib(c_source: str, out_dylib: Path, build_type: str = "release") -> Path:
+    if build_type not in ("debug", "release"):
+        raise ValueError("build_type must be debug or release")
+    compile_flags = ["-O0", "-g"] if build_type == "debug" else ["-O3", "-DNDEBUG"]
     work_dir = out_dylib.parent
     work_dir.mkdir(parents=True, exist_ok=True)
     c_file = work_dir / "masterstrap_ios.c"
@@ -2108,7 +2152,7 @@ def compile_dylib(c_source: str, out_dylib: Path) -> Path:
             "clang",
             "-target", "arm64-apple-ios14.0",
             "-dynamiclib",
-            "-O3",
+            *compile_flags,
             "-undefined", "dynamic_lookup",
             "-install_name", "@rpath/libmasterstrap.dylib",
             *isysroot,
@@ -2126,7 +2170,7 @@ def compile_dylib(c_source: str, out_dylib: Path) -> Path:
     compile_cmd = [
         clang_bin,
         "-target", "arm64-apple-ios14.0",
-        "-O3",
+        *compile_flags,
         "-c", str(c_file),
         "-o", str(obj_file)
     ]
@@ -2518,7 +2562,7 @@ SUMMARY:
     runtime_log.write_text(report_text, encoding="utf-8")
 
 
-def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir: Path, embed_flags: bool = False):
+def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir: Path, embed_flags: bool = False, build_type: str = "release"):
     out_dir.mkdir(parents=True, exist_ok=True)
     
     # IPA builds must use a verified local dump, never a remote version's map.
@@ -2527,6 +2571,9 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
     if input_ipa and input_ipa.is_file():
         dumped_header = hpp_path if hpp_path and hpp_path.is_file() else run_local_dumper(input_ipa, out_dir)
         expected_uuid = verify_ipa_profile(input_ipa, dumped_header)
+        # ponytail: native FPS RVAs cover this engine UUID; verify a new FPS contract after an engine update.
+        if expected_uuid != "63520525-9b34-3506-a0e4-f9824c8dd633":
+            raise RuntimeError(f"Native FPS contract unavailable for UUID {expected_uuid}; refusing fixed-RVA writes")
 
     # 2. Resolve FFlags table (dumped or remote)
     target_header = dumped_header if dumped_header else hpp_path
@@ -2604,7 +2651,7 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
             tpath = Path(td)
             dylib_path = tpath / "libmasterstrap.dylib"
             c_src = generate_native_hook_source(verified_entries, miss_offsets, len(flags), offsets_entries, all_flags_table=table, expected_uuid=expected_uuid)
-            compile_dylib(c_src, dylib_path)
+            compile_dylib(c_src, dylib_path, build_type=build_type)
             dylib_bytes = dylib_path.read_bytes()
 
             # ── Extract version from Info.plist for canonical IPA filename ──
@@ -2664,25 +2711,14 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         elif name == "Payload/Roblox.app/Frameworks/RobloxLib.framework/RobloxLib":
                             data = remove_load_dylib(data, ["libgloop", "delta.dylib"])
                             data = bytearray(data)
-                            # 1. Direct ARM64 uncap patch in TaskScheduler::getTargetFps @ 0x4625698:
-                            # Reads kTaskSchedulerTargetFpsSlot (base + 0x6a58de8). If >= 1 return slot, else return 9999.
-                            target_fps_offset = 0x4625698
-                            target_fps_patch = b'\x88\x21\x01\xf0\x00\xe9\x4d\xb9\x1f\x04\x00\x71\x4a\x00\x00\x54\xe0\xe1\x84\x52\xc0\x03\x5f\xd6'
-                            if len(data) > target_fps_offset + len(target_fps_patch):
-                                data[target_fps_offset:target_fps_offset+len(target_fps_patch)] = target_fps_patch
-                                print(f"[FPS_CEILING] Patched TaskScheduler::getTargetFps @ 0x{target_fps_offset:X} (direct ARM64 slot reader -> 9999)")
-
-                            # 1b. Bypass 240 FPS clamp site 1 in GetDefaultFramerateCap (csel w9, w8, w9, lt -> mov w9, w8)
+                            # 1. Preserve the engine getter and remove its 240 FPS select.
                             clamp_offset = 0x46256c4
-                            if len(data) > clamp_offset + 4 and data[clamp_offset:clamp_offset+4] in (b'\x09\xb1\x89\x1a', b'\xe9\x03\x08\x2a'):
-                                data[clamp_offset:clamp_offset+4] = b'\xe9\x03\x08\x2a'
-                                print(f"[FPS_CEILING] Bypassed RobloxLib 240 FPS clamp site 1 @ 0x{clamp_offset:X} (csel -> mov w9, w8)")
-
-                            # 1c. Patch fallback FPS in TaskScheduler::getTargetFps (mov w8, #0x3c -> mov w8, #0x270f)
-                            fallback_fps_offset = 0x46256CC
-                            if len(data) > fallback_fps_offset + 4 and data[fallback_fps_offset:fallback_fps_offset+4] in (b'\x88\x07\x80\x52', b'\xe8\xe1\x84\x52'):
-                                data[fallback_fps_offset:fallback_fps_offset+4] = b'\xe8\xe1\x84\x52'
-                                print(f"[FPS_CEILING] Patched TaskScheduler fallback FPS @ 0x{fallback_fps_offset:X} (60 -> 9999)")
+                            clamp_original = b'\x09\xb1\x89\x1a'  # csel w9, w8, w9, lt
+                            clamp_patch = b'\xe9\x03\x08\x2a'     # mov w9, w8
+                            if data[clamp_offset:clamp_offset+4] not in (clamp_original, clamp_patch):
+                                raise RuntimeError('FPS getter contract changed; refusing unverified RobloxLib patch')
+                            data[clamp_offset:clamp_offset+4] = clamp_patch
+                            print(f"[FPS_CEILING] Removed TaskScheduler 240 FPS clamp @ 0x{clamp_offset:X}")
 
                             # 2. Bypass 240 FPS clamp site 2 in TaskScheduler dt calculator (csel w11, w11, w12, lt -> nop)
                             clamp2_offset = 0x9165fc
@@ -2702,12 +2738,15 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                                 data[fallback_dt_offset:fallback_dt_offset+4] = b'\x89\x88\x88\x3c'
                                 print(f"[FPS_CEILING] Restored RobloxLib fallback delta time @ 0x{fallback_dt_offset:X} (dt -> 0.0166s standard fallback)")
 
-                            # 5. DisplayTiming schedule clamp bypass (csel w22, w21, w22, lo -> nop)
-                            # Prevents Roblox from clamping TaskScheduler targetFps to screenMax (60Hz in Low Power Mode / 120Hz with ProMotion)
+                            # 5. Keep the target in w22 rather than selecting min(target, screenMax).
                             dt_clamp_offset = 0x3F64AE4
-                            if len(data) > dt_clamp_offset + 4 and data[dt_clamp_offset:dt_clamp_offset+4] in (b'\xb6\x32\x96\x1a', b'\x1f\x20\x03\xd5'):
-                                data[dt_clamp_offset:dt_clamp_offset+4] = b'\x1f\x20\x03\xd5'
-                                print(f"[FPS_CEILING] Bypassed DisplayTiming schedule clamp @ 0x{dt_clamp_offset:X} (csel -> nop)")
+                            dt_clamp_patch = b'\x1f\x20\x03\xd5'  # nop
+                            if data[dt_clamp_offset:dt_clamp_offset+4] not in (
+                                b'\xb6\x32\x96\x1a', dt_clamp_patch
+                            ):
+                                raise RuntimeError('FPS DisplayTiming contract changed; refusing unverified RobloxLib patch')
+                            data[dt_clamp_offset:dt_clamp_offset+4] = dt_clamp_patch
+                            print(f"[FPS_CEILING] Removed DisplayTiming screen-Hz clamp @ 0x{dt_clamp_offset:X} (preserve targetFps in w22)")
 
                             # 6. Stretch Resolution (Architecture v73 Parity with 2D GUI M33 Guard):
                             # Hook View-Projection matrix write at 0xB75610 (inside 0xb75500) -> Code Cave at 0x3F80
@@ -2821,7 +2860,7 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                     turbo_default = {
                         "schema": 1,
                         "enabled": True,
-                        "targetFrameRate": 10000,
+                        "targetFrameRate": 9999,
                         "displayRefreshContract": True,
                         "keepDisplayActive": True,
                         "stretchScreenPercent": 100,
@@ -2858,7 +2897,7 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         '    <Properties>\n'
                         '      <bool name="ReducedMotion">false</bool>\n'
                         '      <float name="HapticStrength">1.000000</float>\n'
-                        '      <int name="FramerateCap">120</int>\n'
+                        '      <int name="FramerateCap">9999</int>\n'
                         '      <bool name="PlayerNamesEnabled">true</bool>\n'
                         '    </Properties>\n'
                         '  </Item>\n'
@@ -2903,6 +2942,7 @@ def main() -> int:
     ap.add_argument("--settings-json", default="")
     ap.add_argument("--hpp", default="")
     ap.add_argument("--out-dir", default=str(DEFAULT_OUT_DIR))
+    ap.add_argument("--build-type", choices=("debug", "release"), default="release")
     ap.add_argument(
         "--embed-flags",
         action="store_true",
@@ -2917,6 +2957,7 @@ def main() -> int:
         Path(args.hpp) if args.hpp else None,
         Path(args.out_dir),
         embed_flags=args.embed_flags,
+        build_type=args.build_type,
     )
     return 0
 

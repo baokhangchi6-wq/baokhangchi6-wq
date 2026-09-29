@@ -32,6 +32,12 @@ on:
         required: false
         default: false
         type: boolean
+      build_type:
+        description: 'Debug for device FPS checks; Release for publishing'
+        required: true
+        type: choice
+        options: [debug, release]
+        default: debug
 
 permissions:
   contents: write
@@ -44,6 +50,8 @@ jobs:
   build:
     runs-on: macos-26
     timeout-minutes: 90
+    env:
+      MASTERSTRAP_BUILD_TYPE: ${{ inputs.build_type || 'debug' }}
 
     steps:
       - name: Checkout iOS lane
@@ -60,6 +68,17 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pyyaml capstone Pillow requests
+
+      - name: Check FPS policy and native source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH=roblox python -m unittest discover -s roblox/tests -p test_ios_display_policy.py -v
+          clang -std=c11 -Wall -Wextra -Werror -I tools \
+            roblox/tests/ios_frame_policy_test.c -o "$RUNNER_TEMP/ios-fps-policy-check"
+          "$RUNNER_TEMP/ios-fps-policy-check"
+          PYTHONPATH=roblox python -c 'import os; from pathlib import Path; from tools.build_integrated_roblox_ipa import generate_native_hook_source; (Path(os.environ["RUNNER_TEMP"]) / "masterstrap-fps-source.c").write_text(generate_native_hook_source([], [], 0, [], {}), encoding="utf-8")'
+          clang -target arm64-apple-ios14.0 -fsyntax-only -Wno-everything "$RUNNER_TEMP/masterstrap-fps-source.c"
 
       # ── STEP 1: Version Gate (threshold = 0, IMMEDIATE) ──────────────────
       - name: Check Roblox iOS App Store version (threshold=0)
@@ -150,7 +169,8 @@ jobs:
           python tools/build_integrated_roblox_ipa.py \
             $IPA_ARG \
             $HPP_ARG \
-            --out-dir output
+            --out-dir output \
+            --build-type "$MASTERSTRAP_BUILD_TYPE"
 
           # Collect IPA info emitted by builder to GITHUB_OUTPUT
           if compgen -G "output/Masterstrap-*.ipa" > /dev/null; then
@@ -190,8 +210,17 @@ jobs:
           fi
 
       # ── STEP 6: Publish to GitHub Release ────────────────────────────────
+      - name: Upload Debug IPA for device FPS checks
+        if: steps.build_ipa.outputs.has_ipa == 'true' && env.MASTERSTRAP_BUILD_TYPE == 'debug'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-fps-debug-run-${{ github.run_number }}
+          path: output/Masterstrap-*.ipa
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Publish Masterstrap iOS IPA to GitHub Release
-        if: steps.version_gate.outputs.should_build == 'true' && steps.build_ipa.outputs.has_ipa == 'true'
+        if: steps.version_gate.outputs.should_build == 'true' && steps.build_ipa.outputs.has_ipa == 'true' && env.MASTERSTRAP_BUILD_TYPE == 'release'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ios-arm64-${{ steps.build_ipa.outputs.ipa_version }}-run-${{ github.run_number }}
@@ -215,9 +244,8 @@ jobs:
 
             ### What's included:
             - ✅ Cloud Bridge Protocol v2 (`masterstrap-rbx-bridge-v1://`)
-            - ✅ CADisplayLink FPS range policy (up to 120fps on ProMotion)
+            - Engine FPS target independent of display Hz; CADisplayLink uses actual display limits
             - ✅ Direct-RVA FastFlag write engine
-            - ✅ Stealth hooks: AbortLogger, ReportBytecode, ValidateHeader, ScriptTimeout, ValidateCaller, ValidateAndSetupCaps, Telemetry
             - ✅ Dynamic JSON config (ClientAppSettings.json + TurboProfile)
             - ✅ Full diagnostic log: `masterstrap_ios.log` (10/10 feature matrix)
 
@@ -230,7 +258,7 @@ jobs:
 
       # ── STEP 7: Advance iOS checkpoint ───────────────────────────────────
       - name: Advance iOS version checkpoint
-        if: steps.version_gate.outputs.should_build == 'true' && steps.build_ipa.outputs.has_ipa == 'true'
+        if: steps.version_gate.outputs.should_build == 'true' && steps.build_ipa.outputs.has_ipa == 'true' && env.MASTERSTRAP_BUILD_TYPE == 'release'
         shell: bash
         env:
           BUILT_VERSION: ${{ steps.build_ipa.outputs.ipa_version }}
