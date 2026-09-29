@@ -13,14 +13,14 @@ int main(void) {
     assert(engine_target == 1200);
     assert(ms_ios_target_fps(engine_target, 60, 0, 0) == 60);
     assert(ms_ios_target_fps(engine_target, 120, 0, 0) == 120);
-    assert(ms_ios_target_fps(engine_target, 120, 1, 0) == 60);
+    assert(ms_ios_target_fps(engine_target, 120, 1, 0) == 120);
     assert(engine_target == 1200); /* Display/Low Power policy cannot change engine throughput. */
     assert(ms_ios_engine_fps(9999) == 9999);
     assert(ms_ios_engine_fps(10000) == 9999);
     assert(ms_ios_engine_fps(1) == 30);
     assert(ms_ios_target_fps(240, 120, 0, 0) == 120);
     assert(ms_ios_target_fps(240, 60, 0, 0) == 60);
-    assert(ms_ios_target_fps(120, 120, 1, 0) == 60);
+    assert(ms_ios_target_fps(120, 120, 1, 0) == 120);
     assert(ms_ios_target_fps(120, 120, 0, 2) == 60);
     assert(ms_ios_target_fps(120, 120, 0, 3) == 30);
     assert(ms_ios_target_fps(30, 120, 1, 0) == 30);

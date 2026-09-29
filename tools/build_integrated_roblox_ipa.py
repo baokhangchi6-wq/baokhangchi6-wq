@@ -2545,13 +2545,15 @@ task.defer(function()
         if wetFloorEnabled then selector = selector - 1000 end
         local shaderEnabled = selector >= 2001 and selector <= 2006
 
+        -- Use bundled Roblox texture paths. rbxassetid URLs bypass the
+        -- replaced IPA assets and fetch a different remote cubemap.
         local skies = {
-            [2001] = {"7018216393", "7018216233", "7018216091", "7018215904", "7018215758", "7018215582"},
-            [2002] = {"159454299", "159454296", "159454293", "159454286", "159454300", "159454288"},
-            [2003] = {"600830446", "600831635", "600832720", "600886090", "600833862", "600835177"},
-            [2004] = {"12064107", "12064152", "12064121", "12064114", "12064131", "12064147"},
-            [2005] = {"271042516", "271077243", "271042556", "271042310", "271042467", "271077958"},
-            [2006] = {"570557514", "570557775", "570557559", "570557620", "570557672", "570557727"},
+            [2001] = {"sky512_bk.tex", "sky512_dn.tex", "sky512_ft.tex", "sky512_lf.tex", "sky512_rt.tex", "sky512_up.tex"},
+            [2002] = {"sky512_bk.tex", "sky512_dn.tex", "sky512_ft.tex", "sky512_lf.tex", "sky512_rt.tex", "sky512_up.tex"},
+            [2003] = {"sky512_bk.tex", "sky512_dn.tex", "sky512_ft.tex", "sky512_lf.tex", "sky512_rt.tex", "sky512_up.tex"},
+            [2004] = {"sky512_bk.tex", "sky512_dn.tex", "sky512_ft.tex", "sky512_lf.tex", "sky512_rt.tex", "sky512_up.tex"},
+            [2005] = {"sky512_bk.tex", "sky512_dn.tex", "sky512_ft.tex", "sky512_lf.tex", "sky512_rt.tex", "sky512_up.tex"},
+            [2006] = {"sky512_bk.tex", "sky512_dn.tex", "sky512_ft.tex", "sky512_lf.tex", "sky512_rt.tex", "sky512_up.tex"},
         }
         if shaderEnabled then
             local skyIds = skies[selector]
@@ -2562,7 +2564,7 @@ task.defer(function()
                 sky.Parent = lighting
             end
             local fields = {"SkyboxBk", "SkyboxDn", "SkyboxFt", "SkyboxLf", "SkyboxRt", "SkyboxUp"}
-            for i, field in ipairs(fields) do sky[field] = "rbxassetid://" .. skyIds[i] end
+            for i, field in ipairs(fields) do sky[field] = "rbxasset://textures/sky/" .. skyIds[i] end
 
             pcall(function() lighting.Technology = Enum.Technology.Future end)
             lighting.GlobalShadows = true
@@ -2610,7 +2612,7 @@ task.defer(function()
             end)
         end
         lighting:SetAttribute("MasterstrapShaderPackage", tostring(selector))
-        warn("MASTERSTRAP_SHADER_APPLIED:" .. tostring(selector) .. ":wetfloor=" .. tostring(wetFloorEnabled))
+        warn("MASTERSTRAP_SHADER_APPLIED_LOCAL:" .. tostring(selector) .. ":wetfloor=" .. tostring(wetFloorEnabled))
     end)
     if not ok then warn("MASTERSTRAP_SHADER_FAILED:" .. tostring(errorMessage)) end
 end)

@@ -22,12 +22,13 @@ static int ms_ios_xml_fps(const char* xml, int fallback) {
     return digits && strncmp(value, "</int>", 6) == 0 && target >= 30 ? target : fallback;
 }
 
-/* This bounds only CADisplayLink, never the engine's FPS target. */
+/* Bound CADisplayLink to the panel only. Low Power is an OS hint; applying a
+ * second 60 FPS clamp here reintroduces the Roblox refresh cap we removed. */
 static int ms_ios_target_fps(int requested, int maximum, int low_power, int thermal) {
+    (void)low_power;
     if (maximum < 30 || maximum > 240) maximum = 60;
     if (requested < 1) requested = maximum;
     if (requested > maximum) requested = maximum;
-    if (low_power && requested > 60) requested = 60;
     if (thermal >= 2 && requested > 60) requested = 60;
     if (thermal >= 3 && requested > 30) requested = 30;
     return requested;
