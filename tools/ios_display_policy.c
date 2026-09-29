@@ -318,7 +318,6 @@ static char g_ms_drawable_hook_key;
 
 static int g_metal_layer_stretch_installed;
 static char g_ms_layer_uncapped_key;
-static uint64_t g_ms_render_due;
 
 typedef struct { uint32_t numer, denom; } MSMachTimebase;
 extern uint64_t mach_absolute_time(void);
@@ -557,93 +556,6 @@ static id metal_layer_next_drawable_hook(id self, SEL cmd) {
     }
 #endif
     return drawable;
-}
-
-/* Skip before Roblox starts a Metal frame. Its false return path performs the
- * normal cleanup, unlike returning NULL from CAMetalLayer.nextDrawable. */
-typedef bool (*MSRenderAcquireImp)(void*, void*);
-static MSRenderAcquireImp g_ms_original_render_acquire;
-static int g_ms_render_gate_installed;
-
-static bool ms_render_acquire_hook(void* self, void* surface) {
-    if (fps_runtime_requested() && g_ms_timebase.numer && g_ms_timebase.denom) {
-        int display_fps = (int)fps_runtime_target();
-        if (display_fps < 1) display_fps = ios_maximum_frames_per_second();
-        if (display_fps > 0 && get_effective_target_fps() > display_fps) {
-            uint64_t now = mach_absolute_time();
-            uint64_t interval = (1000000000ull / (uint64_t)display_fps)
-                * g_ms_timebase.denom / g_ms_timebase.numer;
-            for (;;) {
-                uint64_t due = __atomic_load_n(&g_ms_render_due, __ATOMIC_ACQUIRE);
-                if (due && now < due) {
-#ifndef NDEBUG
-                    __atomic_fetch_add(&g_ms_drawable_decoupled, 1, __ATOMIC_RELAXED);
-#endif
-                    return false;
-                }
-                uint64_t next = now + interval;
-                if (__atomic_compare_exchange_n(&g_ms_render_due, &due, next, false,
-                        __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) break;
-            }
-        }
-    }
-    return g_ms_original_render_acquire
-        ? g_ms_original_render_acquire(self, surface) : false;
-}
-
-static bool ms_install_absolute_arm64_hook(uintptr_t target, const uint8_t expected[16],
-        void* replacement, void** original) {
-#if defined(__arm64__) || defined(__aarch64__)
-    uint8_t* code = (uint8_t*)target;
-    for (int i = 0; i < 16; ++i) if (code[i] != expected[i]) return false;
-    uint8_t* trampoline = mmap(NULL, 32, PROT_READ | PROT_WRITE,
-        MAP_PRIVATE | MAP_ANON, -1, 0);
-    if (trampoline == MAP_FAILED) return false;
-    memcpy(trampoline, code, 16);
-    ((uint32_t*)trampoline)[4] = 0x58000050; /* ldr x16, #8 */
-    ((uint32_t*)trampoline)[5] = 0xD61F0200; /* br x16 */
-    *(uint64_t*)(trampoline + 24) = target + 16;
-    __builtin___clear_cache((char*)trampoline, (char*)trampoline + 32);
-    if (mprotect(trampoline, 16384, PROT_READ | PROT_EXEC) != 0
-            && mprotect(trampoline, 4096, PROT_READ | PROT_EXEC) != 0) return false;
-
-    uint8_t jump[16] = {0x50,0x00,0x00,0x58,0x00,0x02,0x1F,0xD6};
-    *(uint64_t*)(jump + 8) = (uintptr_t)replacement;
-    uintptr_t page_size = 16384;
-    uintptr_t page = target & ~(page_size - 1);
-    if (mprotect((void*)page, page_size, PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
-        page_size = 4096;
-        page = target & ~(page_size - 1);
-        if (mprotect((void*)page, page_size, PROT_READ | PROT_WRITE | PROT_EXEC) != 0) return false;
-    }
-    memcpy(code, jump, sizeof(jump));
-    __builtin___clear_cache((char*)code, (char*)code + sizeof(jump));
-    mprotect((void*)page, page_size, PROT_READ | PROT_EXEC);
-    *original = trampoline;
-    return true;
-#else
-    (void)target; (void)expected; (void)replacement; (void)original;
-    return false;
-#endif
-}
-
-static bool ms_install_render_acquire_policy(uintptr_t base) {
-    if (g_ms_render_gate_installed) return true;
-    if (!base || !engine_identity_matches(base)) return false;
-    static const uint8_t expected[16] = {
-        0xE9,0x23,0xBB,0x6D, 0xFC,0x6F,0x01,0xA9,
-        0xF6,0x57,0x02,0xA9, 0xF4,0x4F,0x03,0xA9
-    };
-    void* original = NULL;
-    bool installed = ms_install_absolute_arm64_hook(base + 0x3F6AD94, expected,
-        (void*)ms_render_acquire_hook, &original);
-    if (installed) {
-        g_ms_original_render_acquire = (MSRenderAcquireImp)original;
-        g_ms_render_gate_installed = 1;
-    }
-    runtime_note("[FPS][RENDER_GATE] rva=0x3F6AD94 installed=%d contract=%s policy=PRE_FRAME_FALSE",
-        installed, installed ? "MATCH" : "MISMATCH_OR_PROTECTION");
-    return installed;
 }
 
 static void metal_layer_set_drawable_size_hook(id self, SEL cmd, MSSize size) {
