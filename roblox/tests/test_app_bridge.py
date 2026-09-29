@@ -187,7 +187,7 @@ class AppBridgeTests(unittest.TestCase):
         self.assertIn('kFastFlagBackend = "direct-rva-write-v1"', hook_source)
         self.assertIn('kEngineSetFFlagBackend = "not-installed"', hook_source)
         self.assertIn('kEngineGetFastFlagBackend = "not-installed"', hook_source)
-        self.assertIn('kFpsRuntimeBackend = "cadisplaylink-metal-present-policy-v4"', hook_source)
+        self.assertIn('kFpsRuntimeBackend = "cadisplaylink-metal-present-policy-v5"', hook_source)
         self.assertIn('kFontRuntimeBackend = "native-asset-vfs-v1"', hook_source)
         self.assertIn('kShaderRuntimeBackend = "native-metal-lighting-v1"', hook_source)
         self.assertIn('kStretchRuntimeBackend = "metal-layer-drawable-v1"', hook_source)

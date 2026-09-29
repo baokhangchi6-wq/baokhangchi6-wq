@@ -300,15 +300,21 @@ typedef id (*CommandQueueBufferDescriptorImp)(id, SEL, id);
 typedef void (*CommandPresentDrawableImp)(id, SEL, id);
 typedef void (*CommandPresentAtTimeImp)(id, SEL, id, double);
 typedef void (*CommandPresentAfterDurationImp)(id, SEL, id, double);
+typedef void (*DrawablePresentImp)(id, SEL);
+typedef void (*DrawablePresentTimedImp)(id, SEL, double);
 static CommandQueueBufferImp g_original_command_buffer;
 static CommandQueueBufferImp g_original_command_buffer_unretained;
 static CommandQueueBufferDescriptorImp g_original_command_buffer_descriptor;
 static CommandPresentDrawableImp g_original_command_present_drawable;
 static CommandPresentAtTimeImp g_original_command_present_at_time;
 static CommandPresentAfterDurationImp g_original_command_present_after_duration;
+static DrawablePresentImp g_original_drawable_present;
+static DrawablePresentTimedImp g_original_drawable_present_at_time;
+static DrawablePresentTimedImp g_original_drawable_present_after_duration;
 static unsigned long g_ms_present_calls;
 static unsigned long g_ms_present_delay_bypasses;
 static char g_ms_command_buffer_hook_key;
+static char g_ms_drawable_hook_key;
 
 static int g_metal_layer_stretch_installed;
 static char g_ms_layer_uncapped_key;
@@ -405,6 +411,55 @@ static void ms_install_command_buffer_present_policy(id command_buffer) {
         class_getName(cls), present != NULL, at_time != NULL, after != NULL);
 }
 
+static void drawable_present_hook(id self, SEL cmd) {
+    __atomic_fetch_add(&g_ms_present_calls, 1, __ATOMIC_RELAXED);
+    if (g_original_drawable_present) g_original_drawable_present(self, cmd);
+}
+
+static void drawable_present_at_time_hook(id self, SEL cmd, double time) {
+    __atomic_fetch_add(&g_ms_present_calls, 1, __ATOMIC_RELAXED);
+    __atomic_fetch_add(&g_ms_present_delay_bypasses, 1, __ATOMIC_RELAXED);
+    if (g_original_drawable_present) {
+        g_original_drawable_present(self, sel_registerName("present"));
+    } else if (g_original_drawable_present_at_time) {
+        g_original_drawable_present_at_time(self, cmd, time);
+    }
+}
+
+static void drawable_present_after_duration_hook(id self, SEL cmd, double duration) {
+    __atomic_fetch_add(&g_ms_present_calls, 1, __ATOMIC_RELAXED);
+    __atomic_fetch_add(&g_ms_present_delay_bypasses, 1, __ATOMIC_RELAXED);
+    if (g_original_drawable_present) {
+        g_original_drawable_present(self, sel_registerName("present"));
+    } else if (g_original_drawable_present_after_duration) {
+        g_original_drawable_present_after_duration(self, cmd, duration);
+    }
+}
+
+static void ms_install_drawable_present_policy(id drawable) {
+    if (!drawable || !fps_runtime_requested()) return;
+    Class cls = object_getClass(drawable);
+    if (!cls || objc_getAssociatedObject((id)cls, &g_ms_drawable_hook_key)) return;
+    Method present = class_getInstanceMethod(cls, sel_registerName("present"));
+    Method at_time = class_getInstanceMethod(cls, sel_registerName("presentAtTime:"));
+    Method after = class_getInstanceMethod(cls, sel_registerName("presentAfterMinimumDuration:"));
+    if (present && !g_original_drawable_present)
+        g_original_drawable_present = (DrawablePresentImp)method_setImplementation(
+            present, (IMP)drawable_present_hook);
+    if (at_time && !g_original_drawable_present_at_time)
+        g_original_drawable_present_at_time = (DrawablePresentTimedImp)method_setImplementation(
+            at_time, (IMP)drawable_present_at_time_hook);
+    if (after && !g_original_drawable_present_after_duration)
+        g_original_drawable_present_after_duration = (DrawablePresentTimedImp)method_setImplementation(
+            after, (IMP)drawable_present_after_duration_hook);
+    g_ms_metal_present_hook_installed = g_ms_metal_present_hook_installed
+        || g_original_drawable_present || g_original_drawable_present_at_time
+        || g_original_drawable_present_after_duration;
+    objc_setAssociatedObject((id)cls, &g_ms_drawable_hook_key, (id)1, 0);
+    runtime_note("[METAL][DRAWABLE] class=%s present=%d atTime=%d afterMinimumDuration=%d policy=IMMEDIATE",
+        class_getName(cls), present != NULL, at_time != NULL, after != NULL);
+}
+
 static id command_queue_buffer_hook(id self, SEL cmd) {
     id buffer = g_original_command_buffer ? g_original_command_buffer(self, cmd) : NULL;
     ms_install_command_buffer_present_policy(buffer);
@@ -486,6 +541,7 @@ static id metal_layer_next_drawable_hook(id self, SEL cmd) {
     uint64_t begin = measure ? mach_absolute_time() : 0;
 #endif
     id drawable = g_original_next_drawable ? g_original_next_drawable(self, cmd) : NULL;
+    ms_install_drawable_present_policy(drawable);
 #ifndef NDEBUG
     if (measure) {
         __atomic_fetch_add(&g_ms_drawable_wait, mach_absolute_time() - begin, __ATOMIC_RELAXED);
