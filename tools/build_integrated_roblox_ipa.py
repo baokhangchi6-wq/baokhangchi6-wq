@@ -2280,6 +2280,40 @@ def insert_load_dylib(macho_bytes: bytes, dylib_path: str) -> bytes:
     return bytes(data)
 
 
+def write_full_inspection_report(out_dir: Path, flags: dict, verified_entries: list, miss_offsets: list, ipa_name: str, out_ipa_name: str, embed_flags: bool = False):
+    out_dir.mkdir(parents=True, exist_ok=True)
+    report_text = f"""=====================================================
+=== Masterstrap Roblox iOS Build & Inspection Log ===
+=====================================================
+Date: {time.strftime('%Y-%m-%d %H:%M:%S')}
+Input IPA: {ipa_name}
+Output IPA: {out_ipa_name}
+
+SUMMARY:
+  - Embedded Baseline Mode: {'ENABLED' if embed_flags else 'DISABLED (bridge-only isolation build)'}
+  - Total Flags Requested: {len(flags)}
+  - Verified Active Flags: {len(verified_entries)}
+  - Miss Offsets Count:    {len(miss_offsets)}
+  - Success Ratio:         {(len(verified_entries)/len(flags)*100) if flags else 0:.1f}%
+
+--- [VERIFIED ACTIVE FASTFLAGS (SetFastFlag)] ---
+"""
+    for n, r, k, v in verified_entries:
+        report_text += f"  [VERIFIED] (SetFastFlag) {n} -> RVA: 0x{r:X} | Type: {'bool' if k==0 else 'int32'} | Value: {v}\n"
+
+    if miss_offsets:
+        report_text += "\n--- [MISS OFFSETS (FLAG NOT IN RVA MAP)] ---\n"
+        for m in miss_offsets:
+            report_text += f"  [MISS_OFFSET] {m}\n"
+
+    report_file = out_dir / "flag_inject_report.log"
+    report_file.write_text(report_text, encoding="utf-8")
+    print(f"Wrote full report -> {report_file}")
+
+    runtime_log = out_dir / "masterstrap_ios.log"
+    runtime_log.write_text(report_text, encoding="utf-8")
+
+
 def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir: Path, embed_flags: bool = False, build_type: str = "release"):
     out_dir.mkdir(parents=True, exist_ok=True)
     
