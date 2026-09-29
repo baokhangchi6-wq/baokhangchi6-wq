@@ -87,7 +87,7 @@ header {
     box-shadow: 0 2px 12px rgba(0,0,0,0.3);
 }
 .brand-area { display: flex; align-items: center; gap: 12px; }
-.brand-logo-img { width: 38px; height: 38px; border-radius: 10px; object-fit: contain; }
+.brand-logo-img { width: 38px; height: 38px; border-radius: 10px; object-fit: contain; background: #FFFFFF; }
 .brand-title h1 { font-size: 19px; font-weight: 700; color: var(--text-main); letter-spacing: -0.3px; }
 .brand-title p { font-size: 11px; color: var(--text-sub); font-weight: 500; margin-top: 1px; }
 .gear-btn {
@@ -5609,14 +5609,15 @@ function switchLanguage(lang) {
 function checkLicenseExpired(plan, expiration) {
     if (!plan || typeof plan !== "string") return false;
     const normalizedPlan = plan.trim().toLowerCase();
+    if (normalizedPlan === "max") return false;
     if (normalizedPlan !== "plus") return false;
-    if (!expiration || !expiration.trim()) return true;
+    if (!expiration || !expiration.trim() || expiration.trim().toLowerCase() === "lifetime") return false;
     try {
         const expTime = new Date(expiration.trim()).getTime();
-        if (isNaN(expTime)) return true;
+        if (isNaN(expTime)) return false;
         return Date.now() >= expTime;
     } catch (e) {
-        return true;
+        return false;
     }
 }
 
@@ -5654,7 +5655,7 @@ async function activateLicenseKey() {
     localStorage.setItem("masterstrap_device_id", deviceId);
 
     try {
-        const res = await fetch("https://liscence-key-t0n3.onrender.com/api/mobile-licenses/validate", {
+        const res = await fetch("https://license.masterstrap.org/api/ios-licenses/validate", {
             method: "POST",
             headers: { "Content-Type": "application/json", "Accept": "application/json" },
             body: JSON.stringify({
@@ -5671,7 +5672,7 @@ async function activateLicenseKey() {
 
         if (res.ok && data && data.isValid) {
             const plan = data.plan || "Plus";
-            const expiry = data.expirationDate || "";
+            const expiry = data.expirationDate || (plan.toLowerCase() === "max" ? "Lifetime" : "");
             const isExpired = checkLicenseExpired(plan, expiry);
 
             if (isExpired) {
@@ -5737,7 +5738,10 @@ function updateLicenseUI(isActive, plan, expiry) {
             badge.innerText = currentPlan;
         }
         if (expiryTxt) {
-            if (expiry && expiry.trim()) {
+            if (currentPlan.toLowerCase() === "max") {
+                expiryTxt.style.display = "block";
+                expiryTxt.innerText = "Expiry: Lifetime";
+            } else if (expiry && expiry.trim()) {
                 expiryTxt.style.display = "block";
                 expiryTxt.innerText = "Expiry: " + expiry;
             } else {
