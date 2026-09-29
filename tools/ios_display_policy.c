@@ -318,6 +318,7 @@ static char g_ms_drawable_hook_key;
 
 static int g_metal_layer_stretch_installed;
 static char g_ms_layer_uncapped_key;
+static uint64_t g_ms_next_drawable_due;
 
 typedef struct { uint32_t numer, denom; } MSMachTimebase;
 extern uint64_t mach_absolute_time(void);
@@ -540,6 +541,25 @@ static void metal_layer_set_display_sync_hook(id self, SEL cmd, bool enabled) {
 
 static id metal_layer_next_drawable_hook(id self, SEL cmd) {
     ms_ensure_layer_vsync_uncapped(self);
+    uint64_t drawable_interval = 0;
+    if (fps_runtime_requested() && g_ms_timebase.numer && g_ms_timebase.denom) {
+        uint64_t now = mach_absolute_time();
+        uint64_t due = __atomic_load_n(&g_ms_next_drawable_due, __ATOMIC_ACQUIRE);
+        if (due && now < due) {
+#ifndef NDEBUG
+            __atomic_fetch_add(&g_ms_drawable_calls, 1, __ATOMIC_RELAXED);
+            __atomic_fetch_add(&g_ms_drawable_nil, 1, __ATOMIC_RELAXED);
+            __atomic_fetch_add(&g_ms_drawable_decoupled, 1, __ATOMIC_RELAXED);
+#endif
+            return NULL;
+        }
+        int display_fps = (int)fps_runtime_target();
+        if (display_fps < 1) display_fps = ios_maximum_frames_per_second();
+        if (get_effective_target_fps() > display_fps) {
+            drawable_interval = (1000000000ull / (uint64_t)display_fps)
+                * g_ms_timebase.denom / g_ms_timebase.numer;
+        }
+    }
 #ifndef NDEBUG
     uintptr_t caller = (uintptr_t)__builtin_return_address(0);
     bool measure = g_engine_base && caller >= g_engine_base &&
@@ -547,6 +567,10 @@ static id metal_layer_next_drawable_hook(id self, SEL cmd) {
     uint64_t begin = measure ? mach_absolute_time() : 0;
 #endif
     id drawable = g_original_next_drawable ? g_original_next_drawable(self, cmd) : NULL;
+    if (drawable_interval) {
+        __atomic_store_n(&g_ms_next_drawable_due,
+            mach_absolute_time() + drawable_interval, __ATOMIC_RELEASE);
+    }
     ms_install_drawable_present_policy(drawable);
 #ifndef NDEBUG
     if (measure) {

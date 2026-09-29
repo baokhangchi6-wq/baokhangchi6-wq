@@ -429,9 +429,9 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static const char* kFastFlagBackend = \"direct-rva-write-v1\";",
         "static const char* kEngineSetFFlagBackend = \"not-installed\";",
         "static const char* kEngineGetFastFlagBackend = \"not-installed\";",
-        "static const char* kFpsRuntimeBackend = \"static-render-gate-metal-present-v9\";",
+        "static const char* kFpsRuntimeBackend = \"cadisplaylink-metal-drawable-decouple-v6\";",
         "static const char* kFontRuntimeBackend = \"native-asset-vfs-v1\";",
-        "static const char* kShaderRuntimeBackend = \"native-metal-lighting-v1\";",
+        "static const char* kShaderRuntimeBackend = \"rbxm-luau-native-flags-v2\";",
         "static const char* kStretchRuntimeBackend = \"view-projection-v73\";",
         "",
         "static const char* kMissOffsets[] = {"
@@ -576,6 +576,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static void apply_shader_lighting_flags(uintptr_t base) {",
         "    if (!base || (strcmp(g_shader_package, \"none\") == 0 && !g_shader_wet_floor)) return;",
         "    int sky_selector = shader_sky_selector();",
+        "    int profile_selector = sky_selector + (g_shader_wet_floor ? 1000 : 0);",
         "    const struct { const char* name; int kind; int64_t value; } flags[] = {",
         "        {\"FFlagGenericCreateSurfaceAppearanceMaterial\", 0, 1},",
         "        {\"FFlagRenderEnablePartBaseMaterial4K\", 0, 1},",
@@ -586,7 +587,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        {\"FIntUnifiedLightingBlendZone\", 1, 1},",
         "        {\"FFlagDebugTerrainForceHQShader\", 0, 1},",
         "        {\"FFlagRenderInitShadowmaps\", 0, 1},",
-        "        {\"FIntRenderShadowHugeRadius\", 1, sky_selector},",
+        "        {\"FIntRenderShadowHugeRadius\", 1, profile_selector},",
         "        {\"FIntBloomFrmCutoff\", 1, 0},",
         "        {\"FFlagMetalRuntimeShaders\", 0, 1},",
         "        {\"FFlagMTLRuntimeShaderCompilation\", 0, 1},",
@@ -598,8 +599,8 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        FFlagPatchEntry patch = {flag->name, flag->rva, flags[i].kind, flags[i].value};",
         "        if (SetFastFlag(base, &patch)) applied++;",
         "    }",
-        "    runtime_note(\"[SHADER][NATIVE] package=%s skySelector=%d applied=%d requested=%zu backend=metal-render-flags\",",
-        "        g_shader_package, sky_selector, applied, sizeof(flags) / sizeof(flags[0]));",
+        "    runtime_note(\"[SHADER][NATIVE] package=%s profileSelector=%d wetFloor=%d applied=%d requested=%zu backend=rbxm-luau-native-flags-v2\",",
+        "        g_shader_package, profile_selector, g_shader_wet_floor, applied, sizeof(flags) / sizeof(flags[0]));",
         "}",
         "",
         "static char dynamic_ascii_lower(char c) {",
@@ -2293,6 +2294,219 @@ def insert_load_dylib(macho_bytes: bytes, dylib_path: str) -> bytes:
     return bytes(data)
 
 
+def lz4_compress_block(src: bytes) -> bytes:
+    if not src:
+        return b'\x00'
+    out = bytearray()
+    anchor = 0
+    pos = 0
+    table = {}
+    while pos + 12 < len(src):
+        seq = src[pos:pos + 4]
+        key = (int.from_bytes(seq, 'little') * 2654435761) & 0xFFFFFFFF
+        ref = table.get(key)
+        table[key] = pos
+        if ref is None or pos - ref >= 65536 or src[ref:ref + 4] != seq:
+            pos += 1
+            continue
+        literal_len = pos - anchor
+        match_len = 4
+        while pos + match_len < len(src) and src[ref + match_len] == src[pos + match_len]:
+            match_len += 1
+        out.append((min(literal_len, 15) << 4) | min(match_len - 4, 15))
+        if literal_len >= 15:
+            remainder = literal_len - 15
+            while remainder >= 255:
+                out.append(255)
+                remainder -= 255
+            out.append(remainder)
+        out.extend(src[anchor:pos])
+        out.extend(struct.pack('<H', pos - ref))
+        if match_len - 4 >= 15:
+            remainder = match_len - 19
+            while remainder >= 255:
+                out.append(255)
+                remainder -= 255
+            out.append(remainder)
+        pos += match_len
+        anchor = pos
+    literal_len = len(src) - anchor
+    out.append(min(literal_len, 15) << 4)
+    if literal_len >= 15:
+        remainder = literal_len - 15
+        while remainder >= 255:
+            out.append(255)
+            remainder -= 255
+        out.append(remainder)
+    out.extend(src[anchor:])
+    return bytes(out)
+
+
+def lz4_decompress_block(src: bytes, uncompressed_size: int) -> bytes:
+    src_pos = 0
+    dst = bytearray()
+    while src_pos < len(src) and len(dst) < uncompressed_size:
+        token = src[src_pos]
+        src_pos += 1
+        literal_len = token >> 4
+        if literal_len == 15:
+            while src_pos < len(src):
+                value = src[src_pos]
+                src_pos += 1
+                literal_len += value
+                if value != 255:
+                    break
+        dst.extend(src[src_pos:src_pos + literal_len])
+        src_pos += literal_len
+        if len(dst) >= uncompressed_size or src_pos >= len(src):
+            break
+        offset = struct.unpack('<H', src[src_pos:src_pos + 2])[0]
+        src_pos += 2
+        if offset == 0 or offset > len(dst):
+            raise ValueError('Invalid RBXM LZ4 match offset')
+        match_len = (token & 0x0F) + 4
+        if match_len == 19:
+            while src_pos < len(src):
+                value = src[src_pos]
+                src_pos += 1
+                match_len += value
+                if value != 255:
+                    break
+        for _ in range(match_len):
+            dst.append(dst[-offset])
+    if len(dst) != uncompressed_size:
+        raise ValueError(f'RBXM LZ4 size mismatch: expected {uncompressed_size}, got {len(dst)}')
+    return bytes(dst)
+
+
+def inject_rbxm_script(rbxm_data: bytes, append_luau: str) -> tuple[bytes, bool]:
+    pos = 32
+    chunks = []
+    modified = False
+    while pos + 16 <= len(rbxm_data):
+        name = rbxm_data[pos:pos + 4]
+        compressed_len, uncompressed_len, reserved = struct.unpack('<III', rbxm_data[pos + 4:pos + 16])
+        payload_len = compressed_len or uncompressed_len
+        end = pos + 16 + payload_len
+        if end > len(rbxm_data):
+            raise ValueError('Truncated RBXM chunk')
+        payload = rbxm_data[pos + 16:end]
+        if name == b'PROP' and not modified:
+            raw = lz4_decompress_block(payload, uncompressed_len) if compressed_len else payload
+            marker = b'\x06\x00\x00\x00Source\x01'
+            marker_pos = raw.find(marker)
+            if marker_pos >= 0:
+                length_pos = marker_pos + len(marker)
+                old_len = struct.unpack('<I', raw[length_pos:length_pos + 4])[0]
+                source_pos = length_pos + 4
+                if old_len > 50 and source_pos + old_len <= len(raw):
+                    source = raw[source_pos:source_pos + old_len]
+                    marker_text = b'__MASTERSTRAP_SHADER_V2'
+                    if marker_text not in source:
+                        new_source = source + b'\n\n' + append_luau.encode('utf-8')
+                        new_raw = raw[:length_pos] + struct.pack('<I', len(new_source)) + new_source + raw[source_pos + old_len:]
+                        new_payload = lz4_compress_block(new_raw)
+                        if lz4_decompress_block(new_payload, len(new_raw)) != new_raw:
+                            raise ValueError('RBXM LZ4 round-trip verification failed')
+                        chunks.append(b'PROP' + struct.pack('<III', len(new_payload), len(new_raw), reserved) + new_payload)
+                        modified = True
+                        pos = end
+                        continue
+        chunks.append(rbxm_data[pos:end])
+        pos = end
+        if name == b'END\x00':
+            break
+    if not modified:
+        return rbxm_data, False
+    chunks.append(rbxm_data[pos:])
+    return rbxm_data[:32] + b''.join(chunks), True
+
+LUAU_SHADER_PAYLOAD = """
+-- Runs only after Roblox enters a loaded place; avoids homepage/bootstrap mutation.
+task.defer(function()
+    if _G.__MASTERSTRAP_SHADER_V2 then return end
+    _G.__MASTERSTRAP_SHADER_V2 = true
+
+    local ok = pcall(function()
+        if not game:IsLoaded() then game.Loaded:Wait() end
+        if game.PlaceId <= 0 then return end
+
+        local lighting = game:GetService("Lighting")
+        if not lighting then return end
+        local selector = 2005
+        pcall(function() selector = game:GetFastInt("RenderShadowHugeRadius") end)
+        local wetFloorEnabled = selector >= 3000
+        if wetFloorEnabled then selector = selector - 1000 end
+        local shaderEnabled = selector >= 2001 and selector <= 2006
+
+        local skies = {
+            [2001] = {"7018216393", "7018216233", "7018216091", "7018215904", "7018215758", "7018215582"},
+            [2002] = {"159454299", "159454296", "159454293", "159454286", "159454300", "159454288"},
+            [2003] = {"600830446", "600831635", "600832720", "600886090", "600833862", "600835177"},
+            [2004] = {"12064107", "12064152", "12064121", "12064114", "12064131", "12064147"},
+            [2005] = {"271042516", "271077243", "271042556", "271042310", "271042467", "271077958"},
+            [2006] = {"570557514", "570557775", "570557559", "570557620", "570557672", "570557727"},
+        }
+        if shaderEnabled then
+            local skyIds = skies[selector]
+            local sky = lighting:FindFirstChild("Masterstrap_Skybox")
+            if not sky then
+                sky = Instance.new("Sky")
+                sky.Name = "Masterstrap_Skybox"
+                sky.Parent = lighting
+            end
+            local fields = {"SkyboxBk", "SkyboxDn", "SkyboxFt", "SkyboxLf", "SkyboxRt", "SkyboxUp"}
+            for i, field in ipairs(fields) do sky[field] = "rbxassetid://" .. skyIds[i] end
+
+            pcall(function() lighting.Technology = Enum.Technology.Future end)
+            lighting.GlobalShadows = true
+            lighting.ShadowSoftness = 0.2
+            lighting.EnvironmentDiffuseScale = 1
+            lighting.EnvironmentSpecularScale = 1
+            lighting.Brightness = 2.2
+            lighting.ExposureCompensation = 0.1
+
+            local function effect(className, name, props)
+                local item = lighting:FindFirstChild(name)
+                if not item then item = Instance.new(className) item.Name = name item.Parent = lighting end
+                for property, value in pairs(props) do pcall(function() item[property] = value end) end
+            end
+            effect("BloomEffect", "Masterstrap_Bloom", {Intensity = 0.65, Size = 24, Threshold = 0.9, Enabled = true})
+            effect("ColorCorrectionEffect", "Masterstrap_ColorCorrection", {Brightness = 0.05, Contrast = 0.18, Saturation = 0.22, TintColor = Color3.fromRGB(255, 252, 248), Enabled = true})
+            effect("SunRaysEffect", "Masterstrap_SunRays", {Intensity = 0.15, Spread = 0.85, Enabled = true})
+            effect("Atmosphere", "Masterstrap_Atmosphere", {Density = 0.3, Offset = 0.25, Color = Color3.fromRGB(199, 218, 255), Decay = Color3.fromRGB(106, 112, 125), Glare = 0.35, Haze = 1.2})
+        end
+
+        local function wetFloor()
+            pcall(function()
+                local player = game:GetService("Players").LocalPlayer
+                local root = player and player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+                if not root then return end
+                for _, part in ipairs(workspace:GetPartBoundsInRadius(root.Position, 120)) do
+                    if part:IsA("BasePart") and part.CanCollide and not part:IsDescendantOf(player.Character) then
+                        local up = part.CFrame.UpVector
+                        if math.abs(up.Y) > 0.7 or (part.Size.Y <= part.Size.X and part.Size.Y <= part.Size.Z) then
+                            if part:GetAttribute("MS_OriginalReflectance") == nil then part:SetAttribute("MS_OriginalReflectance", part.Reflectance) end
+                            part.Reflectance = 0.42
+                            if part.Material ~= Enum.Material.Glass then part.Material = Enum.Material.SmoothPlastic end
+                        end
+                    end
+                end
+            end)
+        end
+        if wetFloorEnabled then
+            wetFloor()
+            task.spawn(function()
+                for _ = 1, 8 do task.wait(1.5) wetFloor() end
+            end)
+        end
+        lighting:SetAttribute("MasterstrapShaderPackage", tostring(selector))
+        warn("MASTERSTRAP_SHADER_APPLIED:" .. tostring(selector) .. ":wetfloor=" .. tostring(wetFloorEnabled))
+    end)
+    if not ok then warn("MASTERSTRAP_SHADER_FAILED") end
+end)
+"""
+
 def write_full_inspection_report(out_dir: Path, flags: dict, verified_entries: list, miss_offsets: list, ipa_name: str, out_ipa_name: str, embed_flags: bool = False):
     out_dir.mkdir(parents=True, exist_ok=True)
     report_text = f"""=====================================================
@@ -2460,6 +2674,7 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         if not sky_payload.startswith(b"\xABKTX 11\xBB\r\n\x1A\n"):
                             raise RuntimeError(f"Skybox asset is not KTX1: {sky_name}")
                     replaced_sky_assets = set()
+                    injected_shader_assets = 0
 
                     for item in zin.infolist():
                         name = item.filename
@@ -2528,41 +2743,7 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                             data[dt_clamp_offset:dt_clamp_offset+4] = dt_clamp_patch
                             print(f"[FPS_CEILING] Removed DisplayTiming screen-Hz clamp @ 0x{dt_clamp_offset:X} (preserve targetFps in w22)")
 
-                            # ponytail: 16:1 targets 60/120 Hz; use a timer gate if display cadence becomes variable.
-                            render_gate_cave_offset = 0x3E00
-                            render_gate_hook_offset = 0x3F6AD94
-                            render_gate_original = bytes.fromhex("e923bb6d")
-                            render_gate_hook = bytes.fromhex("1b640217")  # b 0x3e00
-                            render_gate_cave = struct.pack(
-                                '<16I',
-                                0xB00352A8,  # adrp x8, 0x6a58000
-                                0xB94DE909,  # ldr w9, [x8, #0xde8] (target FPS)
-                                0x7101E13F,  # cmp w9, #120
-                                0x54000169,  # b.ls render
-                                0xB00350E8,  # adrp x8, 0x6a20000
-                                0x910C6108,  # add x8, x8, #0x318 (render counter)
-                                0xB9400109,  # ldr w9, [x8]
-                                0x11000529,  # add w9, w9, #1
-                                0x7100413F,  # cmp w9, #16
-                                0x54000082,  # b.hs reset_and_render
-                                0xB9000109,  # str w9, [x8]
-                                0x52800000,  # mov w0, #0
-                                0xD65F03C0,  # ret
-                                0xB900011F,  # str wzr, [x8]
-                                0x6DBB23E9,  # original stp d9, d8, [sp, #-0x50]!
-                                0x14FD9BD7,  # b 0x3f6ad98
-                            )
-                            cave_current = data[render_gate_cave_offset:render_gate_cave_offset + len(render_gate_cave)]
-                            if cave_current not in (b'\x00' * len(render_gate_cave), render_gate_cave):
-                                raise RuntimeError('FPS render-gate code cave is occupied; refusing unverified RobloxLib patch')
-                            hook_current = data[render_gate_hook_offset:render_gate_hook_offset + 4]
-                            if hook_current not in (render_gate_original, render_gate_hook):
-                                raise RuntimeError('FPS render-gate contract changed; refusing unverified RobloxLib patch')
-                            data[render_gate_cave_offset:render_gate_cave_offset + len(render_gate_cave)] = render_gate_cave
-                            data[render_gate_hook_offset:render_gate_hook_offset + 4] = render_gate_hook
-                            print(f"[FPS_RENDER_GATE] Installed signed 16:1 simulation/render gate @ 0x{render_gate_hook_offset:X} -> cave 0x{render_gate_cave_offset:X}")
-
-                            # 7. Stretch Resolution (Architecture v73 Parity with 2D GUI M33 Guard):
+                            # 6. Stretch Resolution (Architecture v73 Parity with 2D GUI M33 Guard):
                             # Hook View-Projection matrix write at 0xB75610 (inside 0xb75500) -> Code Cave at 0x3F80
                             # Checks raw projection M[3][3] at offset 0x7c of camera object (x20):
                             # 0.0f = 3D perspective world camera (stretch Row 0),
@@ -2614,6 +2795,20 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                                 )
                             except Exception as e:
                                 print(f"Warning: Failed to update Info.plist: {e}")
+                        elif any(name.endswith(target) for target in (
+                            "AbilityManagerActorClientInitializeIsLocalScript.rbxm",
+                            "humanoidAnimateR6WithFace.rbxm",
+                            "humanoidAnimateR15CharacterController.rbxm",
+                            "humanoidAnimateR15Moods.rbxm",
+                            "humanoidAnimateR15SAuth.rbxm",
+                            "humanoidAnimatePlayEmote.rbxm",
+                            "humanoidAnimateSAuth.rbxm",
+                            "AnimateDependencies.rbxm",
+                        )):
+                            data, injected = inject_rbxm_script(data, LUAU_SHADER_PAYLOAD)
+                            if injected:
+                                injected_shader_assets += 1
+                                print(f"[LUAU_INJECT] Injected profile-gated shader and wet-floor payload -> {name}")
                         elif (name.endswith((".ttf", ".otf")) and "content/fonts/" in name
                               and not any(x in name.lower() for x in ["emoji", "notosanscjk", "buildericons"])):
                             minecraft_font = ROOT / "resources" / "fonts" / "Minecraft.ttf"
@@ -2638,6 +2833,9 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                     missing_sky_assets = set(sky_names) - replaced_sky_assets
                     if missing_sky_assets:
                         raise RuntimeError(f"Roblox IPA is missing stock skybox targets: {sorted(missing_sky_assets)}")
+                    if injected_shader_assets == 0:
+                        raise RuntimeError("Roblox IPA contains no injectable RBXM assets; shader/wet-floor payload was not embedded")
+                    print(f"[LUAU_INJECT] Verified {injected_shader_assets} RBXM shader/wet-floor payload injection(s)")
                     print(f"[ASSET_SKY] Replaced all {len(replaced_sky_assets)} stock cubemap faces with validated KTX assets")
 
                     # Embed dylib
