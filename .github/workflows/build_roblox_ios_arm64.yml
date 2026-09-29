@@ -132,21 +132,27 @@ jobs:
           echo "=== [1/4] Running iOS Dumper ==="
           mkdir -p output
 
-          if [ "${{ steps.prepare_ipa.outputs.available }}" = "true" ]; then
-            PYTHONPATH=roblox python -m roblox_ios_dumper dump \
-              "${{ steps.prepare_ipa.outputs.ipa_path }}" \
-              --patterns patterns.ios.json \
-              -o output \
-              --verbose || true
-            echo "Dumper complete. Checking output..."
-            ls -la output/ || true
-          else
-            echo "IPA not available; fetching latest verified headers from masterstrap.org CDN..."
-            curl -fsSL "https://masterstrap.org/Data/IOS/IOS_FFlags.hpp" \
-              -o output/FFlags.hpp || true
-            curl -fsSL "https://masterstrap.org/Data/IOS/IOS_Offsets.hpp" \
-              -o output/Offsets.hpp || true
+          if [ "${{ steps.prepare_ipa.outputs.available }}" != "true" ]; then
+            echo "Exact decrypted IPA is required; refusing stale remote offsets."
+            exit 1
           fi
+
+          rm -f output/manifest.json output/offsets.json output/offset_candidates.json \
+            output/fflags.json output/flag_scan.json output/Offsets.hpp output/FFlags.hpp \
+            output/fflags_map.hpp
+          PYTHONPATH=roblox python -m roblox_ios_dumper dump \
+            "${{ steps.prepare_ipa.outputs.ipa_path }}" \
+            --patterns patterns.ios.json \
+            -o output \
+            --verbose
+          PYTHONPATH=roblox python -m roblox_ios_dumper verify output \
+            --input "${{ steps.prepare_ipa.outputs.ipa_path }}" \
+            --patterns patterns.ios.json
+          python tools/prepare_ios_workflow_profile.py \
+            --output output \
+            --version "${{ steps.version_gate.outputs.store_version }}"
+          echo "Dumper and exact-binary workflow profile complete."
+          ls -la output/ output/workflow/
 
       # ── STEP 4: Build Masterstrap iOS Native Hook & IPA ──────────────────
       - name: Build Masterstrap iOS Native Hook & Integrate IPA
@@ -170,6 +176,7 @@ jobs:
             $IPA_ARG \
             $HPP_ARG \
             --out-dir output \
+            --workflow-profile output/workflow/profile.json \
             --build-type "$MASTERSTRAP_BUILD_TYPE"
 
           # Collect IPA info emitted by builder to GITHUB_OUTPUT
@@ -215,7 +222,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ios-fps-debug-run-${{ github.run_number }}
-          path: output/Masterstrap-*.ipa
+          path: |
+            output/Masterstrap-*.ipa
+            output/workflow/profile.json
+            output/workflow/profile.hpp
+            output/manifest.json
+            output/offsets.json
+            output/offset_candidates.json
           if-no-files-found: error
           retention-days: 7
 

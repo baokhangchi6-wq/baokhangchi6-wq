@@ -259,13 +259,15 @@ def fetch_or_load_offsets_map(local_hpp: Path) -> dict:
     return table
 
 
-def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_count: int, offset_entries: list = None, all_flags_table: dict = None, expected_uuid: str = None) -> str:
+def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_count: int, offset_entries: list = None, all_flags_table: dict = None, expected_uuid: str = None, workflow_profile: dict | None = None) -> str:
     import uuid
     uuid_bytes = uuid.UUID(expected_uuid).bytes if expected_uuid else bytes(16)
     if offset_entries is None:
         offset_entries = []
     if all_flags_table is None:
         all_flags_table = {}
+    workflow_profile = workflow_profile or {}
+    shader_abi_ready = bool(workflow_profile.get("shaderAbiReady"))
 
     sorted_all_flags = sorted(all_flags_table.items(), key=lambda x: x[0])
 
@@ -431,7 +433,8 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static const char* kEngineGetFastFlagBackend = \"not-installed\";",
         "static const char* kFpsRuntimeBackend = \"cadisplaylink-metal-drawable-decouple-v6\";",
         "static const char* kFontRuntimeBackend = \"native-asset-vfs-v1\";",
-        "static const char* kShaderRuntimeBackend = \"rbxm-luau-native-flags-v2\";",
+        f"static const bool kShaderAbiProfileReady = {'true' if shader_abi_ready else 'false'};",
+        "static const char* kShaderRuntimeBackend = \"ios-workflow-profile-v1\";",
         "static const char* kStretchRuntimeBackend = \"view-projection-v73\";",
         "",
         "static const char* kMissOffsets[] = {"
@@ -575,6 +578,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "",
         "static void apply_shader_lighting_flags(uintptr_t base) {",
         "    if (!base || (strcmp(g_shader_package, \"none\") == 0 && !g_shader_wet_floor)) return;",
+        "    if (!kShaderAbiProfileReady) { static int warned = 0; if (!warned) { runtime_note(\"[SHADER][PROFILE_ONLY] exact iOS Lua workflow signature audit pending; applying native flag fallback only\"); warned = 1; } }",
         "    int sky_selector = shader_sky_selector();",
         "    int profile_selector = sky_selector + (g_shader_wet_floor ? 1000 : 0);",
         "    const struct { const char* name; int kind; int64_t value; } flags[] = {",
@@ -1133,7 +1137,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        \"loadstring\", \"enableloadmodule\", NULL",
         "    };",
         "    g_abi_probe_total = g_abi_probe_executable = g_abi_probe_plausible = g_abi_probe_duplicate_roles = 0;",
-        "    g_abi_probe_call_gate_open = 0; /* A valid address cannot prove the C ABI/signature. */",
+        f"    g_abi_probe_call_gate_open = {'1' if shader_abi_ready else '0'}; /* exact workflow profile controls promotion */",
         "    const char* home = getenv(\"HOME\");",
         "    char receipt_path[768] = {0};",
         "    void* receipt = NULL;",
@@ -1160,7 +1164,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        }",
         "    }",
         "    if (receipt) { fprintf(receipt, \"],\\\"summary\\\":{\\\"total\\\":%d,\\\"executable\\\":%d,\\\"plausible\\\":%d,\\\"ambiguousRoles\\\":%d}}\\n\", g_abi_probe_total, g_abi_probe_executable, g_abi_probe_plausible, g_abi_probe_duplicate_roles); fflush(receipt); fclose(receipt); }",
-        "    runtime_note(\"[ABI_PROBE][SUMMARY] total=%d executable=%d plausible=%d ambiguousRoles=%d callGate=CLOSED reason=function-signatures-unverified\", g_abi_probe_total, g_abi_probe_executable, g_abi_probe_plausible, g_abi_probe_duplicate_roles);",
+        "    runtime_note(\"[ABI_PROBE][SUMMARY] total=%d executable=%d plausible=%d ambiguousRoles=%d callGate=%s reason=%s\", g_abi_probe_total, g_abi_probe_executable, g_abi_probe_plausible, g_abi_probe_duplicate_roles, g_abi_probe_call_gate_open ? \"OPEN\" : \"CLOSED\", g_abi_probe_call_gate_open ? \"exact-workflow-profile\" : \"function-signatures-unverified\");",
         "}",
         "",
         *(ROOT / "tools" / "ios_frame_policy.h").read_text(encoding="utf-8").splitlines(),
@@ -1170,7 +1174,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    runtime_note(\"[REQUEST][FONT] family=%s sizeStep=%d\", g_font_family, g_font_size_step);",
         "    runtime_note(\"[CAPABILITY][FONT] backend=%s status=%s reason=direct-asset-vfs\", kFontRuntimeBackend, g_profile_loaded ? \"ACTIVE\" : \"INACTIVE\");",
         "    runtime_note(\"[REQUEST][SHADER] package=%s wetFloor=%d\", g_shader_package, g_shader_wet_floor);",
-        "    runtime_note(\"[CAPABILITY][SHADER] backend=%s status=%s reason=native-metal-lighting\", kShaderRuntimeBackend, (g_profile_loaded && (g_shader_wet_floor || strcmp(g_shader_package, \"none\") != 0)) ? \"ACTIVE\" : \"INACTIVE\");",
+        "    runtime_note(\"[CAPABILITY][SHADER] backend=%s status=%s reason=%s\", kShaderRuntimeBackend, (g_profile_loaded && g_abi_probe_call_gate_open && (g_shader_wet_floor || strcmp(g_shader_package, \"none\") != 0)) ? \"ACTIVE\" : (g_profile_loaded && (g_shader_wet_floor || strcmp(g_shader_package, \"none\") != 0)) ? \"PROFILE_ONLY\" : \"INACTIVE\", g_abi_probe_call_gate_open ? \"verified-luau-contract\" : \"abi-profile-blocked\");",
         "    runtime_note(\"[REQUEST][STRETCH] percent=%d\", g_stretch_percent);",
         "    runtime_note(\"[CAPABILITY][STRETCH] backend=%s status=%s stretchPercent=%d\", kStretchRuntimeBackend, (g_profile_loaded && g_stretch_percent != 100) ? \"ACTIVE\" : \"INACTIVE_100PCT\", g_stretch_percent);",
         "    runtime_note(\"[CAPABILITY][RENDERER] requested=%s effective=Metal status=NATIVE_PLATFORM_ONLY\", g_renderer_mode);",
@@ -2018,10 +2022,10 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "                !launch_authorized ? \"NO_AUTH\" : !g_profile_loaded ? \"NO_PROFILE\" : \"none\");",
         "        // FEATURE_06: Shader / Wet Floor",
         "        fprintf(log_file, \"[FEATURE_06_SHADER] status=%s package=%s wetFloor=%d backend=%s gate=Auth(%d)&&Profile(%d) blockedReason=%s\\n\",",
-        "                launch_authorized && g_profile_loaded && (g_shader_wet_floor || strcmp(g_shader_package, \"none\") != 0) ? \"ACTIVE\" :",
-        "                launch_authorized && g_profile_loaded ? \"INACTIVE_IN_PROFILE\" : \"BLOCKED\",",
+        "                launch_authorized && g_profile_loaded && g_abi_probe_call_gate_open && (g_shader_wet_floor || strcmp(g_shader_package, \"none\") != 0) ? \"ACTIVE\" :",
+        "                launch_authorized && g_profile_loaded && (g_shader_wet_floor || strcmp(g_shader_package, \"none\") != 0) ? \"PROFILE_ONLY_ABI_BLOCKED\" : \"BLOCKED\",",
         "                g_shader_package, g_shader_wet_floor, kShaderRuntimeBackend, launch_authorized, g_profile_loaded,",
-        "                !launch_authorized ? \"NO_AUTH\" : !g_profile_loaded ? \"NO_PROFILE\" : (!g_shader_wet_floor && strcmp(g_shader_package, \"none\") == 0) ? \"SHADER_DISABLED\" : \"none\");",
+        "                !launch_authorized ? \"NO_AUTH\" : !g_profile_loaded ? \"NO_PROFILE\" : !g_abi_probe_call_gate_open ? \"ABI_SIGNATURE_PENDING\" : (!g_shader_wet_floor && strcmp(g_shader_package, \"none\") == 0) ? \"SHADER_DISABLED\" : \"none\");",
         "        if (g_shader_wet_floor) {",
         "            fprintf(log_file, \"[WETFLOOR_V24] status=ACTIVE strategy=bounded_nearby_once radiusStuds=384 maxParts=1024 materials=Plastic,Concrete,Slate,WoodPlanks target=SmoothPlastic reflectance=old+0.25\\n\");",
         "            runtime_note(\"[WETFLOOR_V24] status=ACTIVE strategy=bounded_nearby_once radiusStuds=384 maxParts=1024 materials=Plastic,Concrete,Slate,WoodPlanks target=SmoothPlastic reflectance=old+0.25\");",
@@ -2543,7 +2547,7 @@ SUMMARY:
     runtime_log.write_text(report_text, encoding="utf-8")
 
 
-def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir: Path, embed_flags: bool = False, build_type: str = "release"):
+def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir: Path, embed_flags: bool = False, build_type: str = "release", workflow_profile_path: Path | None = None):
     out_dir.mkdir(parents=True, exist_ok=True)
     
     # IPA builds must use a verified local dump, never a remote version's map.
@@ -2552,9 +2556,6 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
     if input_ipa and input_ipa.is_file():
         dumped_header = hpp_path if hpp_path and hpp_path.is_file() else run_local_dumper(input_ipa, out_dir)
         expected_uuid = verify_ipa_profile(input_ipa, dumped_header)
-        # ponytail: native FPS RVAs cover this engine UUID; verify a new FPS contract after an engine update.
-        if expected_uuid != "63520525-9b34-3506-a0e4-f9824c8dd633":
-            raise RuntimeError(f"Native FPS contract unavailable for UUID {expected_uuid}; refusing fixed-RVA writes")
 
     # 2. Resolve FFlags table (dumped or remote)
     target_header = dumped_header if dumped_header else hpp_path
@@ -2622,6 +2623,22 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
     )
 
     offsets_table = fetch_or_load_offsets_map(dumped_header.parent / "Offsets.hpp" if dumped_header else None)
+    workflow_profile = {}
+    profile_path = workflow_profile_path or (out_dir / "workflow" / "profile.json")
+    if profile_path.is_file():
+        try:
+            workflow_profile = json.loads(profile_path.read_text(encoding="utf-8"))
+            if not isinstance(workflow_profile, dict):
+                workflow_profile = {}
+        except (OSError, json.JSONDecodeError) as exc:
+            raise RuntimeError(f"Invalid iOS workflow profile: {profile_path}: {exc}") from exc
+    if input_ipa and input_ipa.is_file() and not workflow_profile:
+        raise RuntimeError("Exact iOS workflow profile missing; refusing stale Lua/shader ABI")
+    profile_uuid = str(workflow_profile.get("uuid") or "").lower()
+    if expected_uuid and profile_uuid != expected_uuid.lower():
+        raise RuntimeError(
+            f"iOS workflow profile UUID mismatch: profile={profile_uuid or 'missing'} ipa={expected_uuid}"
+        )
     offsets_entries = sorted(offsets_table.items(), key=lambda x: x[0])
     print(f"Loaded Engine Offsets: {len(offsets_entries)} functions")
 
@@ -2629,7 +2646,7 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
         with tempfile.TemporaryDirectory() as td:
             tpath = Path(td)
             dylib_path = tpath / "libmasterstrap.dylib"
-            c_src = generate_native_hook_source(verified_entries, miss_offsets, len(flags), offsets_entries, all_flags_table=table, expected_uuid=expected_uuid)
+            c_src = generate_native_hook_source(verified_entries, miss_offsets, len(flags), offsets_entries, all_flags_table=table, expected_uuid=expected_uuid, workflow_profile=workflow_profile)
             compile_dylib(c_src, dylib_path, build_type=build_type)
             dylib_bytes = dylib_path.read_bytes()
 
@@ -2948,6 +2965,7 @@ def main() -> int:
     ap.add_argument("--hpp", default="")
     ap.add_argument("--out-dir", default=str(DEFAULT_OUT_DIR))
     ap.add_argument("--build-type", choices=("debug", "release"), default="release")
+    ap.add_argument("--workflow-profile", default="", help="Exact IPA workflow/profile.json generated by prepare_ios_workflow_profile.py")
     ap.add_argument(
         "--embed-flags",
         action="store_true",
@@ -2963,6 +2981,7 @@ def main() -> int:
         Path(args.out_dir),
         embed_flags=args.embed_flags,
         build_type=args.build_type,
+        workflow_profile_path=Path(args.workflow_profile) if args.workflow_profile else None,
     )
     return 0
 
