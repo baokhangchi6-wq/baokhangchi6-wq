@@ -284,6 +284,9 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "#define PROT_READ 0x1",
         "#define PROT_WRITE 0x2",
         "#define PROT_EXEC 0x4",
+        "#define MAP_PRIVATE 0x0002",
+        "#define MAP_ANON 0x1000",
+        "#define MAP_FAILED ((void*)-1)",
         "#define LOG_NOTICE 5",
         "#define LOG_ERR 3",
         "typedef unsigned short uint16_t;",
@@ -293,6 +296,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "extern const void* _dyld_get_image_header(uint32_t image_index);",
         "extern intptr_t _dyld_get_image_vmaddr_slide(uint32_t image_index);",
         "extern int mprotect(void *addr, size_t len, int prot);",
+        "extern void* mmap(void *addr, size_t len, int prot, int flags, int fd, long long offset);",
         "extern int usleep(unsigned int usec);",
         "extern int getpid(void);",
         "extern long time(long *timer);",
@@ -429,7 +433,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static const char* kFastFlagBackend = \"direct-rva-write-v1\";",
         "static const char* kEngineSetFFlagBackend = \"not-installed\";",
         "static const char* kEngineGetFastFlagBackend = \"not-installed\";",
-        "static const char* kFpsRuntimeBackend = \"cadisplaylink-metal-drawable-decouple-v6\";",
+        "static const char* kFpsRuntimeBackend = \"cadisplaylink-pre-frame-render-gate-v7\";",
         "static const char* kFontRuntimeBackend = \"native-asset-vfs-v1\";",
         "static const char* kShaderRuntimeBackend = \"native-metal-lighting-v1\";",
         "static const char* kStretchRuntimeBackend = \"view-projection-v73\";",
@@ -561,8 +565,21 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static bool g_shader_wet_floor;",
         "static void runtime_note(const char* fmt, ...);",
         "",
+        "static int shader_sky_selector(void) {",
+        "    if (strcmp(g_shader_package, \"daytime\") == 0 || strcmp(g_shader_package, \"desert\") == 0",
+        "            || strcmp(g_shader_package, \"ghibli_anime\") == 0) return 2001;",
+        "    if (strcmp(g_shader_package, \"rtx_ultra\") == 0 || strcmp(g_shader_package, \"RTX High\") == 0) return 2002;",
+        "    if (strcmp(g_shader_package, \"sunset\") == 0 || strcmp(g_shader_package, \"cherry_blossom\") == 0) return 2003;",
+        "    if (strcmp(g_shader_package, \"night\") == 0 || strcmp(g_shader_package, \"arctic\") == 0",
+        "            || strcmp(g_shader_package, \"blood_moon\") == 0) return 2004;",
+        "    if (strcmp(g_shader_package, \"cyberpunk\") == 0 || strcmp(g_shader_package, \"synthwave\") == 0) return 2005;",
+        "    if (strcmp(g_shader_package, \"cloudy\") == 0 || strcmp(g_shader_package, \"noir\") == 0) return 2006;",
+        "    return 2000;",
+        "}",
+        "",
         "static void apply_shader_lighting_flags(uintptr_t base) {",
         "    if (!base || (strcmp(g_shader_package, \"none\") == 0 && !g_shader_wet_floor)) return;",
+        "    int sky_selector = shader_sky_selector();",
         "    const struct { const char* name; int kind; int64_t value; } flags[] = {",
         "        {\"FFlagGenericCreateSurfaceAppearanceMaterial\", 0, 1},",
         "        {\"FFlagRenderEnablePartBaseMaterial4K\", 0, 1},",
@@ -573,7 +590,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        {\"FIntUnifiedLightingBlendZone\", 1, 1},",
         "        {\"FFlagDebugTerrainForceHQShader\", 0, 1},",
         "        {\"FFlagRenderInitShadowmaps\", 0, 1},",
-        "        {\"FIntRenderShadowHugeRadius\", 1, 2000},",
+        "        {\"FIntRenderShadowHugeRadius\", 1, sky_selector},",
         "        {\"FIntBloomFrmCutoff\", 1, 0},",
         "        {\"FFlagMetalRuntimeShaders\", 0, 1},",
         "        {\"FFlagMTLRuntimeShaderCompilation\", 0, 1},",
@@ -585,8 +602,8 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        FFlagPatchEntry patch = {flag->name, flag->rva, flags[i].kind, flags[i].value};",
         "        if (SetFastFlag(base, &patch)) applied++;",
         "    }",
-        "    runtime_note(\"[SHADER][NATIVE] package=%s applied=%d requested=%zu backend=metal-render-flags\",",
-        "        g_shader_package, applied, sizeof(flags) / sizeof(flags[0]));",
+        "    runtime_note(\"[SHADER][NATIVE] package=%s skySelector=%d applied=%d requested=%zu backend=metal-render-flags\",",
+        "        g_shader_package, sky_selector, applied, sizeof(flags) / sizeof(flags[0]));",
         "}",
         "",
         "static char dynamic_ascii_lower(char c) {",
@@ -1553,6 +1570,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "            if (g_shader_wet_floor || strcmp(g_shader_package, \"none\") != 0) {",
         "                apply_shader_lighting_flags(current_base);",
         "            }",
+        "            ms_install_render_acquire_policy(current_base);",
         "            ensure_fps_slot_guard_thread(current_base);",
         "            purge_local_launch_configuration(\"warm_bridge_applied\", true);",
         "            bridge_log(false, \"Warm-session one-time apply: request=%s parsed=%d cachedApplied=%d stretchFactor=%.4f consumed=1\", request, warm_dynamic, warm_applied, factor);",
@@ -1884,6 +1902,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "            install_display_link_policy();",
         "            apply_ios_process_policies();",
         "            log_runtime_consumer_contract();",
+        "            ms_install_render_acquire_policy(base);",
         "",
         "            // 2. Apply verified baseline flags only inside an authorized launch.",
         "            for (size_t i = 0; i < kVerifiedCount; i++) {",
@@ -2280,6 +2299,180 @@ def insert_load_dylib(macho_bytes: bytes, dylib_path: str) -> bytes:
     return bytes(data)
 
 
+def lz4_compress_block(src: bytes) -> bytes:
+    if not src:
+        return b'\x00'
+    out = bytearray()
+    anchor = 0
+    pos = 0
+    table = {}
+    while pos + 12 < len(src):
+        seq = src[pos:pos + 4]
+        key = (int.from_bytes(seq, 'little') * 2654435761) & 0xFFFFFFFF
+        ref = table.get(key)
+        table[key] = pos
+        if ref is None or pos - ref >= 65536 or src[ref:ref + 4] != seq:
+            pos += 1
+            continue
+        literal_len = pos - anchor
+        match_len = 4
+        while pos + match_len < len(src) and src[ref + match_len] == src[pos + match_len]:
+            match_len += 1
+        out.append((min(literal_len, 15) << 4) | min(match_len - 4, 15))
+        if literal_len >= 15:
+            remainder = literal_len - 15
+            while remainder >= 255:
+                out.append(255)
+                remainder -= 255
+            out.append(remainder)
+        out.extend(src[anchor:pos])
+        out.extend(struct.pack('<H', pos - ref))
+        if match_len - 4 >= 15:
+            remainder = match_len - 19
+            while remainder >= 255:
+                out.append(255)
+                remainder -= 255
+            out.append(remainder)
+        pos += match_len
+        anchor = pos
+    literal_len = len(src) - anchor
+    out.append(min(literal_len, 15) << 4)
+    if literal_len >= 15:
+        remainder = literal_len - 15
+        while remainder >= 255:
+            out.append(255)
+            remainder -= 255
+        out.append(remainder)
+    out.extend(src[anchor:])
+    return bytes(out)
+
+
+def lz4_decompress_block(src: bytes, uncompressed_size: int) -> bytes:
+    src_pos = 0
+    dst = bytearray()
+    while src_pos < len(src) and len(dst) < uncompressed_size:
+        token = src[src_pos]
+        src_pos += 1
+        literal_len = token >> 4
+        if literal_len == 15:
+            while src_pos < len(src):
+                value = src[src_pos]
+                src_pos += 1
+                literal_len += value
+                if value != 255:
+                    break
+        dst.extend(src[src_pos:src_pos + literal_len])
+        src_pos += literal_len
+        if len(dst) >= uncompressed_size or src_pos >= len(src):
+            break
+        offset = struct.unpack('<H', src[src_pos:src_pos + 2])[0]
+        src_pos += 2
+        if offset == 0 or offset > len(dst):
+            raise ValueError('Invalid RBXM LZ4 match offset')
+        match_len = (token & 0x0F) + 4
+        if match_len == 19:
+            while src_pos < len(src):
+                value = src[src_pos]
+                src_pos += 1
+                match_len += value
+                if value != 255:
+                    break
+        for _ in range(match_len):
+            dst.append(dst[-offset])
+    if len(dst) != uncompressed_size:
+        raise ValueError(f'RBXM LZ4 size mismatch: expected {uncompressed_size}, got {len(dst)}')
+    return bytes(dst)
+
+
+def inject_rbxm_script(rbxm_data: bytes, append_luau: str) -> tuple[bytes, bool]:
+    pos = 32
+    chunks = []
+    modified = False
+    while pos + 16 <= len(rbxm_data):
+        name = rbxm_data[pos:pos + 4]
+        compressed_len, uncompressed_len, reserved = struct.unpack('<III', rbxm_data[pos + 4:pos + 16])
+        payload_len = compressed_len or uncompressed_len
+        end = pos + 16 + payload_len
+        if end > len(rbxm_data):
+            raise ValueError('Truncated RBXM chunk')
+        payload = rbxm_data[pos + 16:end]
+        if name == b'PROP' and not modified:
+            raw = lz4_decompress_block(payload, uncompressed_len) if compressed_len else payload
+            marker = b'\x06\x00\x00\x00Source\x01'
+            marker_pos = raw.find(marker)
+            if marker_pos >= 0:
+                length_pos = marker_pos + len(marker)
+                old_len = struct.unpack('<I', raw[length_pos:length_pos + 4])[0]
+                source_pos = length_pos + 4
+                if old_len > 50 and source_pos + old_len <= len(raw):
+                    source = raw[source_pos:source_pos + old_len]
+                    marker_text = b'Masterstrap Skybox Asset Route v1'
+                    if marker_text not in source:
+                        new_source = source + b'\n\n' + append_luau.encode('utf-8')
+                        new_raw = raw[:length_pos] + struct.pack('<I', len(new_source)) + new_source + raw[source_pos + old_len:]
+                        new_payload = lz4_compress_block(new_raw)
+                        if lz4_decompress_block(new_payload, len(new_raw)) != new_raw:
+                            raise ValueError('RBXM LZ4 round-trip verification failed')
+                        chunks.append(b'PROP' + struct.pack('<III', len(new_payload), len(new_raw), reserved) + new_payload)
+                        modified = True
+                        pos = end
+                        continue
+        chunks.append(rbxm_data[pos:end])
+        pos = end
+        if name == b'END\x00':
+            break
+    if not modified:
+        return rbxm_data, False
+    chunks.append(rbxm_data[pos:])
+    return rbxm_data[:32] + b''.join(chunks), True
+
+
+LUAU_SKYBOX_PAYLOAD = r'''
+-- Masterstrap Skybox Asset Route v1
+task.defer(function()
+    if _G.__MASTERSTRAP_SKYBOX_V1 then return end
+    _G.__MASTERSTRAP_SKYBOX_V1 = true
+    if not game:IsLoaded() then game.Loaded:Wait() end
+
+    local selector = 2000
+    for _ = 1, 32 do
+        pcall(function() selector = game:GetFastInt("RenderShadowHugeRadius") end)
+        if selector >= 2001 and selector <= 2006 then break end
+        task.wait(0.25)
+    end
+
+    local profiles = {
+        [2001] = {"7018216393", "7018216233", "7018216091", "7018215904", "7018215758", "7018215582"},
+        [2002] = {"159454299", "159454296", "159454293", "159454286", "159454300", "159454288"},
+        [2003] = {"600830446", "600831635", "600832720", "600886090", "600833862", "600835177"},
+        [2004] = {"12064107", "12064152", "12064121", "12064114", "12064131", "12064147"},
+        [2005] = {"271042516", "271077243", "271042556", "271042310", "271042467", "271077958"},
+        [2006] = {"570557514", "570557775", "570557559", "570557620", "570557672", "570557727"},
+    }
+    local ids = profiles[selector]
+    if not ids then return end
+
+    local lighting = game:GetService("Lighting")
+    local old = lighting:FindFirstChild("Masterstrap_Skybox")
+    if old then old:Destroy() end
+    local stage = Instance.new("Folder")
+    stage.Name = "_MS20"
+    stage.Parent = lighting
+    local sky = Instance.new("Sky")
+    sky.Name = "Masterstrap_Skybox"
+    sky.Parent = stage
+    sky.SkyboxBk = "rbxassetid://" .. ids[1]
+    sky.SkyboxDn = "rbxassetid://" .. ids[2]
+    sky.SkyboxFt = "rbxassetid://" .. ids[3]
+    sky.SkyboxLf = "rbxassetid://" .. ids[4]
+    sky.SkyboxRt = "rbxassetid://" .. ids[5]
+    sky.SkyboxUp = "rbxassetid://" .. ids[6]
+    sky.Parent = lighting
+    stage:Destroy()
+end)
+'''
+
+
 def write_full_inspection_report(out_dir: Path, flags: dict, verified_entries: list, miss_offsets: list, ipa_name: str, out_ipa_name: str, embed_flags: bool = False):
     out_dir.mkdir(parents=True, exist_ok=True)
     report_text = f"""=====================================================
@@ -2351,7 +2544,6 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
         "FFlagPerformanceControlDisplayRefreshRate": False,
         "FFlagPerformanceControlDisplayRefreshRateInAdaptiveSync": False,
         "FFlagPerformanceControlDisplayRefreshRateMigration": False,
-        "DFIntDebugTextureManagerSkipMips": 12,
         "FIntDebugForceMSAASamples": 1,
         "DFIntDebugDynamicRenderKiloPixels": 922,
         "FFlagAutomaticDRS": True,
@@ -2362,7 +2554,6 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
         "FIntFRMMinGrassDistance": 0,
         "FIntRobloxGuiBlurIntensity": 0,
         "FFlagDRSBasicManagement": True,
-        "DFIntDebugLimitMinTextureResolutionWhenSkipMips": 64,
         "FFlagAnimationClipMemCacheEnabled": True,
         "FFlagAnimationLodBoneEnabled": True,
         "FFlagEnableAndroidPowerManager": False,
@@ -2442,13 +2633,7 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         "Payload/Roblox.app/GlobalBasicSettings_13.xml",
                         "Payload/Roblox.app/GlobalBasicSettings.xml",
                     }
-                    sky_dir = ROOT / "resources" / "sky"
-                    sky_names = tuple(f"sky512_{face}.tex" for face in ("bk", "dn", "ft", "lf", "rt", "up"))
-                    sky_assets = {name: (sky_dir / name).read_bytes() for name in sky_names}
-                    for name, payload in sky_assets.items():
-                        if not payload.startswith(b"\xABKTX 11\xBB\r\n\x1A\n"):
-                            raise RuntimeError(f"Skybox asset is not KTX1: {name}")
-                    replaced_sky_assets = set()
+                    injected_skybox_assets = 0
 
                     for item in zin.infolist():
                         name = item.filename
@@ -2463,13 +2648,6 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                             continue
 
                         data = zin.read(name)
-
-                        sky_name = Path(name).name
-                        if ("RobloxLib.framework/ios/textures/sky/" in name
-                                and sky_name in sky_assets):
-                            data = sky_assets[sky_name]
-                            replaced_sky_assets.add(sky_name)
-                            print(f"[ASSET_SKY] Replaced stock Roblox sky texture -> {name} ({len(data)} bytes)")
 
                         if name == "Payload/Roblox.app/Roblox":
                             data = remove_load_dylib(data, ["libgloop", "delta.dylib"])
@@ -2569,6 +2747,20 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                                 )
                             except Exception as e:
                                 print(f"Warning: Failed to update Info.plist: {e}")
+                        elif any(name.endswith(target) for target in (
+                            "AbilityManagerActorClientInitializeIsLocalScript.rbxm",
+                            "humanoidAnimateR6WithFace.rbxm",
+                            "humanoidAnimateR15CharacterController.rbxm",
+                            "humanoidAnimateR15Moods.rbxm",
+                            "humanoidAnimateR15SAuth.rbxm",
+                            "humanoidAnimatePlayEmote.rbxm",
+                            "humanoidAnimateSAuth.rbxm",
+                            "AnimateDependencies.rbxm",
+                        )):
+                            data, injected = inject_rbxm_script(data, LUAU_SKYBOX_PAYLOAD)
+                            if injected:
+                                injected_skybox_assets += 1
+                                print(f"[ASSET_SKY] Injected one-shot Android profile asset route -> {name}")
                         elif (name.endswith((".ttf", ".otf")) and "content/fonts/" in name
                               and not any(x in name.lower() for x in ["emoji", "notosanscjk", "buildericons"])):
                             minecraft_font = ROOT / "resources" / "fonts" / "Minecraft.ttf"
@@ -2590,10 +2782,9 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         zout.writestr(item, data)
                         seen_entries.add(name)
 
-                    missing_sky_assets = set(sky_names) - replaced_sky_assets
-                    if missing_sky_assets:
-                        raise RuntimeError(f"Roblox IPA is missing stock skybox targets: {sorted(missing_sky_assets)}")
-                    print(f"[ASSET_SKY] Replaced all {len(replaced_sky_assets)} stock cubemap faces with validated KTX assets")
+                    if injected_skybox_assets == 0:
+                        raise RuntimeError("Roblox IPA has no executable RBXM target for one-shot skybox payload")
+                    print(f"[ASSET_SKY] Injected profile-selectable one-shot payload into {injected_skybox_assets} RBXM assets")
 
                     # Embed dylib
                     dylib_entry = "Payload/Roblox.app/Frameworks/libmasterstrap.dylib"
