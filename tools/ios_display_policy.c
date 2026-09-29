@@ -131,8 +131,8 @@ static void apply_display_link_policy(id link, const char* source) {
         g_original_display_link_set_range(link, sel_registerName("setPreferredFrameRateRange:"), range);
         if (g_display_link_rewrite_count < 16) {
             MSFrameRateRange actual = ((MSFrameRateRange (*)(id, SEL))objc_msgSend)(link, sel_registerName("preferredFrameRateRange"));
-            runtime_note("[READBACK][FPS] source=%s api=preferredFrameRateRange min=%.1f max=%.1f preferred=%.1f target=%ld status=%s presentedFps=UNMEASURED",
-                source, (double)actual.minimum, (double)actual.maximum, (double)actual.preferred, target,
+            runtime_note("[READBACK][FPS] source=%s api=preferredFrameRateRange engineTarget=%d displayTarget=%ld min=%.1f max=%.1f preferred=%.1f status=%s presentedFps=UNMEASURED",
+                source, g_ms_policy.target, target, (double)actual.minimum, (double)actual.maximum, (double)actual.preferred,
                 actual.preferred == range.preferred ? "MATCH" : "OS_ADJUSTED");
         }
     } else if (g_original_display_link_set_fps) {
@@ -140,12 +140,12 @@ static void apply_display_link_policy(id link, const char* source) {
         g_original_display_link_set_fps(link, sel_registerName("setPreferredFramesPerSecond:"), link_fps);
         if (g_display_link_rewrite_count < 16) {
             long actual = ((long (*)(id, SEL))objc_msgSend)(link, sel_registerName("preferredFramesPerSecond"));
-            runtime_note("[READBACK][FPS] source=%s api=preferredFramesPerSecond requested=%ld readback=%ld presentedFps=UNMEASURED", source, link_fps, actual);
+            runtime_note("[READBACK][FPS] source=%s api=preferredFramesPerSecond engineTarget=%d displayTarget=%ld requested=%ld readback=%ld presentedFps=UNMEASURED", source, g_ms_policy.target, target, link_fps, actual);
         }
     }
     if (g_display_link_rewrite_count < 16) {
         ++g_display_link_rewrite_count;
-        runtime_note("[APPLY][FPS] generation=%u requested=%d effective=%ld screenMax=%d lowPower=%d thermal=%d status=REQUESTED",
+        runtime_note("[APPLY][FPS] generation=%u engineTarget=%d displayTarget=%ld screenMax=%d lowPower=%d thermal=%d status=REQUESTED",
             g_ms_generation, g_ms_policy.target, target, ios_maximum_frames_per_second(), ms_low_power(), ms_thermal());
     }
     g_ms_applying = 0;

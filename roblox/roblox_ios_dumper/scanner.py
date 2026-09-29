@@ -32,6 +32,13 @@ KNOWN_PREFIXES = (
     "FLog",
 )
 
+FLAG_ALIASES = {
+    "FFlagLimitTargetFpsToScreenRefresh": "FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate",
+    "DFFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate": "FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate",
+    "FFlagTaskSchedulerLimitTargetFpsTo240": "FFlagTaskSchedulerLimitTargetFpsTo2402",
+    "DFFlagTaskSchedulerLimitTargetFpsTo2402": "FFlagTaskSchedulerLimitTargetFpsTo2402",
+}
+
 
 @dataclass(frozen=True)
 class StringXref:
@@ -553,6 +560,10 @@ class Arm64Scanner:
                 return prefix, value[len(prefix) :]
         return None
 
+    @staticmethod
+    def _canonical_flag_name(value: str) -> str:
+        return FLAG_ALIASES.get(value, value)
+
     def _direct_storage(self, ref: AddressReference) -> tuple[str, int] | None:
         next_pc = ref.instruction_address + ref.instruction_count * 4
         for pc in range(next_pc, next_pc + 16, 4):
@@ -565,6 +576,13 @@ class Arm64Scanner:
         return None
 
     def _resolve_flag_name(self, suffix: str, inferred_kind: str) -> tuple[str, str, str]:
+        aliases = {
+            "LimitTargetFpsToScreenRefresh": ("FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate", "FFlag"),
+            "TaskSchedulerLimitTargetFpsTo240": ("FFlagTaskSchedulerLimitTargetFpsTo2402", "FFlag"),
+        }
+        if suffix in aliases:
+            name, prefix = aliases[suffix]
+            return name, prefix, "known-name-alias"
         compatible_prefixes = {
             "bool": {"FFlag", "DFFlag", "SFFlag"},
             "bool16": {"FFlag", "DFFlag", "SFFlag"},
@@ -602,7 +620,9 @@ class Arm64Scanner:
                 classified = self._classify_string(value)
                 if classified:
                     prefix, suffix = classified
-                    string_candidates.append((ref.target_address, prefix, suffix, value))
+                    canonical = self._canonical_flag_name(value)
+                    canonical_prefix, canonical_suffix = self._classify_string(canonical) or (prefix, suffix)
+                    string_candidates.append((ref.target_address, canonical_prefix, canonical_suffix, canonical))
                 elif value in KNOWN_PREFIXES:
                     prefix_candidates.append(value)
                 else:
