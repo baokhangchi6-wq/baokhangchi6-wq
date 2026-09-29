@@ -452,6 +452,14 @@ void MSLevelPlayRequest(const char *format, const char *requestId) {
         if ([kind isEqualToString:@"rewarded"]) {
             MSTryShowPending();
         } else if ([kind isEqualToString:@"interstitial"]) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3500 * NSEC_PER_MSEC)),
+                           dispatch_get_main_queue(), ^{
+                if (MSPendingRequest && [MSPendingRequest isEqualToString:rid] && !MSAdShowing) {
+                    MSLog(@"interstitial request=%@ timed out, resolving fail-open", rid);
+                    MSResolve(@"continue", @"timeout");
+                    MSReloadAllAds();
+                }
+            });
             MSTryShowPending();
         } else {
             MSResolve(@"failed", @"unsupported_format");
