@@ -8,6 +8,7 @@ claimed until their iOS-specific ABI and signatures are independently verified.
 """
 
 import argparse
+import hashlib
 import io
 import json
 import os
@@ -595,6 +596,9 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        {\"FIntBloomFrmCutoff\", 1, 0},",
         "        {\"FFlagMetalRuntimeShaders\", 0, 1},",
         "        {\"FFlagMTLRuntimeShaderCompilation\", 0, 1},",
+        "        {\"FFlagDisablePostFx\", 0, 0},",
+        "        {\"DFIntRenderPostFxBasePixelCount\", 1, 2000000},",
+        "        {\"DFIntDebugFRMQualityLevelOverride\", 1, 10},",
         "    };",
         "    int applied = 0;",
         "    for (size_t i = 0; i < sizeof(flags) / sizeof(flags[0]); ++i) {",
@@ -603,7 +607,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        FFlagPatchEntry patch = {flag->name, flag->rva, flags[i].kind, flags[i].value};",
         "        if (SetFastFlag(base, &patch)) applied++;",
         "    }",
-        "    runtime_note(\"[SHADER][NATIVE] package=%s profileSelector=%d wetFloor=%d applied=%d requested=%zu backend=rbxm-luau-native-flags-v2\",",
+        "    runtime_note(\"[SHADER][NATIVE] package=%s profileSelector=%d wetFloor=%d applied=%d requested=%zu backend=rbxm-luau-native-flags-v2 postfx=enabled\",",
         "        g_shader_package, profile_selector, g_shader_wet_floor, applied, sizeof(flags) / sizeof(flags[0]));",
         "}",
         "",
@@ -619,6 +623,13 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        expected++;",
         "    }",
         "    return *value == '\\0' && *expected == '\\0';",
+        "}",
+        "",
+        "static bool shader_conflicting_flag(const char* name) {",
+        "    if (!name || !(g_shader_wet_floor || strcmp(g_shader_package, \"none\") != 0)) return false;",
+        "    const char* blocked[] = {\"FFlagDisablePostFx\", \"DFIntRenderPostFxBasePixelCount\", \"DFIntDebugFRMQualityLevelOverride\", NULL};",
+        "    for (int i = 0; blocked[i]; ++i) if (strcmp(name, blocked[i]) == 0) return true;",
+        "    return false;",
         "}",
         "",
         "static bool parse_dynamic_scalar_text(const char* value, int64_t* number, int* kind) {",
@@ -698,6 +709,10 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        const MasterFlagEntry* flag = lookup_flag_with_fallback(key);",
         "        if (native_fps_owns_flag(key)) {",
         "            if (log_file) fprintf(log_file, \"[DYNAMIC_JSON_SKIP] %s source=NATIVE_FPS_PROFILE\\n\", key);",
+        "            continue;",
+        "        }",
+        "        if (shader_conflicting_flag(key)) {",
+        "            if (log_file) fprintf(log_file, \"[DYNAMIC_JSON_SKIP] %s source=SHADER_PROFILE\\n\", key);",
         "            continue;",
         "        }",
         "        if (flag) {",
@@ -1187,15 +1202,15 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    snprintf(path, sizeof(path), \"%s/Documents/MasterstrapRuntimeReceipt.json\", home);",
         "    void* file = fopen(path, \"w\");",
         "    if (!file) return;",
-        "    fprintf(file, \"{\\\"schema\\\":2,\\\"generatedAtUnix\\\":%ld,\\\"profileLoaded\\\":%s,\\\"abiProbe\\\":{\\\"total\\\":%d,\\\"executable\\\":%d,\\\"plausible\\\":%d,\\\"ambiguousRoles\\\":%d,\\\"callGateOpen\\\":false},\\\"fps\\\":{\\\"backend\\\":\\\"%s\\\",\\\"requested\\\":%d,\\\"screenMaximum\\\":%d,\\\"hookInstalled\\\":%s},\\\"renderer\\\":{\\\"requested\\\":\\\"%s\\\",\\\"effective\\\":\\\"Metal\\\"},\\\"boost\\\":{\\\"enabled\\\":%s,\\\"status\\\":\\\"%s\\\"},\\\"font\\\":{\\\"requested\\\":\\\"%s\\\",\\\"sizeStep\\\":%d,\\\"status\\\":\\\"%s\\\"},\\\"shader\\\":{\\\"requested\\\":\\\"%s\\\",\\\"wetFloor\\\":%s,\\\"status\\\":\\\"%s\\\"},\\\"stretch\\\":{\\\"requestedPercent\\\":%d,\\\"status\\\":\\\"%s\\\"}}\\n\",",
+        "    fprintf(file, \"{\\\"schema\\\":2,\\\"generatedAtUnix\\\":%ld,\\\"profileLoaded\\\":%s,\\\"abiProbe\\\":{\\\"total\\\":%d,\\\"executable\\\":%d,\\\"plausible\\\":%d,\\\"ambiguousRoles\\\":%d,\\\"callGateOpen\\\":%s},\\\"fps\\\":{\\\"backend\\\":\\\"%s\\\",\\\"requested\\\":%d,\\\"screenMaximum\\\":%d,\\\"hookInstalled\\\":%s},\\\"renderer\\\":{\\\"requested\\\":\\\"%s\\\",\\\"effective\\\":\\\"Metal\\\"},\\\"boost\\\":{\\\"enabled\\\":%s,\\\"status\\\":\\\"%s\\\"},\\\"font\\\":{\\\"requested\\\":\\\"%s\\\",\\\"sizeStep\\\":%d,\\\"status\\\":\\\"%s\\\"},\\\"shader\\\":{\\\"requested\\\":\\\"%s\\\",\\\"wetFloor\\\":%s,\\\"status\\\":\\\"%s\\\"},\\\"stretch\\\":{\\\"requestedPercent\\\":%d,\\\"status\\\":\\\"%s\\\"}}\\n\",",
         "            time(NULL), g_profile_loaded ? \"true\" : \"false\",",
-        "            g_abi_probe_total, g_abi_probe_executable, g_abi_probe_plausible, g_abi_probe_duplicate_roles,",
+        "            g_abi_probe_total, g_abi_probe_executable, g_abi_probe_plausible, g_abi_probe_duplicate_roles, g_abi_probe_call_gate_open ? \"true\" : \"false\",",
         "            kFpsRuntimeBackend, g_target_fps,",
         "            ios_maximum_frames_per_second(), g_display_link_policy_installed ? \"true\" : \"false\",",
         "            g_renderer_mode, g_game_mode_enabled ? \"true\" : \"false\",",
         "            g_game_mode_enabled ? \"active_turbo_metal\" : \"inactive\",",
         "            g_font_family, g_font_size_step, g_profile_loaded ? \"active_asset_vfs\" : \"inactive\",",
-        "            g_shader_package, g_shader_wet_floor ? \"true\" : \"false\", (g_profile_loaded && (g_shader_wet_floor || strcmp(g_shader_package, \"none\") != 0)) ? \"active_native_lighting\" : \"inactive\",",
+        "            g_shader_package, g_shader_wet_floor ? \"true\" : \"false\", (g_profile_loaded && g_abi_probe_call_gate_open && (g_shader_wet_floor || strcmp(g_shader_package, \"none\") != 0)) ? \"active_luau_workflow\" : (g_profile_loaded && (g_shader_wet_floor || strcmp(g_shader_package, \"none\") != 0)) ? \"profile_only_abi_blocked\" : \"inactive\",",
         "            g_stretch_percent, (g_profile_loaded && g_stretch_percent != 100) ? \"active_view_projection\" : \"inactive_100pct\");",
         "    fflush(file);",
         "    fclose(file);",
@@ -1894,11 +1909,12 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    if (base != 0) {",
         "        launch_authorized = true;",
         "        g_launch_authorized = true;",
-        "        // 1. Parse once, apply once, then retain only an in-memory cache.",
+        "        // Load profiles before dynamic flags so shader quality policy can reject conflicts.",
+        "        load_and_apply_runtime_profiles(log_file);",
+        "        // Parse once, apply once, then retain only an in-memory cache.",
         "        dynamic_count = load_dynamic_config_files(base, log_file);",
         "",
-        "            // 1b. Load every launcher-owned runtime profile and report capability gates",
-        "            load_and_apply_runtime_profiles(log_file);",
+        "            // Load every launcher-owned runtime profile and report capability gates",
         "            install_display_link_policy();",
         "            apply_ios_process_policies();",
         "            log_runtime_consumer_contract();",
@@ -1970,11 +1986,12 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "            if (base != 0 && (g_shader_wet_floor || strcmp(g_shader_package, \"none\") != 0)) {",
         "                apply_shader_lighting_flags(base);",
         "                if (log_file) {",
-        "                    fprintf(log_file, \"[SHADER_APPLY] Activated High-Quality Metal Lighting & PBR Surface Reflectance (package=%s wetFloor=%d)\\n\",",
+        "                    fprintf(log_file, \"[SHADER_APPLY] status=%s package=%s wetFloor=%d\\n\",",
+        "                            g_abi_probe_call_gate_open ? \"ACTIVE_LUAU\" : \"PROFILE_ONLY_ABI_BLOCKED\",",
         "                            g_shader_package, g_shader_wet_floor);",
         "                }",
-        "                runtime_note(\"[SHADER_APPLY] Activated High-Quality Metal Lighting & PBR Surface Reflectance (package=%s wetFloor=%d)\",",
-        "                             g_shader_package, g_shader_wet_floor);",
+        "                runtime_note(\"[SHADER_APPLY] status=%s package=%s wetFloor=%d\",",
+        "                             g_abi_probe_call_gate_open ? \"ACTIVE_LUAU\" : \"PROFILE_ONLY_ABI_BLOCKED\", g_shader_package, g_shader_wet_floor);",
         "            }",
         "            purge_local_launch_configuration(\"cold_launch_applied\", true);",
         "    } else {",
@@ -2427,13 +2444,32 @@ def inject_rbxm_script(rbxm_data: bytes, append_luau: str) -> tuple[bytes, bool]
     chunks.append(rbxm_data[pos:])
     return rbxm_data[:32] + b''.join(chunks), True
 
+
+def verify_packaged_visual_assets(input_ipa: Path, output_ipa: Path, sky_assets: dict[str, bytes]) -> None:
+    """Prove packaged sky bytes changed and match launcher-owned resources."""
+    prefix = "Payload/Roblox.app/Frameworks/RobloxLib.framework/ios/textures/sky/"
+    with zipfile.ZipFile(input_ipa, "r") as source, zipfile.ZipFile(output_ipa, "r") as packaged:
+        for name, expected in sky_assets.items():
+            member = prefix + name
+            original = source.read(member)
+            actual = packaged.read(member)
+            if actual != expected:
+                raise RuntimeError(f"Packaged sky asset mismatch: {member}")
+            if actual == original:
+                raise RuntimeError(f"Packaged sky asset remained stock: {member}")
+            print(
+                f"[ASSET_SKY_VERIFY] {name} stock={hashlib.sha256(original).hexdigest()[:12]} "
+                f"custom={hashlib.sha256(actual).hexdigest()[:12]} status=VERIFIED"
+            )
+
 LUAU_SHADER_PAYLOAD = """
 -- Runs only after Roblox enters a loaded place; avoids homepage/bootstrap mutation.
 task.defer(function()
     if _G.__MASTERSTRAP_SHADER_V2 then return end
     _G.__MASTERSTRAP_SHADER_V2 = true
+    warn("MASTERSTRAP_SHADER_STARTED")
 
-    local ok = pcall(function()
+    local ok, errorMessage = pcall(function()
         if not game:IsLoaded() then game.Loaded:Wait() end
         if game.PlaceId <= 0 then return end
 
@@ -2488,8 +2524,11 @@ task.defer(function()
                 local player = game:GetService("Players").LocalPlayer
                 local root = player and player.Character and player.Character:FindFirstChild("HumanoidRootPart")
                 if not root then return end
-                for _, part in ipairs(workspace:GetPartBoundsInRadius(root.Position, 120)) do
+                local scanned = 0
+                for _, part in ipairs(workspace:GetPartBoundsInRadius(root.Position, 384)) do
+                    if scanned >= 1024 then break end
                     if part:IsA("BasePart") and part.CanCollide and not part:IsDescendantOf(player.Character) then
+                        scanned = scanned + 1
                         local up = part.CFrame.UpVector
                         if math.abs(up.Y) > 0.7 or (part.Size.Y <= part.Size.X and part.Size.Y <= part.Size.Z) then
                             if part:GetAttribute("MS_OriginalReflectance") == nil then part:SetAttribute("MS_OriginalReflectance", part.Reflectance) end
@@ -2509,7 +2548,7 @@ task.defer(function()
         lighting:SetAttribute("MasterstrapShaderPackage", tostring(selector))
         warn("MASTERSTRAP_SHADER_APPLIED:" .. tostring(selector) .. ":wetfloor=" .. tostring(wetFloorEnabled))
     end)
-    if not ok then warn("MASTERSTRAP_SHADER_FAILED") end
+    if not ok then warn("MASTERSTRAP_SHADER_FAILED:" .. tostring(errorMessage)) end
 end)
 """
 
@@ -2901,7 +2940,7 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         "wetFloorStrategy": "bounded_nearby_once",
                         "wetFloorMaxParts": 1024,
                         "wetFloorRadiusStuds": 384,
-                        "allowWorkspaceMaterialScan": False,
+                        "allowWorkspaceMaterialScan": True,
                         "allowPeriodicWorker": False
                     }
                     shader_bytes = json.dumps(shader_default, indent=4).encode("utf-8")
@@ -2937,6 +2976,7 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         else:
                             zout.writestr(jp, json_bytes)
 
+            verify_packaged_visual_assets(input_ipa, out_ipa, sky_assets)
             print(f"\nSUCCESS -> {out_ipa} ({out_ipa.stat().st_size / (1024*1024):.1f} MB)")
 
             # Emit version to GitHub Actions output if in CI environment
