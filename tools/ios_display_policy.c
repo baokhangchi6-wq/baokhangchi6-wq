@@ -24,6 +24,7 @@ static DisplayLinkSetRangeImp g_original_display_link_set_range;
 static DisplayLinkAddImp g_original_display_link_add;
 static int g_display_link_policy_installed;
 static int g_display_link_rewrite_count;
+static int g_ms_metal_present_hook_installed;
 static int g_ms_applying;
 static id g_ms_links, g_ms_observer;
 static bool g_ms_idle_owned, g_ms_idle_original;
@@ -204,9 +205,10 @@ static void ms_write_display_receipt(unsigned long links) {
     snprintf(path, sizeof(path), "%s/Documents/MasterstrapDisplayReceipt.json", home);
     void* file = fopen(path, "w");
     if (!file) return;
-    fprintf(file, "{\"schema\":1,\"generatedAtUnix\":%ld,\"generation\":%u,\"authorizedProfileLoaded\":%s,\"policyRequested\":%s,\"hookInstalled\":%s,\"frameRateRangeAvailable\":%s,\"requestedFps\":%d,\"policyTargetFps\":%ld,\"screenMaximum\":%d,\"lowPower\":%s,\"thermalState\":%d,\"trackedDisplayLinks\":%lu,\"presentedFps\":null,\"runtimeVerified\":false}\n",
+    fprintf(file, "{\"schema\":2,\"generatedAtUnix\":%ld,\"generation\":%u,\"authorizedProfileLoaded\":%s,\"policyRequested\":%s,\"hookInstalled\":%s,\"frameRateRangeAvailable\":%s,\"metalPresentHookInstalled\":%s,\"requestedFps\":%d,\"policyTargetFps\":%ld,\"screenMaximum\":%d,\"lowPower\":%s,\"thermalState\":%d,\"trackedDisplayLinks\":%lu,\"presentedFps\":null,\"runtimeVerified\":false}\n",
         time(NULL), g_ms_generation, g_ms_policy.loaded ? "true" : "false", fps_runtime_requested() ? "true" : "false",
         g_display_link_policy_installed ? "true" : "false", g_original_display_link_set_range ? "true" : "false",
+        g_ms_metal_present_hook_installed ? "true" : "false",
         g_ms_policy.target, fps_runtime_target(), ios_maximum_frames_per_second(), ms_low_power() ? "true" : "false", ms_thermal(), links);
     fclose(file);
 }
@@ -291,6 +293,22 @@ static SetDrawableSizeImp g_original_set_drawable_size;
 typedef id (*MetalLayerInitImp)(id, SEL);
 static MetalLayerInitImp g_original_metal_layer_init;
 
+/* Metal command buffers can add an explicit present delay after drawable
+ * acquisition. Remove that delay while preserving the real display cadence. */
+typedef id (*CommandQueueBufferImp)(id, SEL);
+typedef id (*CommandQueueBufferDescriptorImp)(id, SEL, id);
+typedef void (*CommandPresentDrawableImp)(id, SEL, id);
+typedef void (*CommandPresentAtTimeImp)(id, SEL, id, double);
+typedef void (*CommandPresentAfterDurationImp)(id, SEL, id, double);
+static CommandQueueBufferImp g_original_command_buffer;
+static CommandQueueBufferDescriptorImp g_original_command_buffer_descriptor;
+static CommandPresentDrawableImp g_original_command_present_drawable;
+static CommandPresentAtTimeImp g_original_command_present_at_time;
+static CommandPresentAfterDurationImp g_original_command_present_after_duration;
+static unsigned long g_ms_present_calls;
+static unsigned long g_ms_present_delay_bypasses;
+static char g_ms_command_buffer_hook_key;
+
 static int g_metal_layer_stretch_installed;
 static char g_ms_layer_uncapped_key;
 
@@ -310,10 +328,12 @@ static void ms_log_fps_drawable_sample(void) {
     uint64_t calls = __atomic_exchange_n(&g_ms_drawable_calls, 0, __ATOMIC_RELAXED);
     uint64_t wait = __atomic_exchange_n(&g_ms_drawable_wait, 0, __ATOMIC_RELAXED);
     uint64_t missing = __atomic_exchange_n(&g_ms_drawable_nil, 0, __ATOMIC_RELAXED);
+    unsigned long presents = __atomic_exchange_n(&g_ms_present_calls, 0, __ATOMIC_RELAXED);
+    unsigned long immediate = __atomic_exchange_n(&g_ms_present_delay_bypasses, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_ms_probe_start, now, __ATOMIC_RELEASE);
-    runtime_note("[FPS][DRAWABLE] engineTarget=%d calls=%llu nil=%llu seconds=%.3f acquisitionsPerSecond=%.1f averageWaitMs=%.3f renderedFps=UNMEASURED",
+    runtime_note("[FPS][DRAWABLE] engineTarget=%d calls=%llu nil=%llu seconds=%.3f acquisitionsPerSecond=%.1f averageWaitMs=%.3f presents=%lu immediatePresents=%lu renderedFps=UNMEASURED",
         get_effective_target_fps(), calls, missing, seconds, (calls >= missing ? calls - missing : 0) / seconds,
-        calls ? (double)wait * g_ms_timebase.numer / g_ms_timebase.denom / 1e6 / calls : 0.0);
+        calls ? (double)wait * g_ms_timebase.numer / g_ms_timebase.denom / 1e6 / calls : 0.0, presents, immediate);
 }
 #else
 static void ms_log_fps_drawable_sample(void) {}
@@ -329,6 +349,10 @@ static void ms_apply_metal_layer_policies(id layer) {
         if (sync_available) {
             ((void (*)(id, SEL, bool))objc_msgSend)(layer, sync_sel, false);
         }
+        SEL transaction_sel = sel_registerName("setPresentsWithTransaction:");
+        if (((bool (*)(id, SEL, SEL))objc_msgSend)(layer, sel_registerName("respondsToSelector:"), transaction_sel)) {
+            ((void (*)(id, SEL, bool))objc_msgSend)(layer, transaction_sel, false);
+        }
         SEL max_sel = sel_registerName("setMaximumDrawableCount:");
         if (((bool (*)(id, SEL, SEL))objc_msgSend)(layer, sel_registerName("respondsToSelector:"), max_sel)) {
             ((void (*)(id, SEL, unsigned long))objc_msgSend)(layer, max_sel, 3);
@@ -336,8 +360,82 @@ static void ms_apply_metal_layer_policies(id layer) {
     }
 }
 
+static void command_present_drawable_hook(id self, SEL cmd, id drawable) {
+    __atomic_fetch_add(&g_ms_present_calls, 1, __ATOMIC_RELAXED);
+    if (g_original_command_present_drawable) g_original_command_present_drawable(self, cmd, drawable);
+}
+
+static void command_present_at_time_hook(id self, SEL cmd, id drawable, double time) {
+    __atomic_fetch_add(&g_ms_present_calls, 1, __ATOMIC_RELAXED);
+    __atomic_fetch_add(&g_ms_present_delay_bypasses, 1, __ATOMIC_RELAXED);
+    if (g_original_command_present_drawable) {
+        g_original_command_present_drawable(self, sel_registerName("presentDrawable:"), drawable);
+    } else if (g_original_command_present_at_time) {
+        g_original_command_present_at_time(self, cmd, drawable, time);
+    }
+}
+
+static void command_present_after_duration_hook(id self, SEL cmd, id drawable, double duration) {
+    __atomic_fetch_add(&g_ms_present_calls, 1, __ATOMIC_RELAXED);
+    __atomic_fetch_add(&g_ms_present_delay_bypasses, 1, __ATOMIC_RELAXED);
+    if (g_original_command_present_drawable) {
+        g_original_command_present_drawable(self, sel_registerName("presentDrawable:"), drawable);
+    } else if (g_original_command_present_after_duration) {
+        g_original_command_present_after_duration(self, cmd, drawable, duration);
+    }
+}
+
+static void ms_install_command_buffer_present_policy(id command_buffer) {
+    if (!command_buffer || !fps_runtime_requested()) return;
+    Class cls = object_getClass(command_buffer);
+    if (!cls || objc_getAssociatedObject((id)cls, &g_ms_command_buffer_hook_key)) return;
+    Method present = class_getInstanceMethod(cls, sel_registerName("presentDrawable:"));
+    Method at_time = class_getInstanceMethod(cls, sel_registerName("presentDrawable:atTime:"));
+    Method after = class_getInstanceMethod(cls, sel_registerName("presentDrawable:afterMinimumDuration:"));
+    if (present && !g_original_command_present_drawable)
+        g_original_command_present_drawable = (CommandPresentDrawableImp)method_setImplementation(present, (IMP)command_present_drawable_hook);
+    if (at_time && !g_original_command_present_at_time)
+        g_original_command_present_at_time = (CommandPresentAtTimeImp)method_setImplementation(at_time, (IMP)command_present_at_time_hook);
+    if (after && !g_original_command_present_after_duration)
+        g_original_command_present_after_duration = (CommandPresentAfterDurationImp)method_setImplementation(after, (IMP)command_present_after_duration_hook);
+    g_ms_metal_present_hook_installed = g_original_command_present_drawable || g_original_command_present_at_time || g_original_command_present_after_duration;
+    objc_setAssociatedObject((id)cls, &g_ms_command_buffer_hook_key, (id)1, 0);
+    runtime_note("[METAL][PRESENT] commandBufferClass=%s present=%d atTime=%d afterMinimumDuration=%d policy=IMMEDIATE",
+        class_getName(cls), present != NULL, at_time != NULL, after != NULL);
+}
+
+static id command_queue_buffer_hook(id self, SEL cmd) {
+    id buffer = g_original_command_buffer ? g_original_command_buffer(self, cmd) : NULL;
+    ms_install_command_buffer_present_policy(buffer);
+    return buffer;
+}
+
+static id command_queue_buffer_descriptor_hook(id self, SEL cmd, id descriptor) {
+    id buffer = g_original_command_buffer_descriptor ? g_original_command_buffer_descriptor(self, cmd, descriptor) : NULL;
+    ms_install_command_buffer_present_policy(buffer);
+    return buffer;
+}
+
+static void ms_install_command_queue_present_policy(id layer) {
+    if (g_original_command_buffer || g_original_command_buffer_descriptor) return;
+    id device = layer ? ((id (*)(id, SEL))objc_msgSend)(layer, sel_registerName("device")) : NULL;
+    id queue = device ? ((id (*)(id, SEL))objc_msgSend)(device, sel_registerName("newCommandQueue")) : NULL;
+    Class cls = queue ? object_getClass(queue) : NULL;
+    if (!cls) return;
+    Method buffer = class_getInstanceMethod(cls, sel_registerName("commandBuffer"));
+    Method descriptor = class_getInstanceMethod(cls, sel_registerName("commandBufferWithDescriptor:"));
+    if (buffer && !g_original_command_buffer)
+        g_original_command_buffer = (CommandQueueBufferImp)method_setImplementation(buffer, (IMP)command_queue_buffer_hook);
+    if (descriptor && !g_original_command_buffer_descriptor)
+        g_original_command_buffer_descriptor = (CommandQueueBufferDescriptorImp)method_setImplementation(descriptor, (IMP)command_queue_buffer_descriptor_hook);
+    runtime_note("[METAL][QUEUE] class=%s commandBuffer=%d descriptor=%d status=%s", class_getName(cls),
+        buffer != NULL, descriptor != NULL, (g_original_command_buffer || g_original_command_buffer_descriptor) ? "READY" : "BLOCKED");
+    ((void (*)(id, SEL))objc_msgSend)(queue, sel_registerName("release"));
+}
+
 static inline void ms_ensure_layer_vsync_uncapped(id layer) {
     if (!layer || !fps_runtime_requested()) return;
+    ms_install_command_queue_present_policy(layer);
     if (objc_getAssociatedObject(layer, &g_ms_layer_uncapped_key)) return;
 
     ms_apply_metal_layer_policies(layer);
