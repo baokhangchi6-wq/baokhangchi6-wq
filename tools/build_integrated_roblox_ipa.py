@@ -429,7 +429,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static const char* kFastFlagBackend = \"direct-rva-write-v1\";",
         "static const char* kEngineSetFFlagBackend = \"not-installed\";",
         "static const char* kEngineGetFastFlagBackend = \"not-installed\";",
-        "static const char* kFpsRuntimeBackend = \"cadisplaylink-metal-present-policy-v5\";",
+        "static const char* kFpsRuntimeBackend = \"cadisplaylink-metal-drawable-decouple-v6\";",
         "static const char* kFontRuntimeBackend = \"native-asset-vfs-v1\";",
         "static const char* kShaderRuntimeBackend = \"native-metal-lighting-v1\";",
         "static const char* kStretchRuntimeBackend = \"view-projection-v73\";",
@@ -557,9 +557,36 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    return NULL;",
         "}",
         "",
+        "static char g_shader_package[64];",
+        "static bool g_shader_wet_floor;",
+        "static void runtime_note(const char* fmt, ...);",
+        "",
         "static void apply_shader_lighting_flags(uintptr_t base) {",
-        "    // 100% Android Parity: Shaders and Wet Floor are Luau runtime objects, NOT FastFlags.",
-        "    (void)base;",
+        "    if (!base || (strcmp(g_shader_package, \"none\") == 0 && !g_shader_wet_floor)) return;",
+        "    const struct { const char* name; int kind; int64_t value; } flags[] = {",
+        "        {\"FFlagGenericCreateSurfaceAppearanceMaterial\", 0, 1},",
+        "        {\"FFlagRenderEnablePartBaseMaterial4K\", 0, 1},",
+        "        {\"FFlagEnableMaterialSlotTable\", 0, 1},",
+        "        {\"FFlagAllowDontDeformMaterials\", 0, 1},",
+        "        {\"FFlagSlimUseMultiMaterialWMS\", 0, 1},",
+        "        {\"FFlagRenderDecoupleShadingDistanceFromShadows\", 0, 1},",
+        "        {\"FIntUnifiedLightingBlendZone\", 1, 1},",
+        "        {\"FFlagDebugTerrainForceHQShader\", 0, 1},",
+        "        {\"FFlagRenderInitShadowmaps\", 0, 1},",
+        "        {\"FIntRenderShadowHugeRadius\", 1, 2000},",
+        "        {\"FIntBloomFrmCutoff\", 1, 0},",
+        "        {\"FFlagMetalRuntimeShaders\", 0, 1},",
+        "        {\"FFlagMTLRuntimeShaderCompilation\", 0, 1},",
+        "    };",
+        "    int applied = 0;",
+        "    for (size_t i = 0; i < sizeof(flags) / sizeof(flags[0]); ++i) {",
+        "        const MasterFlagEntry* flag = lookup_flag_with_fallback(flags[i].name);",
+        "        if (!flag) continue;",
+        "        FFlagPatchEntry patch = {flag->name, flag->rva, flags[i].kind, flags[i].value};",
+        "        if (SetFastFlag(base, &patch)) applied++;",
+        "    }",
+        "    runtime_note(\"[SHADER][NATIVE] package=%s applied=%d requested=%zu backend=metal-render-flags\",",
+        "        g_shader_package, applied, sizeof(flags) / sizeof(flags[0]));",
         "}",
         "",
         "static char dynamic_ascii_lower(char c) {",
@@ -2253,315 +2280,6 @@ def insert_load_dylib(macho_bytes: bytes, dylib_path: str) -> bytes:
     return bytes(data)
 
 
-def lz4_compress_block(src: bytes) -> bytes:
-    src_len = len(src)
-    if src_len == 0:
-        return b'\x00'
-    out = bytearray()
-    anchor = 0
-    ip = 0
-    table = {}
-    while ip + 12 < src_len:
-        seq = src[ip:ip+4]
-        h = (int.from_bytes(seq, 'little') * 2654435761) & 0xFFFFFFFF
-        ref = table.get(h)
-        table[h] = ip
-        if ref is not None and (ip - ref) < 65536 and src[ref:ref+4] == seq:
-            lit_len = ip - anchor
-            match_len = 4
-            while ip + match_len < src_len and src[ref + match_len] == src[ip + match_len]:
-                match_len += 1
-            token_lit = min(lit_len, 15)
-            token_match = min(match_len - 4, 15)
-            token = (token_lit << 4) | token_match
-            out.append(token)
-            if lit_len >= 15:
-                rem = lit_len - 15
-                while rem >= 255:
-                    out.append(255)
-                    rem -= 255
-                out.append(rem)
-            out.extend(src[anchor:anchor + lit_len])
-            out.extend(struct.pack('<H', ip - ref))
-            if match_len - 4 >= 15:
-                rem = (match_len - 4) - 15
-                while rem >= 255:
-                    out.append(255)
-                    rem -= 255
-                out.append(rem)
-            ip += match_len
-            anchor = ip
-        else:
-            ip += 1
-    lit_len = src_len - anchor
-    token_lit = min(lit_len, 15)
-    out.append(token_lit << 4)
-    if lit_len >= 15:
-        rem = lit_len - 15
-        while rem >= 255:
-            out.append(255)
-            rem -= 255
-        out.append(rem)
-    out.extend(src[anchor:src_len])
-    return bytes(out)
-
-
-def lz4_decompress_block(src: bytes, uncompressed_size: int) -> bytes:
-    src_len = len(src)
-    src_pos = 0
-    dst = bytearray()
-    while src_pos < src_len and len(dst) < uncompressed_size:
-        token = src[src_pos]
-        src_pos += 1
-        lit_len = token >> 4
-        if lit_len == 15:
-            while src_pos < src_len:
-                s = src[src_pos]
-                src_pos += 1
-                lit_len += s
-                if s != 255:
-                    break
-        dst.extend(src[src_pos:src_pos + lit_len])
-        src_pos += lit_len
-        if len(dst) >= uncompressed_size or src_pos >= src_len:
-            break
-        offset = struct.unpack('<H', src[src_pos:src_pos + 2])[0]
-        src_pos += 2
-        match_len = (token & 0x0f) + 4
-        if match_len == 19:
-            while src_pos < src_len:
-                s = src[src_pos]
-                src_pos += 1
-                match_len += s
-                if s != 255:
-                    break
-        for _ in range(match_len):
-            dst.append(dst[-offset])
-    return bytes(dst)
-
-
-def inject_rbxm_script(rbxm_data: bytes, append_lua: str) -> bytes:
-    pos = 32
-    chunks = []
-    modified = False
-    while pos < len(rbxm_data):
-        if pos + 16 > len(rbxm_data):
-            break
-        name = rbxm_data[pos:pos+4]
-        c_len, u_len, res = struct.unpack('<III', rbxm_data[pos+4:pos+16])
-        payload_len = c_len if c_len > 0 else u_len
-        payload = rbxm_data[pos+16:pos+16+payload_len]
-        if name == b'PROP' and not modified:
-            decomp = lz4_decompress_block(payload, u_len) if c_len > 0 else payload
-            src_marker = b'\x06\x00\x00\x00Source\x01'
-            if src_marker in decomp:
-                idx = decomp.index(src_marker) + len(src_marker)
-                old_str_len = struct.unpack('<I', decomp[idx:idx+4])[0]
-                if old_str_len > 50:
-                    old_code = decomp[idx+4:idx+4+old_str_len]
-                    new_code = old_code + b'\n\n' + append_lua.encode('utf-8')
-                    new_decomp = decomp[:idx] + struct.pack('<I', len(new_code)) + new_code + decomp[idx+4+old_str_len:]
-                    new_compressed = lz4_compress_block(new_decomp)
-                    new_chunk = b'PROP' + struct.pack('<III', len(new_compressed), len(new_decomp), res) + new_compressed
-                    chunks.append(new_chunk)
-                    modified = True
-                    pos += 16 + payload_len
-                    continue
-        chunks.append(rbxm_data[pos:pos+16+payload_len])
-        pos += 16 + payload_len
-        if name == b'END\x00':
-            break
-    if not modified:
-        return rbxm_data
-    return rbxm_data[:32] + b''.join(chunks)
-
-
-LUAU_SHADER_PAYLOAD = """
--- Masterstrap Native iOS Shader & Wet Floor Engine
-task.spawn(function()
-    if _G.__MASTERSTRAP_LOADED then return end
-    _G.__MASTERSTRAP_LOADED = true
-
-    local function applyShaders()
-        pcall(function()
-            local Lighting = game:GetService("Lighting")
-            if not Lighting then return end
-            
-            Lighting.GlobalShadows = true
-            pcall(function() Lighting.Technology = Enum.Technology.Future end)
-            pcall(function() Lighting.ShadowSoftness = 0.2 end)
-            pcall(function() Lighting.EnvironmentDiffuseScale = 1.0 end)
-            pcall(function() Lighting.EnvironmentSpecularScale = 1.0 end)
-            pcall(function() Lighting.Brightness = 2.2 end)
-            pcall(function() Lighting.ExposureCompensation = 0.1 end)
-
-            -- Bloom
-            local bloom = Lighting:FindFirstChild("MasterstrapBloom")
-            if not bloom then
-                bloom = Instance.new("BloomEffect")
-                bloom.Name = "MasterstrapBloom"
-                bloom.Intensity = 0.65
-                bloom.Size = 24
-                bloom.Threshold = 0.9
-                bloom.Parent = Lighting
-            end
-
-            -- ColorCorrection
-            local cc = Lighting:FindFirstChild("MasterstrapCC")
-            if not cc then
-                cc = Instance.new("ColorCorrectionEffect")
-                cc.Name = "MasterstrapCC"
-                cc.Brightness = 0.05
-                cc.Contrast = 0.18
-                cc.Saturation = 0.22
-                cc.TintColor = Color3.fromRGB(255, 252, 248)
-                cc.Parent = Lighting
-            end
-
-            -- SunRays
-            local sun = Lighting:FindFirstChild("MasterstrapSunRays")
-            if not sun then
-                sun = Instance.new("SunRaysEffect")
-                sun.Name = "MasterstrapSunRays"
-                sun.Intensity = 0.15
-                sun.Spread = 0.85
-                sun.Parent = Lighting
-            end
-
-            -- Atmosphere
-            local atmo = Lighting:FindFirstChild("MasterstrapAtmo")
-            if not atmo and not Lighting:FindFirstChildOfClass("Atmosphere") then
-                atmo = Instance.new("Atmosphere")
-                atmo.Name = "MasterstrapAtmo"
-                atmo.Density = 0.3
-                atmo.Offset = 0.25
-                atmo.Color = Color3.fromRGB(199, 218, 255)
-                atmo.Decay = Color3.fromRGB(106, 112, 125)
-                atmo.Glare = 0.35
-                atmo.Haze = 1.2
-                atmo.Parent = Lighting
-            end
-
-            -- Terrain Water
-            pcall(function()
-                local terrain = workspace:FindFirstChildOfClass("Terrain")
-                if terrain then
-                    terrain.WaterReflectance = 1.0
-                    terrain.WaterTransparency = 0.3
-                    terrain.WaterWaveSize = 0.15
-                    terrain.WaterWaveSpeed = 12
-                end
-            end)
-        end)
-    end
-
-    local wetFloorActive = true
-    local function applyWetFloor()
-        if not wetFloorActive then return end
-        pcall(function()
-            local Players = game:GetService("Players")
-            local player = Players.LocalPlayer
-            if not player or not player.Character then return end
-            local root = player.Character:FindFirstChild("HumanoidRootPart")
-            if not root then return end
-
-            local center = root.Position
-            local parts = workspace:GetPartBoundsInRadius(center, 120)
-            for _, part in ipairs(parts) do
-                pcall(function()
-                    if part:IsA("BasePart") and not part:IsDescendantOf(player.Character) and part.CanCollide then
-                        local normal = part.CFrame.UpVector
-                        if math.abs(normal.Y) > 0.7 or (part.Size.Y <= part.Size.X and part.Size.Y <= part.Size.Z) then
-                            if not part:GetAttribute("MS_OriginalReflectance") then
-                                part:SetAttribute("MS_OriginalReflectance", part.Reflectance)
-                                part:SetAttribute("MS_OriginalMaterial", part.Material.Name)
-                            end
-                            part.Reflectance = 0.42
-                            if part.Material ~= Enum.Material.SmoothPlastic and part.Material ~= Enum.Material.Glass then
-                                part.Material = Enum.Material.SmoothPlastic
-                            end
-                        end
-                    end
-                end)
-            end
-        end)
-    end
-
-    -- Run Shaders immediately
-    applyShaders()
-
-    -- Continuous loop for wet floor & shader maintenance
-    task.spawn(function()
-        while true do
-            task.wait(1.5)
-            applyWetFloor()
-        end
-    end)
-
-    -- Chat Command Listener
-    pcall(function()
-        local Players = game:GetService("Players")
-        local player = Players.LocalPlayer or Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
-        local function onChatted(msg)
-            msg = string.lower(string.gsub(msg, "^%s*(.-)%s*$", "%1"))
-            if msg == "/wetfloor on" then
-                wetFloorActive = true
-                applyWetFloor()
-            elseif msg == "/wetfloor off" then
-                wetFloorActive = false
-            elseif msg == "/shader on" or msg == "/shader rtx" then
-                applyShaders()
-            elseif msg == "/shader off" then
-                pcall(function()
-                    local Lighting = game:GetService("Lighting")
-                    local b = Lighting:FindFirstChild("MasterstrapBloom") if b then b:Destroy() end
-                    local c = Lighting:FindFirstChild("MasterstrapCC") if c then c:Destroy() end
-                    local s = Lighting:FindFirstChild("MasterstrapSunRays") if s then s:Destroy() end
-                    local a = Lighting:FindFirstChild("MasterstrapAtmo") if a then a:Destroy() end
-                end)
-            end
-        end
-        player.Chatted:Connect(onChatted)
-    end)
-end)
-"""
-
-
-def write_full_inspection_report(out_dir: Path, flags: dict, verified_entries: list, miss_offsets: list, ipa_name: str, out_ipa_name: str, embed_flags: bool = False):
-    out_dir.mkdir(parents=True, exist_ok=True)
-    report_text = f"""=====================================================
-=== Masterstrap Roblox iOS Build & Inspection Log ===
-=====================================================
-Date: {time.strftime('%Y-%m-%d %H:%M:%S')}
-Input IPA: {ipa_name}
-Output IPA: {out_ipa_name}
-
-SUMMARY:
-  - Embedded Baseline Mode: {'ENABLED' if embed_flags else 'DISABLED (bridge-only isolation build)'}
-  - Total Flags Requested: {len(flags)}
-  - Verified Active Flags: {len(verified_entries)}
-  - Miss Offsets Count:    {len(miss_offsets)}
-  - Success Ratio:         {(len(verified_entries)/len(flags)*100) if flags else 0:.1f}%
-
---- [VERIFIED ACTIVE FASTFLAGS (SetFastFlag)] ---
-"""
-    for n, r, k, v in verified_entries:
-        report_text += f"  [VERIFIED] (SetFastFlag) {n} -> RVA: 0x{r:X} | Type: {'bool' if k==0 else 'int32'} | Value: {v}\n"
-
-    if miss_offsets:
-        report_text += "\n--- [MISS OFFSETS (FLAG NOT IN RVA MAP)] ---\n"
-        for m in miss_offsets:
-            report_text += f"  [MISS_OFFSET] {m}\n"
-
-    report_file = out_dir / "flag_inject_report.log"
-    report_file.write_text(report_text, encoding="utf-8")
-    print(f"Wrote full report -> {report_file}")
-
-    # Also write a runtime log template
-    runtime_log = out_dir / "masterstrap_ios.log"
-    runtime_log.write_text(report_text, encoding="utf-8")
-
-
 def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir: Path, embed_flags: bool = False, build_type: str = "release"):
     out_dir.mkdir(parents=True, exist_ok=True)
     
@@ -2582,7 +2300,7 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
     # Always resolve baseline uncap and graphics flags so verified_entries is populated
     flags = {
         "FFlagDebugDisplayFPS": True,
-        "FFlagDebugSkyGray": True,
+        "FFlagDebugSkyGray": False,
         "DFIntTaskSchedulerTargetFps": 9999,
         "FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate": False,
         "FFlagTaskSchedulerLimitTargetFpsTo2402": False,
@@ -2690,6 +2408,13 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         "Payload/Roblox.app/GlobalBasicSettings_13.xml",
                         "Payload/Roblox.app/GlobalBasicSettings.xml",
                     }
+                    sky_dir = ROOT / "resources" / "sky"
+                    sky_names = tuple(f"sky512_{face}.tex" for face in ("bk", "dn", "ft", "lf", "rt", "up"))
+                    sky_assets = {name: (sky_dir / name).read_bytes() for name in sky_names}
+                    for name, payload in sky_assets.items():
+                        if not payload.startswith(b"\xABKTX 11\xBB\r\n\x1A\n"):
+                            raise RuntimeError(f"Skybox asset is not KTX1: {name}")
+                    replaced_sky_assets = set()
 
                     for item in zin.infolist():
                         name = item.filename
@@ -2704,6 +2429,13 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                             continue
 
                         data = zin.read(name)
+
+                        sky_name = Path(name).name
+                        if ("RobloxLib.framework/ios/textures/sky/" in name
+                                and sky_name in sky_assets):
+                            data = sky_assets[sky_name]
+                            replaced_sky_assets.add(sky_name)
+                            print(f"[ASSET_SKY] Replaced stock Roblox sky texture -> {name} ({len(data)} bytes)")
 
                         if name == "Payload/Roblox.app/Roblox":
                             data = remove_load_dylib(data, ["libgloop", "delta.dylib"])
@@ -2732,11 +2464,14 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                                 data[clamp3_offset:clamp3_offset+4] = b'\xe8\x03\x17\x2a'
                                 print(f"[FPS_CEILING] Bypassed RobloxLib third 240 FPS clamp site 3 @ 0x{clamp3_offset:X} (csel -> mov w8, w23)")
 
-                            # 4. TaskScheduler fallback delta time (preserve standard 60 FPS fallback 0.0166s to prevent 30,000 FPS spinlock)
+                            # 4. Match requested engine cadence when Roblox enters its fallback scheduler path.
                             fallback_dt_offset = 0x4A60E28
-                            if len(data) > fallback_dt_offset + 4 and data[fallback_dt_offset:fallback_dt_offset+4] == b'\x00\x00\x00\x00':
-                                data[fallback_dt_offset:fallback_dt_offset+4] = b'\x89\x88\x88\x3c'
-                                print(f"[FPS_CEILING] Restored RobloxLib fallback delta time @ 0x{fallback_dt_offset:X} (dt -> 0.0166s standard fallback)")
+                            fallback_original = b'\x89\x88\x88\x3c'  # ~1/60 second
+                            fallback_patch = b'\x17\xb7\xd1\x38'     # 0.0001 second
+                            if data[fallback_dt_offset:fallback_dt_offset+4] not in (fallback_original, fallback_patch):
+                                raise RuntimeError('FPS fallback-delta contract changed; refusing unverified RobloxLib patch')
+                            data[fallback_dt_offset:fallback_dt_offset+4] = fallback_patch
+                            print(f"[FPS_CEILING] Patched RobloxLib fallback delta @ 0x{fallback_dt_offset:X} (0.0166s -> 0.0001s)")
 
                             # 5. Keep the target in w22 rather than selecting min(target, screenMax).
                             dt_clamp_offset = 0x3F64AE4
@@ -2800,19 +2535,6 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                                 )
                             except Exception as e:
                                 print(f"Warning: Failed to update Info.plist: {e}")
-                        elif any(name.endswith(f) for f in (
-                            "humanoidAnimatePlayEmote.rbxm",
-                            "humanoidAnimateR15CharacterController.rbxm",
-                            "humanoidAnimateR15Moods.rbxm",
-                            "humanoidAnimateR6WithFace.rbxm",
-                            "humanoidAnimateSAuth.rbxm",
-                            "humanoidAnimateR15SAuth.rbxm",
-                            "AnimateDependencies.rbxm",
-                            "Animate.rbxm",
-                            "AbilityManagerActorClientInitializeIsLocalScript.rbxm"
-                        )):
-                            data = inject_rbxm_script(data, LUAU_SHADER_PAYLOAD)
-                            print(f"[LUAU_INJECT] Injected Masterstrap shader & wet floor payload -> {name}")
                         elif (name.endswith((".ttf", ".otf")) and "content/fonts/" in name
                               and not any(x in name.lower() for x in ["emoji", "notosanscjk", "buildericons"])):
                             minecraft_font = ROOT / "resources" / "fonts" / "Minecraft.ttf"
@@ -2834,6 +2556,10 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         zout.writestr(item, data)
                         seen_entries.add(name)
 
+                    missing_sky_assets = set(sky_names) - replaced_sky_assets
+                    if missing_sky_assets:
+                        raise RuntimeError(f"Roblox IPA is missing stock skybox targets: {sorted(missing_sky_assets)}")
+                    print(f"[ASSET_SKY] Replaced all {len(replaced_sky_assets)} stock cubemap faces with validated KTX assets")
 
                     # Embed dylib
                     dylib_entry = "Payload/Roblox.app/Frameworks/libmasterstrap.dylib"
