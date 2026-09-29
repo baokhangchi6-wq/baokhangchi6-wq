@@ -1,4 +1,5 @@
 name: Build Global IPA
+# Manual rerun marker: keep sub/main debug workflow dispatchable after stale artifacts.
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Immediate threshold = 0: build as soon as ANY new App Store version appears.
