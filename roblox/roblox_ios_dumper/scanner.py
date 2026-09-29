@@ -381,10 +381,21 @@ class Arm64Scanner:
                 address, matches, evidence = self.scan_hex_pattern(
                     hex_pat.strip(), offset_val
                 )
+                # Lua patterns often match an instruction in the body. Only
+                # LC_FUNCTION_STARTS can turn such a hit into an entry point.
+                if address is not None and name.startswith("lua"):
+                    entries = set()
+                    for match in matches:
+                        entry, boundary = self.resolve_function_start(match - offset_val)
+                        if boundary == "lc-function-starts" and entry is not None:
+                            entries.add(entry)
+                    address = next(iter(entries)) if len(entries) == 1 else None
+                    evidence.append(f"lua-function-boundaries:{len(entries)}")
+                    evidence.append("callable-abi:not-verified")
                 confidence = (
                     "high"
-                    if len(matches) == 1
-                    else ("medium" if len(matches) > 1 else "missing")
+                    if address is not None and len(matches) == 1
+                    else ("medium" if address is not None else "missing")
                 )
                 if address is None:
                     self.offset_candidates.extend(

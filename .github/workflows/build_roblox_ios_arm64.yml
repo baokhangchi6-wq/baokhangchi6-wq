@@ -74,6 +74,7 @@ jobs:
         run: |
           set -euo pipefail
           PYTHONPATH=roblox python -m unittest discover -s roblox/tests -p test_ios_display_policy.py -v
+          python tools/check_ios_luau_audit.py
           clang -std=c11 -Wall -Wextra -Werror -I tools \
             roblox/tests/ios_frame_policy_test.c -o "$RUNNER_TEMP/ios-fps-policy-check"
           "$RUNNER_TEMP/ios-fps-policy-check"
@@ -147,6 +148,10 @@ jobs:
           PYTHONPATH=roblox python -m roblox_ios_dumper verify output \
             --input "${{ steps.prepare_ipa.outputs.ipa_path }}" \
             --patterns patterns.ios.json
+          python tools/audit_ios_luau.py \
+            "${{ steps.prepare_ipa.outputs.ipa_path }}" \
+            --offsets output/offsets.json \
+            --output output/workflow/luau_audit.json
           python tools/prepare_ios_workflow_profile.py \
             --output output \
             --version "${{ steps.version_gate.outputs.store_version }}"
@@ -225,6 +230,7 @@ jobs:
             output/Masterstrap-*.ipa
             output/workflow/profile.json
             output/workflow/profile.hpp
+            output/workflow/luau_audit.json
             output/manifest.json
             output/offsets.json
             output/offset_candidates.json

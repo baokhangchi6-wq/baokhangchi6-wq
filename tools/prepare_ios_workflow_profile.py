@@ -51,6 +51,13 @@ def build_profile(output: Path, version: str) -> dict[str, object]:
         if isinstance(row, dict) and isinstance(row.get("rva"), int) and isinstance(row.get("name"), str):
             names_by_rva.setdefault(int(row["rva"]), set()).add(str(row["name"]))
     candidates = _load_offsets(output / "offset_candidates.json")
+    audit_path = output / "workflow" / "luau_audit.json"
+    luau_audit = json.loads(audit_path.read_text(encoding="utf-8")) if audit_path.is_file() else None
+    if luau_audit is not None:
+        if (not isinstance(luau_audit, dict) or not macho.get("uuid") or not identity.get("sha256")
+                or luau_audit.get("uuid") != macho["uuid"]
+                or luau_audit.get("sourceSha256") != identity["sha256"]):
+            raise ValueError("Luau audit does not match dump UUID/SHA256")
     roles: dict[str, dict[str, object]] = {}
     blocked: list[str] = []
     for role in REQUIRED_ROLES:
@@ -96,6 +103,7 @@ def build_profile(output: Path, version: str) -> dict[str, object]:
         "imageBase": macho.get("image_base"),
         "roles": roles,
         "candidateCount": len(candidates),
+        "luauDiscovery": luau_audit,
         # Role uniqueness is necessary, but not sufficient for a callable
         # Luau ABI. Signature/call-graph audit remains a separate promotion.
         "shaderAbiReady": False,
@@ -115,7 +123,7 @@ def build_profile(output: Path, version: str) -> dict[str, object]:
         "#include <stdint.h>",
         f"#define MASTERSTRAP_IOS_WORKFLOW_VERSION \"{version}\"",
         f"#define MASTERSTRAP_IOS_WORKFLOW_UUID \"{uuid_text}\"",
-        f"#define MASTERSTRAP_IOS_SHADER_ABI_READY {1 if not blocked else 0}",
+        f"#define MASTERSTRAP_IOS_SHADER_ABI_READY {int(profile['shaderAbiReady'])}",
         f"static const uint8_t kMasterstrapIosWorkflowUuid[16] = {{{', '.join(uuid_bytes or ['0'] * 16)}}};",
     ]
     for role in REQUIRED_ROLES:
