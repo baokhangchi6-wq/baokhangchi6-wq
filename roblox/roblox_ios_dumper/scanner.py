@@ -39,6 +39,19 @@ FLAG_ALIASES = {
     "DFFlagTaskSchedulerLimitTargetFpsTo2402": "FFlagTaskSchedulerLimitTargetFpsTo2402",
 }
 
+# These flags control the display limiter. Some Roblox builds register them
+# through a different table than EnableLoadModule, so scan their XREFs too.
+FPS_FALLBACK_SUFFIXES = {
+    "LimitTargetFpsToScreenRefresh",
+    "TaskSchedulerLimitTargetFpsTo240",
+    "DebugDisableVsync",
+    "DebugExperimentalVSyncFramePacing",
+    "DebugExperimentalVSyncFramePacingForce",
+    "MetalDisplayTiming",
+    "MetalDisplayTimingAdjustMinFPS",
+    "MetalDisplayTimingMinFPS",
+}
+
 
 @dataclass(frozen=True)
 class StringXref:
@@ -566,7 +579,9 @@ class Arm64Scanner:
 
     def _direct_storage(self, ref: AddressReference) -> tuple[str, int] | None:
         next_pc = ref.instruction_address + ref.instruction_count * 4
-        for pc in range(next_pc, next_pc + 16, 4):
+        # Registration wrappers can materialize the storage pointer several
+        # instructions before the final store after compiler inlining.
+        for pc in range(next_pc, next_pc + 64, 4):
             instruction = self._word(pc)
             if instruction is None:
                 break
@@ -608,7 +623,12 @@ class Arm64Scanner:
         }.get(inferred_kind, "FFlag")
         return inferred_prefix + suffix, inferred_prefix, "opcode-type-inference"
 
-    def _decode_registration(self, call_site: int, register_function: int) -> FastFlagResult | None:
+    def _decode_registration(
+        self,
+        call_site: int,
+        register_function: int,
+        preferred_name: str | None = None,
+    ) -> FastFlagResult | None:
         references = self._references_before(call_site)
         string_candidates: list[tuple[int, str, str, str]] = []
         storage_candidates: list[tuple[int, str, bool, str, int]] = []
@@ -646,6 +666,13 @@ class Arm64Scanner:
         if not string_candidates or not storage_candidates:
             return None
 
+        if preferred_name is not None:
+            string_candidates = [
+                item for item in string_candidates if item[3] == preferred_name
+            ]
+            if not string_candidates:
+                return None
+
         full = [item for item in string_candidates if item[1]]
         if full:
             name_address, prefix, suffix, full_name = full[-1]
@@ -655,7 +682,9 @@ class Arm64Scanner:
             prefix = prefix_candidates[-1] if prefix_candidates else ""
             name_source = "binary-split-prefix" if prefix else ""
 
-        storage_address, segment_name, writable, storage_kind, store_pc = storage_candidates[-1]
+        storage_address, segment_name, writable, storage_kind, store_pc = min(
+            storage_candidates, key=lambda item: abs(item[0] - name_address)
+        )
         if not prefix:
             full_name, prefix, name_source = self._resolve_flag_name(suffix, storage_kind)
         if storage_address == name_address:
@@ -686,28 +715,68 @@ class Arm64Scanner:
             evidence=evidence,
         )
 
+    def _iter_fallback_flag_strings(self):
+        """Yield display-limiter strings from every searchable section."""
+        for section in self.image.searchable_string_sections:
+            raw = self.image.data[section.file_offset : section.file_offset + section.size]
+            cursor = 0
+            while cursor < len(raw):
+                end = raw.find(b"\0", cursor)
+                if end < 0:
+                    break
+                if end > cursor:
+                    value = raw[cursor:end]
+                    try:
+                        text = value.decode("ascii")
+                    except UnicodeDecodeError:
+                        text = ""
+                    if text and any(text.endswith(suffix) for suffix in FPS_FALLBACK_SUFFIXES):
+                        yield section.address + cursor, text
+                cursor = end + 1
+
+    def _scan_fallback_flags(self) -> list[FastFlagResult]:
+        """Resolve limiter storage from all string XREFs, independent of one registrar."""
+        results: dict[str, FastFlagResult] = {}
+        seen: set[tuple[int, str]] = set()
+        for address, value in self._iter_fallback_flag_strings():
+            canonical = self._canonical_flag_name(value)
+            if (address, canonical) in seen:
+                continue
+            seen.add((address, canonical))
+            for xref in self.find_xrefs(address):
+                call_site = self._first_bl_after(xref.instruction_address)
+                if call_site is None:
+                    continue
+                candidate = self._decode_registration(call_site, 0, canonical)
+                if candidate is None:
+                    continue
+                old = results.get(candidate.name)
+                if old is None or (old.confidence != "high" and candidate.confidence == "high"):
+                    results[candidate.name] = candidate
+        return list(results.values())
+
     def scan_fast_flags(self) -> tuple[list[FastFlagResult], dict[str, object]]:
         register_function, anchor_evidence = self.find_register_function()
-        if register_function is None:
-            return [], {
-                "register_function": None,
-                "registration_calls": 0,
-                "decoded_calls": 0,
-                "anchor_evidence": anchor_evidence,
-            }
-        call_sites = self._registration_calls(register_function)
         decoded: dict[str, FastFlagResult] = {}
-        for call_site in call_sites:
-            result = self._decode_registration(call_site, register_function)
-            if result is not None:
-                old = decoded.get(result.name)
-                if old is None or (old.confidence != "high" and result.confidence == "high"):
-                    decoded[result.name] = result
+        call_sites = self._registration_calls(register_function) if register_function is not None else []
+        if register_function is not None:
+            for call_site in call_sites:
+                result = self._decode_registration(call_site, register_function)
+                if result is not None:
+                    old = decoded.get(result.name)
+                    if old is None or (old.confidence != "high" and result.confidence == "high"):
+                        decoded[result.name] = result
+        fallback_flags = self._scan_fallback_flags()
+        for result in fallback_flags:
+            old = decoded.get(result.name)
+            if old is None or (old.confidence != "high" and result.confidence == "high"):
+                decoded[result.name] = result
         results = sorted(decoded.values(), key=lambda item: item.name)
         return results, {
             "register_function": register_function,
             "register_function_rva": self.image.to_rva(register_function),
             "registration_calls": len(call_sites),
             "decoded_calls": len(results),
+            "fallback_xref_flags": len(fallback_flags),
             "anchor_evidence": anchor_evidence,
         }
