@@ -429,7 +429,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static const char* kFastFlagBackend = \"direct-rva-write-v1\";",
         "static const char* kEngineSetFFlagBackend = \"not-installed\";",
         "static const char* kEngineGetFastFlagBackend = \"not-installed\";",
-        "static const char* kFpsRuntimeBackend = \"cadisplaylink-metal-present-policy-v3\";",
+        "static const char* kFpsRuntimeBackend = \"cadisplaylink-metal-present-policy-v4\";",
         "static const char* kFontRuntimeBackend = \"native-asset-vfs-v1\";",
         "static const char* kShaderRuntimeBackend = \"native-metal-lighting-v1\";",
         "static const char* kStretchRuntimeBackend = \"view-projection-v73\";",

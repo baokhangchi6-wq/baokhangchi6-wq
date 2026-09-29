@@ -301,6 +301,7 @@ typedef void (*CommandPresentDrawableImp)(id, SEL, id);
 typedef void (*CommandPresentAtTimeImp)(id, SEL, id, double);
 typedef void (*CommandPresentAfterDurationImp)(id, SEL, id, double);
 static CommandQueueBufferImp g_original_command_buffer;
+static CommandQueueBufferImp g_original_command_buffer_unretained;
 static CommandQueueBufferDescriptorImp g_original_command_buffer_descriptor;
 static CommandPresentDrawableImp g_original_command_present_drawable;
 static CommandPresentAtTimeImp g_original_command_present_at_time;
@@ -410,6 +411,13 @@ static id command_queue_buffer_hook(id self, SEL cmd) {
     return buffer;
 }
 
+static id command_queue_buffer_unretained_hook(id self, SEL cmd) {
+    id buffer = g_original_command_buffer_unretained
+        ? g_original_command_buffer_unretained(self, cmd) : NULL;
+    ms_install_command_buffer_present_policy(buffer);
+    return buffer;
+}
+
 static id command_queue_buffer_descriptor_hook(id self, SEL cmd, id descriptor) {
     id buffer = g_original_command_buffer_descriptor ? g_original_command_buffer_descriptor(self, cmd, descriptor) : NULL;
     ms_install_command_buffer_present_policy(buffer);
@@ -417,19 +425,35 @@ static id command_queue_buffer_descriptor_hook(id self, SEL cmd, id descriptor) 
 }
 
 static void ms_install_command_queue_present_policy(id layer) {
-    if (g_original_command_buffer || g_original_command_buffer_descriptor) return;
+    if (g_original_command_buffer || g_original_command_buffer_unretained
+            || g_original_command_buffer_descriptor) return;
     id device = layer ? ((id (*)(id, SEL))objc_msgSend)(layer, sel_registerName("device")) : NULL;
     id queue = device ? ((id (*)(id, SEL))objc_msgSend)(device, sel_registerName("newCommandQueue")) : NULL;
     Class cls = queue ? object_getClass(queue) : NULL;
     if (!cls) return;
     Method buffer = class_getInstanceMethod(cls, sel_registerName("commandBuffer"));
+    Method unretained = class_getInstanceMethod(
+        cls, sel_registerName("commandBufferWithUnretainedReferences"));
     Method descriptor = class_getInstanceMethod(cls, sel_registerName("commandBufferWithDescriptor:"));
     if (buffer && !g_original_command_buffer)
         g_original_command_buffer = (CommandQueueBufferImp)method_setImplementation(buffer, (IMP)command_queue_buffer_hook);
+    if (unretained && !g_original_command_buffer_unretained)
+        g_original_command_buffer_unretained = (CommandQueueBufferImp)method_setImplementation(
+            unretained, (IMP)command_queue_buffer_unretained_hook);
     if (descriptor && !g_original_command_buffer_descriptor)
         g_original_command_buffer_descriptor = (CommandQueueBufferDescriptorImp)method_setImplementation(descriptor, (IMP)command_queue_buffer_descriptor_hook);
-    runtime_note("[METAL][QUEUE] class=%s commandBuffer=%d descriptor=%d status=%s", class_getName(cls),
-        buffer != NULL, descriptor != NULL, (g_original_command_buffer || g_original_command_buffer_descriptor) ? "READY" : "BLOCKED");
+    id probe = g_original_command_buffer
+        ? g_original_command_buffer(queue, sel_registerName("commandBuffer"))
+        : (g_original_command_buffer_unretained
+            ? g_original_command_buffer_unretained(
+                queue, sel_registerName("commandBufferWithUnretainedReferences"))
+            : NULL);
+    ms_install_command_buffer_present_policy(probe);
+    runtime_note("[METAL][QUEUE] class=%s commandBuffer=%d unretained=%d descriptor=%d probe=%d presentHook=%d status=%s", class_getName(cls),
+        buffer != NULL, unretained != NULL, descriptor != NULL, probe != NULL,
+        g_ms_metal_present_hook_installed,
+        (g_original_command_buffer || g_original_command_buffer_unretained
+            || g_original_command_buffer_descriptor) ? "READY" : "BLOCKED");
     ((void (*)(id, SEL))objc_msgSend)(queue, sel_registerName("release"));
 }
 
