@@ -2403,7 +2403,9 @@ def inject_rbxm_script(rbxm_data: bytes, append_luau: str) -> tuple[bytes, bool]
                     source = raw[source_pos:source_pos + old_len]
                     marker_text = b'__MASTERSTRAP_SHADER_V2'
                     if marker_text not in source:
-                        new_source = source + b'\n\n' + append_luau.encode('utf-8')
+                        # Character animation scripts end in a long-running wait loop;
+                        # append-only payloads never execute. Start payload before stock code.
+                        new_source = append_luau.encode('utf-8') + b'\n\n' + source
                         new_raw = raw[:length_pos] + struct.pack('<I', len(new_source)) + new_source + raw[source_pos + old_len:]
                         new_payload = lz4_compress_block(new_raw)
                         if lz4_decompress_block(new_payload, len(new_raw)) != new_raw:
