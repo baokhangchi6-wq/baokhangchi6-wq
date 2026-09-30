@@ -2835,8 +2835,8 @@ def generate_icon_dictionary() -> dict:
             "'python -m pip install Pillow'."
         )
 
-    # Base dark theme background (16, 16, 22) matching Masterstrap design
-    im = Image.new("RGBA", (1024, 1024), (16, 16, 22, 255))
+    # Base white theme background (255, 255, 255) for crisp iOS AppIcon display
+    im = Image.new("RGBA", (1024, 1024), (255, 255, 255, 255))
     src_icon = ROOT / "Masterstrap" / "app" / "src" / "main" / "res" / "drawable" / "masterstrap.png"
     if not src_icon.is_file():
         src_icon = ROOT.parent / "Android" / "Masterstrap" / "app" / "src" / "main" / "res" / "drawable" / "masterstrap.png"
@@ -2845,7 +2845,7 @@ def generate_icon_dictionary() -> dict:
         try:
             loaded_im = Image.open(src_icon)
             if loaded_im.mode in ("RGBA", "LA") or (loaded_im.mode == "P" and "transparency" in loaded_im.info):
-                bg = Image.new("RGBA", (1024, 1024), (16, 16, 22, 255))
+                bg = Image.new("RGBA", (1024, 1024), (255, 255, 255, 255))
                 resized_src = loaded_im.convert("RGBA").resize((1024, 1024), Image.Resampling.LANCZOS)
                 bg.alpha_composite(resized_src)
                 im = bg
