@@ -2593,9 +2593,15 @@ if _G.__MASTERSTRAP_SHADER_V2 ~= "applied" and _G.__MASTERSTRAP_SHADER_V2 ~= "ru
     local ok, errorMessage = pcall(function()
         if not game:IsLoaded() then game.Loaded:Wait() end
         -- Bootstrap/landing DataModel can run this payload before a place exists.
-        -- Do not consume the one-shot guard there; a later character bundle must
-        -- apply shader and wet-floor after join.
-        if game.PlaceId <= 0 then
+        -- Wait only a bounded window so a later join can apply the profile without
+        -- leaving a permanent worker in the client.
+        local placeReady = game.PlaceId > 0
+        for _ = 1, 40 do
+            if placeReady then break end
+            task.wait(0.25)
+            placeReady = game.PlaceId > 0
+        end
+        if not placeReady then
             _G.__MASTERSTRAP_SHADER_V2 = nil
             warn("MASTERSTRAP_SHADER_WAITING_FOR_PLACE")
             return
@@ -2781,6 +2787,9 @@ if _G.__MASTERSTRAP_SHADER_V2 ~= "applied" and _G.__MASTERSTRAP_SHADER_V2 ~= "ru
                 end
             end)
         end
+        lighting:SetAttribute("MasterstrapShaderRuntime", "applied")
+        lighting:SetAttribute("MasterstrapShaderSelector", selector)
+        lighting:SetAttribute("MasterstrapWetFloorRuntime", wetFloorEnabled and "requested" or "disabled")
         lighting:SetAttribute("MasterstrapShaderPackage", tostring(selector))
         warn("MASTERSTRAP_SHADER_APPLIED_LOCAL:" .. tostring(selector) .. ":wetfloor=" .. tostring(wetFloorEnabled))
         applied = true
