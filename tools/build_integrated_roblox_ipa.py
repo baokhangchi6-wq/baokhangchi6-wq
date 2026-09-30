@@ -481,13 +481,14 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        if (strncmp(name, prefixes[i], n) == 0) { name += n; break; }",
         "    }",
         "    const char* owned[] = {\"TaskSchedulerTargetFps\", \"TaskSchedulerLimitTargetFpsToScreenRefreshRate\",",
-        "        \"TaskSchedulerLimitTargetFpsTo2402\", \"GameBasicSettingsFramerateCap\",",
+        "        \"LimitTargetFpsToScreenRefresh\", \"TaskSchedulerLimitTargetFpsTo2402\",",
+        "        \"TaskSchedulerLimitTargetFpsTo240\", \"GameBasicSettingsFramerateCap\",",
         "        \"PerformanceControlExecution\", \"PerformanceControlDynamicFrameTimeTarget\",",
         "        \"PerformanceControlComputeUseTSFrameTimeTarget\", \"PerformanceControlDisplayRefreshRate\",",
         "        \"PerformanceControlDisplayRefreshRateInAdaptiveSync\", \"PerformanceControlDisplayRefreshRateMigration\",",
         "        \"AuroraLimit60HzRenderSim\", \"ApplicationFrameRate\", \"ApplicationFrameRatePolicy\",",
         "        \"MetalVsyncPreferMaximumRefreshRate\", \"MetalDisplayTiming\", \"MetalDisplayTimingAdjustMinFPS\",",
-        "        \"MetalDisplayTimingMinFPS\", \"DebugDisableVsync\",",
+        "        \"MetalDisplayTimingMinFPS\", \"DebugDisableVsync\", \"DebugNoVsync\",",
         "        \"DebugExperimentalVSyncFramePacing\", \"DebugExperimentalVSyncFramePacingForce\", NULL};",
         "    for (int i = 0; owned[i]; ++i) if (strcmp(name, owned[i]) == 0) return true;",
         "    return false;",
@@ -653,13 +654,13 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        if (cmp < 0) high = mid - 1;",
         "        else low = mid + 1;",
         "    }",
-        "    const char* alias = NULL;",
-        "    if (strcmp(name, \"FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate\") == 0) alias = \"FFlagLimitTargetFpsToScreenRefresh\";",
-        "    else if (strcmp(name, \"FFlagTaskSchedulerLimitTargetFpsTo2402\") == 0) alias = \"FFlagTaskSchedulerLimitTargetFpsTo240\";",
-        "    else if (strcmp(name, \"FFlagDebugDisableVsync\") == 0) alias = \"FFlagDebugNoVsync\";",
-        "    if (alias) {",
+        "    const char* aliases[4] = {NULL, NULL, NULL, NULL};",
+        "    if (strcmp(name, \"FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate\") == 0) { aliases[0] = \"FFlagLimitTargetFpsToScreenRefresh\"; aliases[1] = \"DFFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate\"; }",
+        "    else if (strcmp(name, \"FFlagTaskSchedulerLimitTargetFpsTo2402\") == 0) { aliases[0] = \"FFlagTaskSchedulerLimitTargetFpsTo240\"; aliases[1] = \"DFFlagTaskSchedulerLimitTargetFpsTo2402\"; }",
+        "    else if (strcmp(name, \"FFlagDebugDisableVsync\") == 0) { aliases[0] = \"FFlagDebugNoVsync\"; aliases[1] = \"DFFlagDebugNoVsync\"; }",
+        "    for (int ai = 0; aliases[ai]; ++ai) {",
         "        low = 0; high = (int)kMasterFlagsCount - 1;",
-        "        while (low <= high) { int mid = low + (high - low) / 2; int cmp = strcmp(alias, kMasterFlags[mid].name);",
+        "        while (low <= high) { int mid = low + (high - low) / 2; int cmp = strcmp(aliases[ai], kMasterFlags[mid].name);",
         "            if (cmp == 0) return &kMasterFlags[mid];",
         "            if (cmp < 0) high = mid - 1; else low = mid + 1;",
         "        }",
@@ -730,11 +731,12 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    int applied = 0;",
         "    for (size_t i = 0; i < sizeof(flags) / sizeof(flags[0]); ++i) {",
         "        const MasterFlagEntry* flag = lookup_flag_with_fallback(flags[i].name);",
-        "        if (!flag) continue;",
+        "        if (!flag) { runtime_note(\"[SHADER][FLAG_MISS] name=%s requested=%lld reason=NO_VERIFIED_RVA\", flags[i].name, (long long)flags[i].value); continue; }",
         "        FFlagPatchEntry patch = {flag->name, flag->rva, flags[i].kind, flags[i].value};",
         "        if (SetFastFlag(base, &patch)) applied++;",
+        "        else runtime_note(\"[SHADER][FLAG_MISS] name=%s requested=%lld reason=WRITE_REJECTED\", flags[i].name, (long long)flags[i].value);",
         "    }",
-        "    runtime_note(\"[SHADER][NATIVE] package=%s profileSelector=%d wetFloor=%d applied=%d requested=%zu backend=rbxm-luau-native-flags-v2 postfx=enabled\",",
+        "    runtime_note(\"[SHADER][NATIVE] package=%s profileSelector=%d wetFloor=%d applied=%d requested=%zu backend=rbxm-luau-native-flags-v2 postfx=requested runtimeVerified=0\",",
         "        g_shader_package, profile_selector, g_shader_wet_floor, applied, sizeof(flags) / sizeof(flags[0]));",
         "}",
         "",
@@ -1321,7 +1323,9 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         *(ROOT / "tools" / "ios_frame_policy.h").read_text(encoding="utf-8").splitlines(),
         *(ROOT / "tools" / "ios_display_policy.c").read_text(encoding="utf-8").splitlines(),
         "",
+        "static void log_bundled_sky_assets(void);",
         "static void log_runtime_consumer_contract(void) {",
+        "    log_bundled_sky_assets();",
         "    runtime_note(\"[REQUEST][FONT] family=%s sizeStep=%d\", g_font_family, g_font_size_step);",
         "    runtime_note(\"[CAPABILITY][FONT] backend=%s status=%s reason=direct-asset-vfs\", kFontRuntimeBackend, g_profile_loaded ? \"ACTIVE\" : \"INACTIVE\");",
         "    runtime_note(\"[REQUEST][SHADER] package=%s wetFloor=%d\", g_shader_package, g_shader_wet_floor);",
@@ -1351,6 +1355,23 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    fflush(file);",
         "    fclose(file);",
         "    runtime_note(\"[RECEIPT] file=MasterstrapRuntimeReceipt.json status=WRITTEN\");",
+        "}",
+        "",
+        "static void log_bundled_sky_assets(void) {",
+        "    id NSBundle = objc_getClass(\"NSBundle\");",
+        "    if (!NSBundle) { runtime_note(\"[SHADER][SKY_ASSET] status=BLOCKED reason=NSBundle_missing\"); return; }",
+        "    id bundle = ((id (*)(id, SEL))objc_msgSend)(NSBundle, sel_registerName(\"mainBundle\"));",
+        "    id path_value = bundle ? ((id (*)(id, SEL))objc_msgSend)(bundle, sel_registerName(\"bundlePath\")) : NULL;",
+        "    const char* root = path_value ? ((const char* (*)(id, SEL))objc_msgSend)(path_value, sel_registerName(\"UTF8String\")) : NULL;",
+        "    if (!root) { runtime_note(\"[SHADER][SKY_ASSET] status=BLOCKED reason=bundle_path_missing\"); return; }",
+        "    const char* faces[] = {\"bk\", \"dn\", \"ft\", \"lf\", \"rt\", \"up\"};",
+        "    int present = 0; unsigned long long total = 0;",
+        "    for (int i = 0; i < 6; ++i) {",
+        "        char path[1024]; snprintf(path, sizeof(path), \"%s/Frameworks/RobloxLib.framework/ios/textures/sky/sky512_%s.tex\", root, faces[i]);",
+        "        void* file = fopen(path, \"rb\"); long size = -1; if (file) { fseek(file, 0, 2); size = ftell(file); fclose(file); }",
+        "        if (size >= 0) { present++; total += (unsigned long long)size; }",
+        "    }",
+        "    runtime_note(\"[SHADER][SKY_ASSET] status=%s faces=%d/6 bytes=%llu source=bundled-ios-textures\", present == 6 ? \"PRESENT\" : \"MISSING\", present, total);",
         "}",
         "",
         "static const char* bridge_utf8(id value) {",
@@ -2143,8 +2164,8 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "                g_shader_package, g_shader_wet_floor, kShaderRuntimeBackend, launch_authorized, g_profile_loaded,",
         "                !launch_authorized ? \"NO_AUTH\" : !g_profile_loaded ? \"NO_PROFILE\" : !g_abi_probe_call_gate_open ? \"ABI_SIGNATURE_PENDING\" : (!g_shader_wet_floor && strcmp(g_shader_package, \"none\") == 0) ? \"SHADER_DISABLED\" : \"none\");",
         "        if (g_shader_wet_floor) {",
-        "            fprintf(log_file, \"[WETFLOOR_V24] status=REQUESTED runtimeVerified=0 reason=no-material-readback\\n\");",
-        "            runtime_note(\"[WETFLOOR_V24] status=REQUESTED runtimeVerified=0 reason=no-material-readback\");",
+        "            fprintf(log_file, \"[WETFLOOR_V24] status=REQUESTED runtimeVerified=0 reason=lua-readback-required strategy=bounded_nearby_once maxParts=1024 radiusStuds=384\\n\");",
+        "            runtime_note(\"[WETFLOOR_V24] status=REQUESTED runtimeVerified=0 reason=lua-readback-required strategy=bounded_nearby_once maxParts=1024 radiusStuds=384\");",
         "        }",
         "        // FEATURE_07: Font Override",
         "        fprintf(log_file, \"[FEATURE_07_FONT] status=%s family=%s sizeStep=%d backend=%s gate=Auth(%d)&&Profile(%d) blockedReason=%s\\n\",",
@@ -2568,9 +2589,17 @@ _G.__MASTERSTRAP_SHADER_V2 = "running"
 warn("MASTERSTRAP_SHADER_STARTED")
 task.defer(function()
 
+    local applied = false
     local ok, errorMessage = pcall(function()
         if not game:IsLoaded() then game.Loaded:Wait() end
-        if game.PlaceId <= 0 then return end
+        -- Bootstrap/landing DataModel can run this payload before a place exists.
+        -- Do not consume the one-shot guard there; a later character bundle must
+        -- apply shader and wet-floor after join.
+        if game.PlaceId <= 0 then
+            _G.__MASTERSTRAP_SHADER_V2 = nil
+            warn("MASTERSTRAP_SHADER_WAITING_FOR_PLACE")
+            return
+        end
 
         local lighting = game:GetService("Lighting")
         if not lighting then return end
@@ -2754,12 +2783,16 @@ task.defer(function()
         end
         lighting:SetAttribute("MasterstrapShaderPackage", tostring(selector))
         warn("MASTERSTRAP_SHADER_APPLIED_LOCAL:" .. tostring(selector) .. ":wetfloor=" .. tostring(wetFloorEnabled))
+        applied = true
     end)
     if not ok then
         _G.__MASTERSTRAP_SHADER_V2 = nil
         warn("MASTERSTRAP_SHADER_FAILED:" .. tostring(errorMessage))
-    else
+    elseif applied then
         _G.__MASTERSTRAP_SHADER_V2 = "applied"
+    else
+        _G.__MASTERSTRAP_SHADER_V2 = nil
+        warn("MASTERSTRAP_SHADER_DEFERRED")
     end
 end)
 """
@@ -3158,7 +3191,7 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         "wetFloorStrategy": "bounded_nearby_once",
                         "wetFloorMaxParts": 1024,
                         "wetFloorRadiusStuds": 384,
-                        "allowWorkspaceMaterialScan": True,
+                        "allowWorkspaceMaterialScan": False,
                         "allowPeriodicWorker": False
                     }
                     shader_bytes = json.dumps(shader_default, indent=4).encode("utf-8")

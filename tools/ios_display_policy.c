@@ -49,7 +49,6 @@ static id ms_process_info(void) {
 static int ios_maximum_frames_per_second(void) {
     id screen = ((id (*)(id, SEL))objc_msgSend)(objc_getClass("UIScreen"), sel_registerName("mainScreen"));
     long rate = screen ? ((long (*)(id, SEL))objc_msgSend)(screen, sel_registerName("maximumFramesPerSecond")) : 60;
-    if (fps_runtime_requested() && rate < 120) rate = 120;
     return rate >= 30 && rate <= 240 ? (int)rate : 60;
 }
 static int ms_low_power(void) {
@@ -85,7 +84,7 @@ static MSFrameRateRange ms_target_range(long target) {
     int screen_max = ios_maximum_frames_per_second();
     if (screen_max <= 0) screen_max = 60;
     if (target >= 9999) {
-        float max_fps = (float)(screen_max >= 120 ? screen_max : 120);
+        float max_fps = (float)screen_max;
         return sanitize_frame_rate_range((MSFrameRateRange){60.0f, max_fps, max_fps});
     }
     float pref = (float)target;
@@ -340,6 +339,28 @@ static char g_ms_drawable_hook_key;
 
 static int g_metal_layer_stretch_installed;
 static char g_ms_layer_uncapped_key;
+static char g_ms_drawable_gate_key;
+static volatile int g_ms_drawable_gate_lock;
+static unsigned g_ms_drawable_gate_logged_generation;
+
+typedef struct { uint64_t due; unsigned generation; } MSDrawableGateState;
+static MSDrawableGateState* ms_drawable_gate_state(id layer) {
+    if (!layer) return NULL;
+    MSDrawableGateState* state = (MSDrawableGateState*)objc_getAssociatedObject(layer, &g_ms_drawable_gate_key);
+    if (state) return state;
+    while (__sync_lock_test_and_set(&g_ms_drawable_gate_lock, 1)) {}
+    state = (MSDrawableGateState*)objc_getAssociatedObject(layer, &g_ms_drawable_gate_key);
+    if (!state) {
+        state = (MSDrawableGateState*)malloc(sizeof(*state));
+        if (state) {
+            state->due = 0;
+            state->generation = 0;
+            objc_setAssociatedObject(layer, &g_ms_drawable_gate_key, (id)state, 0);
+        }
+    }
+    __sync_lock_release(&g_ms_drawable_gate_lock);
+    return state;
+}
 
 typedef struct { uint32_t numer, denom; } MSMachTimebase;
 extern uint64_t mach_absolute_time(void);
@@ -562,10 +583,66 @@ static void metal_layer_set_display_sync_hook(id self, SEL cmd, bool enabled) {
 
 static id metal_layer_next_drawable_hook(id self, SEL cmd) {
     ms_ensure_layer_vsync_uncapped(self);
-#ifndef NDEBUG
     uintptr_t caller = (uintptr_t)__builtin_return_address(0);
-    bool measure = g_engine_base && caller >= g_engine_base &&
+    bool engine_caller = g_engine_base && caller >= g_engine_base &&
         macho_rva_is_executable(g_engine_base, caller - g_engine_base);
+    unsigned current_generation = __atomic_load_n(&g_ms_generation, __ATOMIC_ACQUIRE);
+    bool gate_requested = engine_caller && fps_runtime_requested() &&
+        g_ms_timebase.numer && g_ms_timebase.denom;
+    MSDrawableGateState* state = gate_requested ? ms_drawable_gate_state(self) : NULL;
+    if (engine_caller && !fps_runtime_requested() && state) {
+        __atomic_store_n(&state->due, 0, __ATOMIC_RELEASE);
+        __atomic_store_n(&state->generation, current_generation, __ATOMIC_RELEASE);
+    }
+    if (gate_requested && state) {
+        int display_fps = ios_maximum_frames_per_second();
+        if (display_fps < 1) display_fps = 60;
+        int target_fps = get_effective_target_fps();
+        unsigned gate_generation = __atomic_load_n(&g_ms_drawable_gate_logged_generation, __ATOMIC_ACQUIRE);
+        if (target_fps > display_fps && gate_generation != current_generation &&
+                __atomic_compare_exchange_n(&g_ms_drawable_gate_logged_generation, &gate_generation,
+                    current_generation, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+            runtime_note("[FPS][DRAWABLE_GATE] mode=ENGINE_DECOUPLED target=%d displayHz=%d caller=VERIFIED_ENGINE", target_fps, display_fps);
+        }
+        uint64_t now = mach_absolute_time();
+        unsigned generation = state ? __atomic_load_n(&state->generation, __ATOMIC_ACQUIRE) : 0;
+        uint64_t due = state ? __atomic_load_n(&state->due, __ATOMIC_ACQUIRE) : 0;
+        if (generation != current_generation) {
+            due = 0;
+            generation = current_generation;
+            __atomic_store_n(&state->generation, generation, __ATOMIC_RELEASE);
+            __atomic_store_n(&state->due, 0, __ATOMIC_RELEASE);
+        }
+        if (target_fps > display_fps && due && now < due) {
+#ifndef NDEBUG
+            __atomic_fetch_add(&g_ms_drawable_calls, 1, __ATOMIC_RELAXED);
+            __atomic_fetch_add(&g_ms_drawable_nil, 1, __ATOMIC_RELAXED);
+            __atomic_fetch_add(&g_ms_drawable_decoupled, 1, __ATOMIC_RELAXED);
+#endif
+            return NULL;
+        }
+        if (target_fps > display_fps) {
+            uint64_t interval = (1000000000ull / (uint64_t)display_fps)
+                * g_ms_timebase.denom / g_ms_timebase.numer;
+            uint64_t next = now + interval;
+            uint64_t expected = due;
+            if (!__atomic_compare_exchange_n(&state->due, &expected, next, false,
+                    __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+                if (expected && now < expected) {
+#ifndef NDEBUG
+                    __atomic_fetch_add(&g_ms_drawable_calls, 1, __ATOMIC_RELAXED);
+                    __atomic_fetch_add(&g_ms_drawable_nil, 1, __ATOMIC_RELAXED);
+                    __atomic_fetch_add(&g_ms_drawable_decoupled, 1, __ATOMIC_RELAXED);
+#endif
+                    return NULL;
+                }
+            }
+        } else {
+            __atomic_store_n(&state->due, 0, __ATOMIC_RELEASE);
+        }
+    }
+#ifndef NDEBUG
+    bool measure = engine_caller;
     uint64_t begin = measure ? mach_absolute_time() : 0;
 #endif
     id drawable = g_original_next_drawable ? g_original_next_drawable(self, cmd) : NULL;

@@ -1261,21 +1261,23 @@ def configure_ios_runtime_html(html: str) -> str:
         delete activeFlags["FFlagGameBasicSettingsFramerateCap"];
         delete activeFlags["FFlagDebugDisableVsync"];
     }''',
-        '''    // Android Parity: FPS ceiling is owned by GlobalBasicSettings.xml FramerateCap + DisplayLink 120Hz ProMotion policy.
-    // Competing FastFlags are explicitly stripped to prevent capping or conflicts.
-    delete activeFlags["DFIntTaskSchedulerTargetFps"];
-    delete activeFlags["FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate"];
-    delete activeFlags["FFlagTaskSchedulerLimitTargetFpsTo2402"];
-    delete activeFlags["FFlagGameBasicSettingsFramerateCap"];
-    delete activeFlags["FFlagAuroraLimit60HzRenderSim"];
-    delete activeFlags["FFlagApplicationFrameRate"];
-    delete activeFlags["FFlagApplicationFrameRatePolicy"];
-    delete activeFlags["FFlagPerformanceControlExecution"];
-    delete activeFlags["FFlagPerformanceControlDisplayRefreshRate"];
-    delete activeFlags["FFlagPerformanceControlDisplayRefreshRateInAdaptiveSync"];
-    delete activeFlags["FFlagPerformanceControlDisplayRefreshRateMigration"];
-    delete activeFlags["FFlagDebugDisableVsync"];
-    delete activeFlags["FFlagMetalVsyncPreferMaximumRefreshRate"];''',
+        '''    // Keep FPS flags in ClientAppSettings so Roblox can consume names that are
+    // absent from the native dump; native hooks still own verified entries.
+    const targetFps = parseInt(document.getElementById("sel-target-fps").value) || 9999;
+    activeFlags["DFIntTaskSchedulerTargetFps"] = String(targetFps);
+    if (targetFps > 60) {
+        activeFlags["FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate"] = "false";
+        activeFlags["FFlagTaskSchedulerLimitTargetFpsTo2402"] = "false";
+        activeFlags["FFlagGameBasicSettingsFramerateCap"] = "false";
+        activeFlags["FFlagDebugDisableVsync"] = "true";
+        activeFlags["FFlagMetalVsyncPreferMaximumRefreshRate"] = "true";
+    } else {
+        delete activeFlags["FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate"];
+        delete activeFlags["FFlagTaskSchedulerLimitTargetFpsTo2402"];
+        delete activeFlags["FFlagGameBasicSettingsFramerateCap"];
+        delete activeFlags["FFlagDebugDisableVsync"];
+        delete activeFlags["FFlagMetalVsyncPreferMaximumRefreshRate"];
+    }''',
         "updateFlagState typed fps and uncap flags",
     )
 

@@ -56,6 +56,9 @@ FPS_FALLBACK_SUFFIXES = {
     "MetalDisplayTiming",
     "MetalDisplayTimingAdjustMinFPS",
     "MetalDisplayTimingMinFPS",
+    "DisablePostFx",
+    "DebugGraphicsDisablePostFx",
+    "RenderPostFxBasePixelCount",
 }
 
 # Reference signatures from the Android ARM64 dumper. They are useful for
