@@ -13,8 +13,11 @@ from pathlib import Path
 
 
 ROLE_ALIASES = {
-    "luau_load": ("luau_load", "luau_bytecodeload"),
-    "luau_bytecodeload": ("luau_bytecodeload", "luau_load"),
+    # One Luau loader commonly contains validation and error formatting in
+    # the same function. These aliases are compatible evidence, not separate
+    # callable entry points.
+    "luau_load": ("luau_load", "luau_bytecodeload", "luau_validateheader", "luau_pushstringerror"),
+    "luau_bytecodeload": ("luau_bytecodeload", "luau_load", "luau_validateheader", "luau_pushstringerror"),
     "lua_resume": ("lua_resume",),
     "game_loaded": ("game_loaded", "ongameloaded"),
     "ongameloaded": ("ongameloaded", "game_loaded"),
@@ -94,6 +97,16 @@ def build_profile(output: Path, version: str) -> dict[str, object]:
             if item.get("status") == "UNIQUE_EXECUTABLE":
                 item["status"] = "ROLE_RVA_COLLISION"
 
+    audit_signature = bool(isinstance(luau_audit, dict) and luau_audit.get("signatureValidated") is True)
+    audit_bridge = bool(isinstance(luau_audit, dict) and luau_audit.get("runtimeBridgeImplemented") is True)
+    shader_ready = audit_signature and audit_bridge and not blocked
+    audit_blockers = []
+    if not audit_signature:
+        audit_blockers.append("luau-signature-or-resume-chain-unverified")
+    if not audit_bridge:
+        audit_blockers.append("native-luau-bridge-not-implemented")
+    blocked.extend(item for item in audit_blockers if item not in blocked)
+
     profile = {
         "schema": 1,
         "platform": "ios-arm64",
@@ -104,12 +117,13 @@ def build_profile(output: Path, version: str) -> dict[str, object]:
         "roles": roles,
         "candidateCount": len(candidates),
         "luauDiscovery": luau_audit,
-        # Role uniqueness is necessary, but not sufficient for a callable
-        # Luau ABI. Signature/call-graph audit remains a separate promotion.
-        "shaderAbiReady": False,
-        "signatureValidated": False,
+        # Audit must prove exact function boundaries and the resume chain
+        # before native shader payloads can cross into Luau.
+        "shaderAbiReady": shader_ready,
+        "signatureValidated": audit_signature,
+        "runtimeBridgeImplemented": audit_bridge,
         "blockedRoles": blocked,
-        "promotion": "awaiting-signature-audit" if not blocked else "fail-closed",
+        "promotion": "ready" if shader_ready else "awaiting-runtime-bridge" if audit_signature else "fail-closed",
     }
     workflow = output / "workflow"
     workflow.mkdir(parents=True, exist_ok=True)

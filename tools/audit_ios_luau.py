@@ -74,6 +74,23 @@ def audit(image: MachOImage, offsets: list[dict]) -> dict:
                       "callSafe": False, "candidates": rows, "evidence": evidence}
         return candidates[0] if len(candidates) == 1 else None
 
+    def offset_candidates(*names: str) -> list[int]:
+        wanted = set(names)
+        found: set[int] = set()
+        for row in offsets:
+            if not isinstance(row, dict) or row.get("name") not in wanted:
+                continue
+            rva = row.get("rva")
+            if not isinstance(rva, int):
+                continue
+            address = image.image_base + rva
+            if address in starts and body(address):
+                found.add(address)
+        return sorted(found)
+
+    def called_targets(address: int) -> list[int]:
+        return sorted({target for target in calls(address) if target in starts})
+
     # A four-instruction leaf: (L->top - L->base) / sizeof(TValue).
     gettops = []
     layout = {}
@@ -165,6 +182,58 @@ def audit(image: MachOImage, offsets: list[dict]) -> dict:
         ["tag:6-existing-string-path", "TString-length:u32+0x14", "TString-data:+0x18",
          "third-argument:size_t-pointer", "lua_tostring-is-a-macro-use-tolstring-with-null-length"])
 
+    # The public offsets dump supplies string anchored roles. The two iOS
+    # references add the protected resume chain, but only unique functions
+    # from this exact Mach-O may participate in promotion.
+    resume = record("lua_resume", offset_candidates("lua_resume", "lua_resumewrapper"),
+                    ["offset-dump-or-coroutine-error-anchor", "exact-function-boundary"])
+    newthread = record("lua_newthread", matches_any(REFERENCE_HEX_PATTERNS["lua_newthread"]),
+                       ["reference-pattern", "exact-function-boundary"])
+    precall = record("luaD_precall", matches_any(REFERENCE_HEX_PATTERNS["luaD_precall"]),
+                     ["reference-pattern", "call-stack-entry"])
+    undump_candidates = offset_candidates(
+        "luau_load", "luau_bytecodeload", "luau_validateheader", "luau_pushstringerror"
+    )
+    undump_candidates.extend(matches_any(REFERENCE_HEX_PATTERNS["luaU_undump"],
+                                          REFERENCE_HEX_PATTERNS["luau_bytecodeload"]))
+    undump = record("luaU_undump", undump_candidates,
+                    ["protected-loader-reference", "exact-function-boundary"])
+    execute_dispatch = record(
+        "luaV_execute_dispatch",
+        matches_any(REFERENCE_HEX_PATTERNS["luaV_execute_dispatch"]),
+        ["interpreter-dispatch-reference", "exact-function-boundary"],
+    )
+
+    resume_targets = called_targets(resume) if resume else []
+    # resume_start and resume_finish are static helpers. Their position is
+    # compiler-dependent, so require them to be distinct internal callees of
+    # the exact lua_resume body; never guess from a fixed RVA.
+    chain_targets = [a for a in resume_targets if a != precall and a != undump]
+    start_candidates = [chain_targets[0]] if len(chain_targets) >= 2 else []
+    finish_candidates = [chain_targets[-1]] if len(chain_targets) >= 2 else []
+    resume_start = record("resume_start", start_candidates[:1],
+                          ["unique-internal-callee-of-lua_resume", "resume-boundary"])
+    resume_finish = record("resume_finish", finish_candidates[-1:] if finish_candidates else [],
+                           ["unique-internal-callee-of-lua_resume", "post-resume-boundary"])
+
+    required_roles = (
+        "lua_gettop", "lua_settop", "lua_getfield", "lua_setfield",
+        "lua_pushstring", "lua_tolstring", "lua_newthread", "lua_resume",
+        "luaD_precall", "resume_start", "resume_finish", "luaU_undump",
+    )
+    unique_roles = all(roles.get(name, {}).get("status") == "STRUCTURAL_CANDIDATE"
+                       for name in required_roles)
+    distinct_rvas = [roles[name]["candidates"][0]["rva"] for name in required_roles
+                     if roles.get(name, {}).get("status") == "STRUCTURAL_CANDIDATE"]
+    signature_validated = (
+        unique_roles
+        and len(distinct_rvas) == len(set(distinct_rvas))
+        and len(chain_targets) >= 2
+        and resume_start is not None
+        and resume_finish is not None
+        and resume_start != resume_finish
+    )
+
     # Preserve questionable old dump entries as evidence, never silently bless them.
     dump_issues = []
     for row in offsets:
@@ -181,10 +250,23 @@ def audit(image: MachOImage, offsets: list[dict]) -> dict:
     return {"schema": 1, "uuid": image.uuid,
             "sha256": hashlib.sha256(image.data).hexdigest(), "layoutCandidates": layout,
             "roles": roles, "dumpIssues": dump_issues,
-            "shaderAbiReady": False, "runtimeBridgeImplemented": False,
+            "signatureEvidence": {
+                "requiredRoles": list(required_roles),
+                "resumeCallTargets": [image.to_rva(a) for a in chain_targets],
+                "resumeChainDistinct": bool(resume_start is not None and resume_finish is not None and resume_start != resume_finish),
+                "layout": layout,
+            },
+            # A callable signature is necessary, but the native bridge and VM
+            # lifetime proof are separate gates. Keep shader ABI closed here.
+            "shaderAbiReady": False,
+            "signatureValidated": bool(signature_validated),
+            "runtimeBridgeImplemented": False,
             "blockers": ["protected-loader-ABI-unverified", "resume-ABI-unverified",
                          "game-VM-task-boundary-unverified", "bytecode-wire-format-unverified",
-                         "context-lifetime-unverified", "native-Luau-bridge-not-implemented"]}
+                         "context-lifetime-unverified", "native-Luau-bridge-not-implemented"]
+            if not signature_validated else
+            ["game-VM-task-boundary-unverified", "context-lifetime-unverified",
+             "native-Luau-bridge-not-implemented"]}
 
 
 def main() -> None:

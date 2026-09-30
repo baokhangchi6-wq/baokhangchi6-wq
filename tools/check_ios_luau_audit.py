@@ -29,6 +29,9 @@ assert report["layoutCandidates"] == {"top": 0x58, "base": 0x60, "tvalueSize": 1
 assert report["roles"]["lua_gettop"]["candidates"][0]["rva"] == TEXT_ADDRESS - BASE
 assert report["shaderAbiReady"] is False
 assert report["roles"]["lua_gettop"]["callSafe"] is False
+assert report["roles"]["lua_newthread"]["status"] == "MISSING"
+assert report["signatureValidated"] is False
+assert report["runtimeBridgeImplemented"] is False
 
 raw[TEXT_FILE_OFFSET + 0x80:TEXT_FILE_OFFSET + 0x90] = leaf
 image = MachOImage(bytes(raw))

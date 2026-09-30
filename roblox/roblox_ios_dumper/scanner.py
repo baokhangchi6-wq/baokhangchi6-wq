@@ -91,6 +91,33 @@ REFERENCE_HEX_PATTERNS = {
         "ff 03 02 d1 fd 7b 05 a9 f6 57 06 a9 f4 4f 07 a9 "
         "fd 43 01 91 ?? ?? ?? ?? 08 00 80 12 f4 03 00 aa"
     ),
+    # iOS equivalents are evidence only. Promotion requires the resume call
+    # chain and Luau layout checks in audit_ios_luau.py.
+    "luaU_undump": (
+        "fd 7b bd a9 f6 57 01 a9 f4 4f 02 a9 fd 03 00 91 "
+        "f4 03 00 aa f5 03 01 aa ?? ?? ?? ?? 3f 00 00 71"
+    ),
+    "luaV_execute_dispatch": (
+        "fd 7b bc a9 f7 0b 00 f9 f6 57 02 a9 f4 4f 03 a9 "
+        "fd 03 00 91 f4 03 00 aa 08 01 40 f9"
+    ),
+    "resume_start": (
+        "fd 7b bc a9 f7 0b 00 f9 f6 57 02 a9 f4 4f 03 a9 "
+        "fd 03 00 91 08 05 40 b9 1f 21 00 71"
+    ),
+    "resume_finish": (
+        "fd 7b bd a9 f6 57 01 a9 f4 4f 02 a9 fd 03 00 91 "
+        "08 05 40 b9 1f 01 00 71"
+    ),
+    "lua_newthread": (
+        "fd 7b ?? a9 ?? ?? ?? a9 fd 03 00 91 ?? ?? 40 f9 "
+        "?? ?? ?? aa ?? ?? ?? a9 ?? ?? ?? eb ?? ?? ?? 54"
+    ),
+    "luaD_precall": (
+        "fd 7b bc a9 f7 0b 00 f9 f6 57 02 a9 f4 4f 03 a9 "
+        "fd 03 00 91 28 0c 40 b9 f4 03 02 2a f6 03 01 aa "
+        "f3 03 00 aa 1f 21 00 71 ?? ?? ?? 54 e0 03 13 aa"
+    ),
 }
 
 
