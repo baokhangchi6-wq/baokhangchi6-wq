@@ -251,6 +251,9 @@ class AppBridgeTests(unittest.TestCase):
         self.assertIn("const fontProfile = JSON.stringify", html)
         self.assertIn("shaderProfile: shaderProfile", html)
         self.assertIn("fontProfile: fontProfile", html)
+        self.assertIn("function prepareFlagsForRoblox", html)
+        self.assertIn('"FFlagDisablePostFx"', html)
+        self.assertIn('delete clean[key]', html)
         self.assertIn("[PROFILE][REQUEST]", html)
         self.assertFalse(any(line != line.rstrip() for line in html.splitlines()))
 

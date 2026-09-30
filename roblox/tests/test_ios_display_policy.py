@@ -47,6 +47,16 @@ class DisplayPolicyTests(unittest.TestCase):
         self.assertIn("ramCleanup=UNSUPPORTED", self.source)
         self.assertIn("g_display_link_rewrite_count < 16", self.source)
 
+    def test_drawable_gate_deadline_is_recorded_after_blocking_acquisition(self):
+        hook = self.source.split("static id metal_layer_next_drawable_hook", 1)[1].split(
+            "static void metal_layer_set_drawable_size_hook", 1
+        )[0]
+        self.assertIn("systemLowPower", self.source)
+        self.assertLess(
+            hook.index("g_original_next_drawable"),
+            hook.index("state->due, mach_absolute_time() + drawable_interval"),
+        )
+
     def test_missing_profile_cannot_reuse_previous_request(self):
         loader = self.source.split("static void load_and_apply_runtime_profiles", 1)[1].split(
             "static void bridge_log", 1

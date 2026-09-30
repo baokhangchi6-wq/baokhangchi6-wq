@@ -55,6 +55,15 @@ static int ms_low_power(void) {
     if (fps_runtime_requested()) return 0;
     return ((unsigned char (*)(id, SEL))objc_msgSend)(ms_process_info(), sel_registerName("isLowPowerModeEnabled"));
 }
+static int ms_system_low_power(void) {
+    id process = ms_process_info();
+    if (g_original_is_low_power) {
+        return ((unsigned char (*)(id, SEL))g_original_is_low_power)(process,
+            sel_registerName("isLowPowerModeEnabled"));
+    }
+    return ((unsigned char (*)(id, SEL))objc_msgSend)(process,
+        sel_registerName("isLowPowerModeEnabled"));
+}
 static unsigned char process_info_is_low_power_hook(id self, SEL cmd) {
     if (fps_runtime_requested()) return 0;
     return g_original_is_low_power ? g_original_is_low_power(self, cmd) : 0;
@@ -217,11 +226,12 @@ static void ms_write_display_receipt(unsigned long links) {
     snprintf(path, sizeof(path), "%s/Documents/MasterstrapDisplayReceipt.json", home);
     void* file = fopen(path, "w");
     if (!file) return;
-    fprintf(file, "{\"schema\":2,\"generatedAtUnix\":%ld,\"generation\":%u,\"authorizedProfileLoaded\":%s,\"policyRequested\":%s,\"hookInstalled\":%s,\"frameRateRangeAvailable\":%s,\"metalPresentHookInstalled\":%s,\"requestedFps\":%d,\"policyTargetFps\":%ld,\"screenMaximum\":%d,\"lowPower\":%s,\"thermalState\":%d,\"trackedDisplayLinks\":%lu,\"presentedFps\":null,\"runtimeVerified\":false}\n",
+    fprintf(file, "{\"schema\":2,\"generatedAtUnix\":%ld,\"generation\":%u,\"authorizedProfileLoaded\":%s,\"policyRequested\":%s,\"hookInstalled\":%s,\"frameRateRangeAvailable\":%s,\"metalPresentHookInstalled\":%s,\"requestedFps\":%d,\"policyTargetFps\":%ld,\"screenMaximum\":%d,\"lowPower\":%s,\"systemLowPower\":%s,\"thermalState\":%d,\"trackedDisplayLinks\":%lu,\"presentedFps\":null,\"runtimeVerified\":false}\n",
         time(NULL), g_ms_generation, g_ms_policy.loaded ? "true" : "false", fps_runtime_requested() ? "true" : "false",
         g_display_link_policy_installed ? "true" : "false", g_original_display_link_set_range ? "true" : "false",
         g_ms_metal_present_hook_installed ? "true" : "false",
-        g_ms_policy.target, fps_runtime_target(), ios_maximum_frames_per_second(), ms_low_power() ? "true" : "false", ms_thermal(), links);
+        g_ms_policy.target, fps_runtime_target(), ios_maximum_frames_per_second(), ms_low_power() ? "true" : "false",
+        ms_system_low_power() ? "true" : "false", ms_thermal(), links);
     fclose(file);
 }
 static void ms_refresh_links(const char* source) {
@@ -239,7 +249,8 @@ static void ms_environment_main(void* ignored) {
     (void)ignored;
     if (!g_ms_policy.loaded) return;
     g_display_link_rewrite_count = 0;
-    runtime_note("[LIFECYCLE][DISPLAY] lowPower=%d thermal=%d screenMax=%d", ms_low_power(), ms_thermal(), ios_maximum_frames_per_second());
+    runtime_note("[LIFECYCLE][DISPLAY] lowPower=%d systemLowPower=%d thermal=%d screenMax=%d",
+        ms_low_power(), ms_system_low_power(), ms_thermal(), ios_maximum_frames_per_second());
     ms_refresh_links("environment-change");
 }
 static void ms_environment_changed(id self, SEL cmd, id notification) {
@@ -599,6 +610,7 @@ static id metal_layer_next_drawable_hook(id self, SEL cmd) {
     unsigned current_generation = __atomic_load_n(&g_ms_generation, __ATOMIC_ACQUIRE);
     bool gate_requested = engine_caller && fps_runtime_requested() &&
         g_ms_timebase.numer && g_ms_timebase.denom;
+    uint64_t drawable_interval = 0;
     if (fps_runtime_requested() && !engine_caller) {
         unsigned blocked_generation = __atomic_load_n(&g_ms_drawable_gate_blocked_generation, __ATOMIC_ACQUIRE);
         if (blocked_generation != current_generation &&
@@ -640,21 +652,8 @@ static id metal_layer_next_drawable_hook(id self, SEL cmd) {
             return NULL;
         }
         if (target_fps > display_fps) {
-            uint64_t interval = (1000000000ull / (uint64_t)display_fps)
+            drawable_interval = (1000000000ull / (uint64_t)display_fps)
                 * g_ms_timebase.denom / g_ms_timebase.numer;
-            uint64_t next = now + interval;
-            uint64_t expected = due;
-            if (!__atomic_compare_exchange_n(&state->due, &expected, next, false,
-                    __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
-                if (expected && now < expected) {
-#ifndef NDEBUG
-                    __atomic_fetch_add(&g_ms_drawable_calls, 1, __ATOMIC_RELAXED);
-                    __atomic_fetch_add(&g_ms_drawable_nil, 1, __ATOMIC_RELAXED);
-                    __atomic_fetch_add(&g_ms_drawable_decoupled, 1, __ATOMIC_RELAXED);
-#endif
-                    return NULL;
-                }
-            }
         } else {
             __atomic_store_n(&state->due, 0, __ATOMIC_RELEASE);
         }
@@ -665,6 +664,10 @@ static id metal_layer_next_drawable_hook(id self, SEL cmd) {
 #endif
     id drawable = g_original_next_drawable ? g_original_next_drawable(self, cmd) : NULL;
     ms_install_drawable_present_policy(drawable);
+    if (drawable_interval && state && drawable) {
+        __atomic_store_n(&state->due, mach_absolute_time() + drawable_interval, __ATOMIC_RELEASE);
+        __atomic_store_n(&state->generation, current_generation, __ATOMIC_RELEASE);
+    }
 #ifndef NDEBUG
     if (measure) {
         __atomic_fetch_add(&g_ms_drawable_wait, mach_absolute_time() - begin, __ATOMIC_RELAXED);
@@ -677,6 +680,11 @@ static id metal_layer_next_drawable_hook(id self, SEL cmd) {
 
 static void metal_layer_set_drawable_size_hook(id self, SEL cmd, MSSize size) {
     ms_ensure_layer_vsync_uncapped(self);
+    uintptr_t caller = (uintptr_t)__builtin_return_address(0);
+    if (g_engine_base && caller >= g_engine_base &&
+            macho_rva_is_executable(g_engine_base, caller - g_engine_base)) {
+        ms_mark_engine_layer(self);
+    }
     if (g_original_set_drawable_size) {
         g_original_set_drawable_size(self, cmd, size);
     }

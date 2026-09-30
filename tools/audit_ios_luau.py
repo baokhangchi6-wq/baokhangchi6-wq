@@ -20,6 +20,12 @@ from roblox_ios_dumper.ipa import load_input
 from roblox_ios_dumper.macho import MachOImage
 from roblox_ios_dumper.scanner import Arm64Scanner, REFERENCE_HEX_PATTERNS
 
+IOS_EXACT_READONLY_ROLES = {
+    # UUID-scoped contracts recovered from exact ARM64 disassembly. These are
+    # read-only evidence until loader wire format and VM lifetime are proven.
+    "luau_load_wrapper": 0x410F3B0,
+}
+
 
 def audit(image: MachOImage, offsets: list[dict]) -> dict:
     if not isinstance(offsets, list) or any(not isinstance(row, dict) for row in offsets):
@@ -84,8 +90,9 @@ def audit(image: MachOImage, offsets: list[dict]) -> dict:
             if not isinstance(rva, int):
                 continue
             address = image.image_base + rva
-            if address in starts and body(address):
-                found.add(address)
+            start, _source = scanner.resolve_function_start(address)
+            if start in starts and body(start):
+                found.add(start)
         return sorted(found)
 
     def called_targets(address: int) -> list[int]:
@@ -182,13 +189,20 @@ def audit(image: MachOImage, offsets: list[dict]) -> dict:
         ["tag:6-existing-string-path", "TString-length:u32+0x14", "TString-data:+0x18",
          "third-argument:size_t-pointer", "lua_tostring-is-a-macro-use-tolstring-with-null-length"])
 
-    # The public offsets dump supplies string anchored roles. The two iOS
-    # references add the protected resume chain, but only unique functions
-    # from this exact Mach-O may participate in promotion.
-    resume = record("lua_resume", offset_candidates("lua_resume", "lua_resumewrapper"),
-                    ["offset-dump-or-coroutine-error-anchor", "exact-function-boundary"])
+    # Prefer iOS-specific structural signatures over the historical offset
+    # label, which may point at coroutine auxresume rather than public resume.
+    resume = record("lua_resume", matches_any(REFERENCE_HEX_PATTERNS["lua_resume"]),
+                    ["iOS-resume-prologue", "exact-function-boundary", "public-resume-contract"])
     newthread = record("lua_newthread", matches_any(REFERENCE_HEX_PATTERNS["lua_newthread"]),
                        ["reference-pattern", "exact-function-boundary"])
+    record("lua_checkstack", matches_any(REFERENCE_HEX_PATTERNS["lua_checkstack"]),
+           ["stack-growth-prologue", "exact-function-boundary", "read-only-ABI-evidence"])
+    record("lua_xmove", matches_any(REFERENCE_HEX_PATTERNS["lua_xmove"]),
+           ["TValue-copy-prologue", "exact-function-boundary", "read-only-ABI-evidence"])
+    record("luaD_rawrunprotected", matches_any(REFERENCE_HEX_PATTERNS["luaD_rawrunprotected"]),
+           ["protected-callback-prologue", "exact-function-boundary", "read-only-ABI-evidence"])
+    record("lua_type", offset_candidates("lua_type"),
+           ["typed-stack-read-offset", "exact-function-boundary", "read-only-ABI-evidence"])
     precall = record("luaD_precall", matches_any(REFERENCE_HEX_PATTERNS["luaD_precall"]),
                      ["reference-pattern", "call-stack-entry"])
     undump_candidates = offset_candidates(
@@ -196,6 +210,10 @@ def audit(image: MachOImage, offsets: list[dict]) -> dict:
     )
     undump_candidates.extend(matches_any(REFERENCE_HEX_PATTERNS["luaU_undump"],
                                           REFERENCE_HEX_PATTERNS["luau_bytecodeload"]))
+    exact_roles = IOS_EXACT_READONLY_ROLES if image.uuid == "63520525-9b34-3506-a0e4-f9824c8dd633" else {}
+    record("luau_load_wrapper",
+           [image.image_base + exact_roles["luau_load_wrapper"]] if "luau_load_wrapper" in exact_roles else [],
+           ["UUID-scoped-protected-loader-wrapper", "exact-function-boundary", "string-object-ABI-still-pending"])
     undump = record("luaU_undump", undump_candidates,
                     ["protected-loader-reference", "exact-function-boundary"])
     execute_dispatch = record(
@@ -211,15 +229,16 @@ def audit(image: MachOImage, offsets: list[dict]) -> dict:
     chain_targets = [a for a in resume_targets if a != precall and a != undump]
     start_candidates = [chain_targets[0]] if len(chain_targets) >= 2 else []
     finish_candidates = [chain_targets[-1]] if len(chain_targets) >= 2 else []
-    resume_start = record("resume_start", start_candidates[:1],
+    resume_start = record("resume_start", matches_any(REFERENCE_HEX_PATTERNS["resume_start"]),
                           ["unique-internal-callee-of-lua_resume", "resume-boundary"])
-    resume_finish = record("resume_finish", finish_candidates[-1:] if finish_candidates else [],
+    resume_finish = record("resume_finish", matches_any(REFERENCE_HEX_PATTERNS["resume_finish"]),
                            ["unique-internal-callee-of-lua_resume", "post-resume-boundary"])
 
     required_roles = (
-        "lua_gettop", "lua_settop", "lua_getfield", "lua_setfield",
-        "lua_pushstring", "lua_tolstring", "lua_newthread", "lua_resume",
-        "luaD_precall", "resume_start", "resume_finish", "luaU_undump",
+        "lua_gettop", "lua_settop", "lua_type", "lua_pushstring", "lua_tolstring",
+        "lua_newthread", "lua_checkstack", "lua_xmove", "luaD_rawrunprotected",
+        "lua_resume", "resume_start", "resume_finish", "luaU_undump",
+        "luau_load_wrapper",
     )
     unique_roles = all(roles.get(name, {}).get("status") == "STRUCTURAL_CANDIDATE"
                        for name in required_roles)

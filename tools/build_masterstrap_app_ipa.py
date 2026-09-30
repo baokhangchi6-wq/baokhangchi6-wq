@@ -1308,9 +1308,23 @@ def configure_ios_runtime_html(html: str) -> str:
     return clean;
 }
 
+function prepareFlagsForRoblox(flags) {
+    const clean = sanitizeFlagsForRoblox(flags);
+    const shaderEnabled = (document.getElementById("display-shader-pkg")?.value || "none") !== "none"
+        || Boolean(document.getElementById("sw-display-wet-floor")?.checked);
+    if (shaderEnabled) {
+        for (const key of ["FFlagDisablePostFx", "DFFlagDebugGraphicsDisablePostFx",
+                           "FFlagDebugGraphicsDisablePostFx", "FFlagDebugGraphicsDisablePostFxUI"]){
+            delete clean[key];
+        }
+        clean["DFIntRenderPostFxBasePixelCount"] = 2000000;
+    }
+    return clean;
+}
+
 function saveAndLaunch() {
     updateFlagState();
-    const clientJson = JSON.stringify(sanitizeFlagsForRoblox(activeFlags), null, 2);''',
+    const clientJson = JSON.stringify(prepareFlagsForRoblox(activeFlags), null, 2);''',
         "sanitize and type activeFlags for roblox",
     )
 
@@ -2030,7 +2044,7 @@ function syncConfigToNative() {
     syncTimer = setTimeout(() => {
         if (!window.webkit?.messageHandlers?.saveConfig) return;
         if (typeof updateFlagState === "function") updateFlagState();
-        const clientJson = JSON.stringify(activeFlags || {}, null, 2);
+        const clientJson = JSON.stringify(prepareFlagsForRoblox(activeFlags || {}), null, 2);
         const turboProfile = JSON.stringify({
             safe_ram_cleanup: document.getElementById("sw-gm-safe-ram")?.checked ?? true,
             safe_network_opt: document.getElementById("sw-gm-safe-net")?.checked ?? true,

@@ -2940,6 +2940,17 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
             f"iOS workflow profile SHA256 mismatch: profile={profile_sha256 or 'missing'} ipa={expected_sha256}"
         )
     offsets_entries = sorted(offsets_table.items(), key=lambda x: x[0])
+    # Feed exact-build audit candidates into diagnostics only. These roles stay
+    # read-only evidence; callable Lua ABI remains closed until bridge proof.
+    audited_roles = workflow_profile.get("auditedReadOnlyRoles", {})
+    if isinstance(audited_roles, dict):
+        known_names = {name for name, _ in offsets_entries}
+        for name, role in audited_roles.items():
+            rva = role.get("rva") if isinstance(role, dict) else None
+            if name not in known_names and type(rva) is int and rva >= 0 and rva % 4 == 0:
+                offsets_entries.append((name, rva))
+                known_names.add(name)
+        offsets_entries.sort(key=lambda x: x[0])
     print(f"Loaded Engine Offsets: {len(offsets_entries)} functions")
 
     if input_ipa and input_ipa.is_file():

@@ -156,6 +156,7 @@ jobs:
           python tools/prepare_ios_workflow_profile.py \
             --output output \
             --version "${{ steps.version_gate.outputs.store_version }}"
+          python tools/check_ios_workflow_profile.py
           echo "Dumper and exact-binary workflow profile complete."
           ls -la output/ output/workflow/
 
