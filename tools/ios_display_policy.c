@@ -36,6 +36,9 @@ typedef struct { long fps; MSFrameRateRange range; int has_range, managed; } MSL
 static void write_runtime_capability_receipt(void);
 static bool fps_runtime_requested(void);
 
+typedef unsigned char (*ProcessInfoLowPowerImp)(id, SEL);
+static ProcessInfoLowPowerImp g_original_is_low_power;
+
 static id ms_string(const char* text) {
     return ((id (*)(id, SEL, const char*))objc_msgSend)(objc_getClass("NSString"),
         sel_registerName("stringWithUTF8String:"), text);
@@ -46,10 +49,16 @@ static id ms_process_info(void) {
 static int ios_maximum_frames_per_second(void) {
     id screen = ((id (*)(id, SEL))objc_msgSend)(objc_getClass("UIScreen"), sel_registerName("mainScreen"));
     long rate = screen ? ((long (*)(id, SEL))objc_msgSend)(screen, sel_registerName("maximumFramesPerSecond")) : 60;
+    if (fps_runtime_requested() && rate < 120) rate = 120;
     return rate >= 30 && rate <= 240 ? (int)rate : 60;
 }
 static int ms_low_power(void) {
+    if (fps_runtime_requested()) return 0;
     return ((unsigned char (*)(id, SEL))objc_msgSend)(ms_process_info(), sel_registerName("isLowPowerModeEnabled"));
+}
+static unsigned char process_info_is_low_power_hook(id self, SEL cmd) {
+    if (fps_runtime_requested()) return 0;
+    return g_original_is_low_power ? g_original_is_low_power(self, cmd) : 0;
 }
 static int ms_thermal(void) {
     return (int)((long (*)(id, SEL))objc_msgSend)(ms_process_info(), sel_registerName("thermalState"));
@@ -75,6 +84,10 @@ static inline MSFrameRateRange sanitize_frame_rate_range(MSFrameRateRange range)
 static MSFrameRateRange ms_target_range(long target) {
     int screen_max = ios_maximum_frames_per_second();
     if (screen_max <= 0) screen_max = 60;
+    if (target >= 9999) {
+        float max_fps = (float)(screen_max >= 120 ? screen_max : 120);
+        return sanitize_frame_rate_range((MSFrameRateRange){60.0f, max_fps, max_fps});
+    }
     float pref = (float)target;
     float min_fps = pref < 60.0f ? pref : 60.0f;
     float max_fps = pref > (float)screen_max ? pref : (float)screen_max;
@@ -253,6 +266,15 @@ static void ms_install_on_main(void* ignored) { (void)ignored; install_display_l
 static bool install_display_link_policy(void) {
     if (!pthread_main_np()) { dispatch_async_f(&_dispatch_main_q, NULL, ms_install_on_main); return false; }
     if (g_display_link_policy_installed) return true;
+
+    Class pi_cls = (Class)objc_getClass("NSProcessInfo");
+    if (pi_cls) {
+        Method lp_m = class_getInstanceMethod(pi_cls, sel_registerName("isLowPowerModeEnabled"));
+        if (lp_m && !g_original_is_low_power) {
+            g_original_is_low_power = (ProcessInfoLowPowerImp)method_setImplementation(
+                lp_m, (IMP)process_info_is_low_power_hook);
+        }
+    }
 
     Class cls = (Class)objc_getClass("CADisplayLink");
     if (!cls) { runtime_note("[CAPABILITY][FPS] status=BLOCKED reason=class_missing"); return false; }

@@ -24,6 +24,11 @@ ROLE_ALIASES = {
     "scriptcontextresume": ("scriptcontextresume",),
 }
 REQUIRED_ROLES = ("luau_load", "lua_resume", "game_loaded", "scriptcontextresume")
+AUDIT_REQUIRED_ROLES = (
+    "lua_gettop", "lua_settop", "lua_getfield", "lua_setfield",
+    "lua_pushstring", "lua_tolstring", "lua_newthread", "lua_resume",
+    "luaD_precall", "resume_start", "resume_finish", "luaU_undump",
+)
 
 
 def _load_offsets(path: Path) -> list[dict[str, object]]:
@@ -90,6 +95,31 @@ def build_profile(output: Path, version: str) -> dict[str, object]:
             continue
         roles[role] = {"status": "UNIQUE_EXECUTABLE", "rva": row["rva"], "confidence": confidence}
 
+    audit_roles = luau_audit.get("roles", {}) if isinstance(luau_audit, dict) else {}
+    for role in AUDIT_REQUIRED_ROLES:
+        audited = audit_roles.get(role, {}) if isinstance(audit_roles, dict) else {}
+        candidates_for_role = audited.get("candidates", []) if isinstance(audited, dict) else []
+        if audited.get("status") != "STRUCTURAL_CANDIDATE" or len(candidates_for_role) != 1:
+            blocked.append(role)
+            roles[role] = {
+                "status": str(audited.get("status") or "AUDIT_MISSING"),
+                "candidates": [row.get("rva") for row in candidates_for_role if isinstance(row, dict)],
+            }
+            continue
+        candidate = candidates_for_role[0]
+        rva = candidate.get("rva") if isinstance(candidate, dict) else None
+        if not isinstance(rva, int):
+            blocked.append(role)
+            roles[role] = {"status": "AUDIT_INVALID_RVA"}
+            continue
+        roles[role] = {
+            "status": "UNIQUE_EXECUTABLE",
+            "rva": rva,
+            "confidence": "audit-structural",
+            "signature": candidate.get("signature"),
+            "bodySha256": candidate.get("bodySha256"),
+        }
+
     promoted_rvas = [int(item["rva"]) for item in roles.values() if item.get("status") == "UNIQUE_EXECUTABLE"]
     if len(promoted_rvas) != len(set(promoted_rvas)):
         blocked.extend(role for role, item in roles.items() if item.get("status") == "UNIQUE_EXECUTABLE")
@@ -140,7 +170,7 @@ def build_profile(output: Path, version: str) -> dict[str, object]:
         f"#define MASTERSTRAP_IOS_SHADER_ABI_READY {int(profile['shaderAbiReady'])}",
         f"static const uint8_t kMasterstrapIosWorkflowUuid[16] = {{{', '.join(uuid_bytes or ['0'] * 16)}}};",
     ]
-    for role in REQUIRED_ROLES:
+    for role in dict.fromkeys((*REQUIRED_ROLES, *AUDIT_REQUIRED_ROLES)):
         item = roles[role]
         header.append(f"#define MASTERSTRAP_IOS_ROLE_{role.upper()} 0x{int(item.get('rva', 0)):X}")
     (workflow / "profile.hpp").write_text("\n".join(header) + "\n", encoding="utf-8")

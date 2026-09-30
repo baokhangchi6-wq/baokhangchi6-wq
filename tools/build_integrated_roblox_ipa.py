@@ -2558,10 +2558,10 @@ def verify_packaged_visual_assets(input_ipa: Path, output_ipa: Path, sky_assets:
 
 LUAU_SHADER_PAYLOAD = """
 -- Runs only after Roblox enters a loaded place; avoids homepage/bootstrap mutation.
+if _G.__MASTERSTRAP_SHADER_V2 == "applied" or _G.__MASTERSTRAP_SHADER_V2 == "running" then return end
+_G.__MASTERSTRAP_SHADER_V2 = "running"
+warn("MASTERSTRAP_SHADER_STARTED")
 task.defer(function()
-    if _G.__MASTERSTRAP_SHADER_V2 then return end
-    _G.__MASTERSTRAP_SHADER_V2 = true
-    warn("MASTERSTRAP_SHADER_STARTED")
 
     local ok, errorMessage = pcall(function()
         if not game:IsLoaded() then game.Loaded:Wait() end
@@ -2609,6 +2609,11 @@ task.defer(function()
                 skyReapplying = false
             end
             reapplySkybox()
+            for _, field in ipairs(fields) do
+                sky:GetPropertyChangedSignal(field):Connect(function()
+                    if not skyReapplying then task.defer(reapplySkybox) end
+                end)
+            end
             lighting.ChildRemoved:Connect(function(child)
                 if child == sky then task.defer(reapplySkybox) end
             end)
@@ -2635,36 +2640,67 @@ task.defer(function()
             effect("Atmosphere", "Masterstrap_Atmosphere", {Density = 0.3, Offset = 0.25, Color = Color3.fromRGB(199, 218, 255), Decay = Color3.fromRGB(106, 112, 125), Glare = 0.35, Haze = 1.2})
         end
 
-        local function wetFloor()
+        local wetFloorBusy = false
+        local wetFloorQueued = false
+        local function wetFloor(reason)
+            if wetFloorBusy then return end
+            wetFloorBusy = true
             pcall(function()
                 local player = game:GetService("Players").LocalPlayer
                 local root = player and player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-                if not root then return end
+                if not root then wetFloorBusy = false return end
                 local scanned = 0
+                local changed = 0
+                local verified = 0
                 for _, part in ipairs(workspace:GetPartBoundsInRadius(root.Position, 384)) do
                     if scanned >= 1024 then break end
                     if part:IsA("BasePart") and part.CanCollide and not part:IsDescendantOf(player.Character) then
                         scanned = scanned + 1
                         local up = part.CFrame.UpVector
                         if math.abs(up.Y) > 0.7 or (part.Size.Y <= part.Size.X and part.Size.Y <= part.Size.Z) then
-                            if part:GetAttribute("MS_OriginalReflectance") == nil then part:SetAttribute("MS_OriginalReflectance", part.Reflectance) end
-                            part.Reflectance = 0.42
+                            local originalReflectance = part:GetAttribute("MS_OriginalReflectance")
+                            if originalReflectance == nil then
+                                originalReflectance = part.Reflectance
+                                part:SetAttribute("MS_OriginalReflectance", originalReflectance)
+                            end
+                            local reflectance = math.clamp(originalReflectance + 0.25, 0.15, 0.5)
+                            part.Reflectance = reflectance
                             if part.Material ~= Enum.Material.Glass then part.Material = Enum.Material.SmoothPlastic end
+                            changed = changed + 1
+                            if math.abs(part.Reflectance - reflectance) < 0.00001 then verified = verified + 1 end
                         end
                     end
                 end
+                warn("MASTERSTRAP_WETFLOOR_READBACK:" .. tostring(reason or "initial") .. ":changed=" .. tostring(changed) .. ":verified=" .. tostring(verified))
             end)
+            wetFloorBusy = false
         end
         if wetFloorEnabled then
-            wetFloor()
-            task.spawn(function()
-                for _ = 1, 8 do task.wait(1.5) wetFloor() end
+            wetFloor("initial")
+            local players = game:GetService("Players")
+            local player = players.LocalPlayer
+            if player then
+                player.CharacterAdded:Connect(function() task.defer(function() wetFloor("character") end) end)
+            end
+            workspace.DescendantAdded:Connect(function(item)
+                if item:IsA("BasePart") and not wetFloorQueued then
+                    wetFloorQueued = true
+                    task.delay(1.0, function()
+                        wetFloorQueued = false
+                        wetFloor("streamed")
+                    end)
+                end
             end)
         end
         lighting:SetAttribute("MasterstrapShaderPackage", tostring(selector))
         warn("MASTERSTRAP_SHADER_APPLIED_LOCAL:" .. tostring(selector) .. ":wetfloor=" .. tostring(wetFloorEnabled))
     end)
-    if not ok then warn("MASTERSTRAP_SHADER_FAILED:" .. tostring(errorMessage)) end
+    if not ok then
+        _G.__MASTERSTRAP_SHADER_V2 = nil
+        warn("MASTERSTRAP_SHADER_FAILED:" .. tostring(errorMessage))
+    else
+        _G.__MASTERSTRAP_SHADER_V2 = "applied"
+    end
 end)
 """
 

@@ -37,6 +37,8 @@ FLAG_ALIASES = {
     "DFFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate": "FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate",
     "FFlagTaskSchedulerLimitTargetFpsTo240": "FFlagTaskSchedulerLimitTargetFpsTo2402",
     "DFFlagTaskSchedulerLimitTargetFpsTo2402": "FFlagTaskSchedulerLimitTargetFpsTo2402",
+    "FFlagDebugNoVsync": "FFlagDebugDisableVsync",
+    "DFFlagDebugNoVsync": "FFlagDebugDisableVsync",
 }
 
 # These flags control the display limiter. Some Roblox builds register them
@@ -45,6 +47,7 @@ FPS_FALLBACK_SUFFIXES = {
     "LimitTargetFpsToScreenRefresh",
     "TaskSchedulerLimitTargetFpsTo240",
     "DebugDisableVsync",
+    "DebugNoVsync",
     "DebugExperimentalVSyncFramePacing",
     "DebugExperimentalVSyncFramePacingForce",
     "MetalDisplayTiming",
@@ -687,6 +690,7 @@ class Arm64Scanner:
         aliases = {
             "LimitTargetFpsToScreenRefresh": ("FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate", "FFlag"),
             "TaskSchedulerLimitTargetFpsTo240": ("FFlagTaskSchedulerLimitTargetFpsTo2402", "FFlag"),
+            "DebugNoVsync": ("FFlagDebugDisableVsync", "FFlag"),
         }
         if suffix in aliases:
             name, prefix = aliases[suffix]
