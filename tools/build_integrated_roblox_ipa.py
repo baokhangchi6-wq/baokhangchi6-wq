@@ -2584,10 +2584,10 @@ def verify_packaged_visual_assets(input_ipa: Path, output_ipa: Path, sky_assets:
 
 LUAU_SHADER_PAYLOAD = """
 -- Runs only after Roblox enters a loaded place; avoids homepage/bootstrap mutation.
-if _G.__MASTERSTRAP_SHADER_V2 == "applied" or _G.__MASTERSTRAP_SHADER_V2 == "running" then return end
-_G.__MASTERSTRAP_SHADER_V2 = "running"
-warn("MASTERSTRAP_SHADER_STARTED")
-task.defer(function()
+if _G.__MASTERSTRAP_SHADER_V2 ~= "applied" and _G.__MASTERSTRAP_SHADER_V2 ~= "running" then
+    _G.__MASTERSTRAP_SHADER_V2 = "running"
+    warn("MASTERSTRAP_SHADER_STARTED")
+    task.defer(function()
 
     local applied = false
     local ok, errorMessage = pcall(function()
@@ -2794,7 +2794,8 @@ task.defer(function()
         _G.__MASTERSTRAP_SHADER_V2 = nil
         warn("MASTERSTRAP_SHADER_DEFERRED")
     end
-end)
+    end)
+end
 """
 
 def write_full_inspection_report(out_dir: Path, flags: dict, verified_entries: list, miss_offsets: list, ipa_name: str, out_ipa_name: str, embed_flags: bool = False):
