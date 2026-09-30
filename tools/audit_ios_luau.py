@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "roblox"))
 from roblox_ios_dumper.arm64 import decode_bl, is_bl
 from roblox_ios_dumper.ipa import load_input
 from roblox_ios_dumper.macho import MachOImage
-from roblox_ios_dumper.scanner import Arm64Scanner
+from roblox_ios_dumper.scanner import Arm64Scanner, REFERENCE_HEX_PATTERNS
 
 
 def audit(image: MachOImage, offsets: list[dict]) -> dict:
@@ -50,6 +50,12 @@ def audit(image: MachOImage, offsets: list[dict]) -> dict:
         return sorted({scanner.find_function_start(hit) for hit in hits
                        if scanner.find_function_start(hit) in starts})
 
+    def matches_any(*patterns: str) -> list[int]:
+        found: set[int] = set()
+        for pattern in patterns:
+            found.update(matches(pattern))
+        return sorted(found)
+
     def contains(address: int, *words: int) -> bool:
         return struct.pack("<" + "I" * len(words), *words) in body(address)
 
@@ -71,7 +77,10 @@ def audit(image: MachOImage, offsets: list[dict]) -> dict:
     # A four-instruction leaf: (L->top - L->base) / sizeof(TValue).
     gettops = []
     layout = {}
-    for address in matches("?? ?? ?? A9 08 01 09 CB 00 FD 44 D3 C0 03 5F D6"):
+    for address in matches_any(
+        "?? ?? ?? A9 08 01 09 CB 00 FD 44 D3 C0 03 5F D6",
+        REFERENCE_HEX_PATTERNS["lua_gettop"],
+    ):
         raw = body(address)
         if len(raw) != 16:
             continue
@@ -96,18 +105,27 @@ def audit(image: MachOImage, offsets: list[dict]) -> dict:
             word & 0xFFC003E0 == 0xF9000260 and ((word >> 10) & 0xFFF) * 8 == top
             for _, word in instructions(address))  # STR Xt,[x19,#top]
 
-    settop_candidates = matches("48 01 0B CB 08 FD 44 D3 81 02 08 4B 48 D1 21 8B")
+    settop_candidates = matches_any(
+        "48 01 0B CB 08 FD 44 D3 81 02 08 4B 48 D1 21 8B",
+        REFERENCE_HEX_PATTERNS["lua_settop"],
+    )
     record("lua_settop", [a for a in settop_candidates if top_write(a)
         and contains(a, 0x8B34D148, 0x91004108)
         and contains(a, 0xB81E015F)],
         ["positive-index:grow-and-clear-nil-tags", "negative-index:top+(index+1)*16",
          "stores-derived-top-offset"])
 
-    pushstrings = matches("41 01 00 B4 F3 03 01 AA E0 03 01 AA ?? ?? ?? 94 E2 03 00 AA E0 03 14 AA E1 03 13 AA")
+    pushstrings = matches_any(
+        "41 01 00 B4 F3 03 01 AA E0 03 01 AA ?? ?? ?? 94 E2 03 00 AA E0 03 14 AA E1 03 13 AA",
+        REFERENCE_HEX_PATTERNS["lua_pushstring"],
+    )
     pushstring = record("lua_pushstring", [a for a in pushstrings if len(body(a)) <= 0x100
         and sum((w & 0xFC000000) == 0x14000000 for _, w in instructions(a)) == 2],
         ["null-string-path", "length-call-and-two-tail-branches"])
     pushlstrings = []
+    direct_pushlstrings = matches(REFERENCE_HEX_PATTERNS["lua_pushlstring"])
+    if direct_pushlstrings:
+        pushlstrings.extend(direct_pushlstrings)
     interners = []
     if pushstring:
         for pc, w in instructions(pushstring):
@@ -124,7 +142,11 @@ def audit(image: MachOImage, offsets: list[dict]) -> dict:
     interner = record("luaS_newlstr", [a for a in interners if a in starts],
         ["pushlstring-callee-return-stored-as-TString"])
 
-    field_candidates = matches("E0 03 14 AA ?? ?? ?? 94 E2 03 00 AA E0 03 13 AA E1 03 14 AA ?? ?? ?? 94 E0 03 00 F9 C8 00 80 52 E8 0F 00 B9")
+    field_candidates = matches_any(
+        "E0 03 14 AA ?? ?? ?? 94 E2 03 00 AA E0 03 13 AA E1 03 14 AA ?? ?? ?? 94 E0 03 00 F9 C8 00 80 52 E8 0F 00 B9",
+        REFERENCE_HEX_PATTERNS["lua_getfield"],
+        REFERENCE_HEX_PATTERNS["lua_setfield"],
+    )
     record("lua_getfield", [a for a in field_candidates if interner in calls(a)
         and top_write(a) and contains(a, 0xF9402E63, 0x910003E2)
         and contains(a, 0xB9400D00)],

@@ -52,6 +52,47 @@ FPS_FALLBACK_SUFFIXES = {
     "MetalDisplayTimingMinFPS",
 }
 
+# Reference signatures from the Android ARM64 dumper. They are useful for
+# finding equivalent iOS functions after string anchors disappear, but remain
+# candidate-only until iOS-specific boundary and call-graph checks pass.
+REFERENCE_HEX_PATTERNS = {
+    "taskschedulertargetfps": (
+        "fd 7b bd a9 ?? 0b 00 f9 ?? 4f ?? a9 fd 03 00 91 "
+        "?? ?? ?? 90 ?? ?? ?? 91 ?? ?? ?? ?? ?? ?? ?? 91 "
+        "?? ?? ?? ?? ?? ?? ?? 91 ?? ?? ?? a9"
+    ),
+    "lua_gettop": "?? ?? ?? A9 08 01 09 CB 00 FD 44 D3 C0 03 5F D6",
+    "lua_settop": (
+        "29 51 34 8B 1F 01 09 EB 22 01 00 54 0A 41 00 91 "
+        "1F 0D 00 B9 5F 01 09 EB E8 03 0A AA 83 FF FF 54"
+    ),
+    "lua_getfield": (
+        "fd 7b bc a9 f7 0b 00 f9 f6 57 02 a9 f4 4f 03 a9 "
+        "fd 03 00 91 f4 03 02 aa 3f 04 00 71 f3 03 00 aa "
+        "2b 01 00 54 69 a2 43 a9 08 51 21 8b 08 41 00 d1"
+    ),
+    "lua_setfield": (
+        "fd 7b bc a9 f7 0b 00 f9 f6 57 02 a9 f4 4f 03 a9 "
+        "fd 03 00 91 f4 03 03 2a f5 03 02 aa 3f 04 00 71 "
+        "f3 03 00 aa 2b 01 00 54 69 a2 43 a9 08 51 21 8b "
+        "08 41 00 d1"
+    ),
+    "lua_pushstring": (
+        "fd 7b ?? a9 f4 4f 01 a9 fd 03 00 91 f4 03 00 aa "
+        "?? ?? 00 b4 e0 03 01 aa f3 03 01 aa ?? ?? ?? 94 "
+        "e2 03 00 aa e0 03 14 aa e1 03 13 aa"
+    ),
+    "lua_pushlstring": (
+        "fd 7b bd a9 f6 57 01 a9 f4 4f 02 a9 fd 03 00 91 "
+        "?? ?? ?? ?? f4 03 02 aa f3 03 00 aa f5 03 01 aa "
+        "?? ?? ?? ?? 3f 01 08 eb 83 00 00 54 e0 03 13 aa"
+    ),
+    "luau_bytecodeload": (
+        "ff 03 02 d1 fd 7b 05 a9 f6 57 06 a9 f4 4f 07 a9 "
+        "fd 43 01 91 ?? ?? ?? ?? 08 00 80 12 f4 03 00 aa"
+    ),
+}
+
 
 @dataclass(frozen=True)
 class StringXref:
@@ -380,6 +421,29 @@ class Arm64Scanner:
             )
         return results
 
+    def scan_reference_patterns(self) -> list[dict[str, object]]:
+        """Collect Android-derived ARM64 matches as iOS audit evidence.
+
+        These rows intentionally stay in offset_candidates.json. They are not
+        safe runtime offsets: iOS Mach-O builds may inline, split, or reuse
+        the same Luau helper, so promotion still needs iOS call-graph checks.
+        """
+        rows: list[dict[str, object]] = []
+        for name, pattern in REFERENCE_HEX_PATTERNS.items():
+            for row in self.scan_relaxed_hex_candidates(
+                name,
+                pattern,
+                minimum_score=0.70,
+                maximum_candidates=8,
+            ):
+                row["method"] = "android-reference-pattern"
+                row["evidence"] = list(row.get("evidence", ())) + [
+                    "source:android-arm64-reference",
+                    "candidate-only:not-emitted-to-Offsets.hpp",
+                ]
+                rows.append(row)
+        return rows
+
     def scan_offsets(self, patterns: list[dict[str, object]]) -> list[OffsetResult]:
         self.offset_candidates = []
         string_addresses: dict[str, list[int]] = {}
@@ -520,6 +584,7 @@ class Arm64Scanner:
                     evidence=tuple(evidence),
                 )
             )
+        self.offset_candidates.extend(self.scan_reference_patterns())
         return results
 
     def _first_bl_after(self, xref: int, limit: int = 40) -> int | None:

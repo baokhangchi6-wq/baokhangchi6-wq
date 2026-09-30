@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from roblox_ios_dumper.macho import MachOImage
-from roblox_ios_dumper.scanner import Arm64Scanner
+from roblox_ios_dumper.scanner import Arm64Scanner, REFERENCE_HEX_PATTERNS
 from roblox_ios_dumper.arm64 import store_kind
 
 from .fixtures import BASE, TEXT_ADDRESS, build_macho
@@ -61,6 +61,14 @@ class ScannerTests(unittest.TestCase):
         self.assertEqual(candidates[0]["address"], start)
         self.assertFalse(candidates[0]["promoted"])
         self.assertGreater(candidates[0]["score"], 0.90)
+
+    def test_android_reference_patterns_are_candidate_only(self) -> None:
+        self.assertIn("taskschedulertargetfps", REFERENCE_HEX_PATTERNS)
+        self.assertIn("lua_getfield", REFERENCE_HEX_PATTERNS)
+        self.assertIn("luau_bytecodeload", REFERENCE_HEX_PATTERNS)
+        rows = self.scanner.scan_reference_patterns()
+        self.assertTrue(all(row["promoted"] is False for row in rows))
+        self.assertTrue(all(row["method"] == "android-reference-pattern" for row in rows))
 
 
 if __name__ == "__main__":
