@@ -41,6 +41,10 @@ FFLAG_ALIASES = {
         "FFlagTaskSchedulerLimitTargetFpsTo240",
         "DFFlagTaskSchedulerLimitTargetFpsTo2402",
     ),
+    "FFlagDebugDisableVsync": (
+        "FFlagDebugNoVsync",
+        "DFFlagDebugNoVsync",
+    ),
 }
 
 
@@ -652,6 +656,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    const char* alias = NULL;",
         "    if (strcmp(name, \"FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate\") == 0) alias = \"FFlagLimitTargetFpsToScreenRefresh\";",
         "    else if (strcmp(name, \"FFlagTaskSchedulerLimitTargetFpsTo2402\") == 0) alias = \"FFlagTaskSchedulerLimitTargetFpsTo240\";",
+        "    else if (strcmp(name, \"FFlagDebugDisableVsync\") == 0) alias = \"FFlagDebugNoVsync\";",
         "    if (alias) {",
         "        low = 0; high = (int)kMasterFlagsCount - 1;",
         "        while (low <= high) { int mid = low + (high - low) / 2; int cmp = strcmp(alias, kMasterFlags[mid].name);",
@@ -2570,7 +2575,10 @@ task.defer(function()
         local lighting = game:GetService("Lighting")
         if not lighting then return end
         local selector = 2005
-        pcall(function() selector = game:GetFastInt("RenderShadowHugeRadius") end)
+        local reportedSelector
+        pcall(function() reportedSelector = game:GetFastInt("RenderShadowHugeRadius") end)
+        if type(reportedSelector) == "number" then selector = reportedSelector end
+        if selector < 2001 or selector > 3006 then selector = 2005 end
         local wetFloorEnabled = selector >= 3000
         if wetFloorEnabled then selector = selector - 1000 end
         local shaderEnabled = selector >= 2001 and selector <= 2006
@@ -2587,68 +2595,100 @@ task.defer(function()
         }
         if shaderEnabled then
             local skyIds = skies[selector]
-            local sky = lighting:FindFirstChild("Masterstrap_Skybox")
-            if not sky then
-                sky = Instance.new("Sky")
-                sky.Name = "Masterstrap_Skybox"
-                sky.Parent = lighting
-            end
             local fields = {"SkyboxBk", "SkyboxDn", "SkyboxFt", "SkyboxLf", "SkyboxRt", "SkyboxUp"}
             local skyReapplying = false
-            local function reapplySkybox()
-                if skyReapplying then return end
-                skyReapplying = true
-                if not sky.Parent then sky.Parent = lighting end
+            local managedSkies = setmetatable({}, {__mode = "k"})
+            local applySky
+            applySky = function(sky)
+                if not sky or not sky:IsA("Sky") then return false end
                 local readback = true
                 for i, field in ipairs(fields) do
                     local value = "rbxasset://textures/sky/" .. skyIds[i]
                     sky[field] = value
                     if sky[field] ~= value then readback = false end
                 end
+                if not managedSkies[sky] then
+                    managedSkies[sky] = true
+                    for _, field in ipairs(fields) do
+                        sky:GetPropertyChangedSignal(field):Connect(function()
+                            if not skyReapplying then task.defer(function() applySky(sky) end) end
+                        end)
+                    end
+                end
+                return readback
+            end
+            local function reapplySkybox()
+                if skyReapplying then return end
+                skyReapplying = true
+                local found = false
+                local readback = true
+                for _, child in ipairs(lighting:GetChildren()) do
+                    if child:IsA("Sky") then
+                        found = true
+                        if not applySky(child) then readback = false end
+                    end
+                end
+                if not found then
+                    local sky = Instance.new("Sky")
+                    sky.Name = "Masterstrap_Skybox"
+                    sky.Parent = lighting
+                    readback = applySky(sky)
+                end
                 warn("MASTERSTRAP_SKYBOX_APPLIED_LOCAL:" .. tostring(selector) .. ":readback=" .. tostring(readback))
                 skyReapplying = false
             end
             reapplySkybox()
-            for _, field in ipairs(fields) do
-                sky:GetPropertyChangedSignal(field):Connect(function()
-                    if not skyReapplying then task.defer(reapplySkybox) end
-                end)
-            end
-            lighting.ChildRemoved:Connect(function(child)
-                if child == sky then task.defer(reapplySkybox) end
-            end)
-            lighting.ChildAdded:Connect(function(child)
-                if child.Name == "Sky" and child ~= sky then task.defer(reapplySkybox) end
-            end)
-
-            pcall(function() lighting.Technology = Enum.Technology.Future end)
-            lighting.GlobalShadows = true
-            lighting.ShadowSoftness = 0.2
-            lighting.EnvironmentDiffuseScale = 1
-            lighting.EnvironmentSpecularScale = 1
-            lighting.Brightness = 2.2
-            lighting.ExposureCompensation = 0.1
-
             local function effect(className, name, props)
                 local item = lighting:FindFirstChild(name)
                 if not item then item = Instance.new(className) item.Name = name item.Parent = lighting end
                 for property, value in pairs(props) do pcall(function() item[property] = value end) end
             end
-            effect("BloomEffect", "Masterstrap_Bloom", {Intensity = 0.65, Size = 24, Threshold = 0.9, Enabled = true})
-            effect("ColorCorrectionEffect", "Masterstrap_ColorCorrection", {Brightness = 0.05, Contrast = 0.18, Saturation = 0.22, TintColor = Color3.fromRGB(255, 252, 248), Enabled = true})
-            effect("SunRaysEffect", "Masterstrap_SunRays", {Intensity = 0.15, Spread = 0.85, Enabled = true})
-            effect("Atmosphere", "Masterstrap_Atmosphere", {Density = 0.3, Offset = 0.25, Color = Color3.fromRGB(199, 218, 255), Decay = Color3.fromRGB(106, 112, 125), Glare = 0.35, Haze = 1.2})
+            local lightingReapplying = false
+            local function applyLightingEffects()
+                if lightingReapplying then return end
+                lightingReapplying = true
+                pcall(function() lighting.Technology = Enum.Technology.Future end)
+                pcall(function()
+                    lighting.GlobalShadows = true
+                    lighting.ShadowSoftness = 0.2
+                    lighting.EnvironmentDiffuseScale = 1
+                    lighting.EnvironmentSpecularScale = 1
+                    lighting.Brightness = 2.2
+                    lighting.ExposureCompensation = 0.1
+                end)
+                effect("BloomEffect", "Masterstrap_Bloom", {Intensity = 0.65, Size = 24, Threshold = 0.9, Enabled = true})
+                effect("ColorCorrectionEffect", "Masterstrap_ColorCorrection", {Brightness = 0.05, Contrast = 0.18, Saturation = 0.22, TintColor = Color3.fromRGB(255, 252, 248), Enabled = true})
+                effect("SunRaysEffect", "Masterstrap_SunRays", {Intensity = 0.15, Spread = 0.85, Enabled = true})
+                effect("Atmosphere", "Masterstrap_Atmosphere", {Density = 0.3, Offset = 0.25, Color = Color3.fromRGB(199, 218, 255), Decay = Color3.fromRGB(106, 112, 125), Glare = 0.35, Haze = 1.2})
+                lightingReapplying = false
+            end
+            applyLightingEffects()
+            lighting.ChildAdded:Connect(function(child)
+                if child:IsA("Sky") then task.defer(reapplySkybox)
+                elseif child:IsA("PostEffect") or child:IsA("Atmosphere") then task.defer(applyLightingEffects) end
+            end)
+            lighting.ChildRemoved:Connect(function(child)
+                if child:IsA("Sky") then task.defer(reapplySkybox)
+                elseif child:IsA("PostEffect") or child:IsA("Atmosphere") then task.defer(applyLightingEffects) end
+            end)
         end
 
         local wetFloorBusy = false
         local wetFloorQueued = false
+        local wetFloorRetries = 0
         local function wetFloor(reason)
             if wetFloorBusy then return end
             wetFloorBusy = true
-            pcall(function()
+            local okWetFloor, wetFloorError = pcall(function()
                 local player = game:GetService("Players").LocalPlayer
                 local root = player and player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-                if not root then wetFloorBusy = false return end
+                if not root then
+                    if wetFloorRetries < 5 then
+                        wetFloorRetries = wetFloorRetries + 1
+                        task.delay(1.0, function() wetFloor("root_retry" .. tostring(wetFloorRetries)) end)
+                    end
+                    return
+                end
                 local scanned = 0
                 local changed = 0
                 local verified = 0
@@ -2657,26 +2697,46 @@ task.defer(function()
                     if part:IsA("BasePart") and part.CanCollide and not part:IsDescendantOf(player.Character) then
                         scanned = scanned + 1
                         local up = part.CFrame.UpVector
-                        if math.abs(up.Y) > 0.7 or (part.Size.Y <= part.Size.X and part.Size.Y <= part.Size.Z) then
-                            local originalReflectance = part:GetAttribute("MS_OriginalReflectance")
-                            if originalReflectance == nil then
-                                originalReflectance = part.Reflectance
-                                part:SetAttribute("MS_OriginalReflectance", originalReflectance)
-                            end
-                            local reflectance = math.clamp(originalReflectance + 0.25, 0.15, 0.5)
-                            part.Reflectance = reflectance
-                            if part.Material ~= Enum.Material.Glass then part.Material = Enum.Material.SmoothPlastic end
-                            changed = changed + 1
-                            if math.abs(part.Reflectance - reflectance) < 0.00001 then verified = verified + 1 end
+                        local material = part.Material
+                        local eligibleMaterial = material == Enum.Material.Plastic
+                            or material == Enum.Material.Concrete
+                            or material == Enum.Material.Slate
+                            or material == Enum.Material.WoodPlanks
+                        if eligibleMaterial and (math.abs(up.Y) > 0.7 or (part.Size.Y <= part.Size.X and part.Size.Y <= part.Size.Z)) then
+                            pcall(function()
+                                local originalReflectance = part:GetAttribute("MS_OriginalReflectance")
+                                if originalReflectance == nil then
+                                    originalReflectance = part.Reflectance
+                                    part:SetAttribute("MS_OriginalReflectance", originalReflectance)
+                                end
+                                local reflectance = math.clamp(originalReflectance + 0.25, 0.15, 0.5)
+                                part.Reflectance = reflectance
+                                if part.Material ~= Enum.Material.Glass then part.Material = Enum.Material.SmoothPlastic end
+                                changed = changed + 1
+                                if math.abs(part.Reflectance - reflectance) < 0.00001 then verified = verified + 1 end
+                            end)
                         end
                     end
                 end
                 warn("MASTERSTRAP_WETFLOOR_READBACK:" .. tostring(reason or "initial") .. ":changed=" .. tostring(changed) .. ":verified=" .. tostring(verified))
+                if changed == 0 and wetFloorRetries < 5 then
+                    wetFloorRetries = wetFloorRetries + 1
+                    task.delay(1.0, function() wetFloor("retry" .. tostring(wetFloorRetries)) end)
+                else
+                    wetFloorRetries = 0
+                end
             end)
             wetFloorBusy = false
+            if not okWetFloor then warn("MASTERSTRAP_WETFLOOR_FAILED:" .. tostring(wetFloorError)) end
         end
         if wetFloorEnabled then
             wetFloor("initial")
+            pcall(function()
+                workspace.Terrain.WaterReflectance = 1
+                workspace.Terrain.WaterTransparency = 0.15
+                workspace.Terrain.WaterWaveSize = 0.12
+                workspace.Terrain.WaterWaveSpeed = 12
+            end)
             local players = game:GetService("Players")
             local player = players.LocalPlayer
             if player then

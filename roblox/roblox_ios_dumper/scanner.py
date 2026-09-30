@@ -45,7 +45,10 @@ FLAG_ALIASES = {
 # through a different table than EnableLoadModule, so scan their XREFs too.
 FPS_FALLBACK_SUFFIXES = {
     "LimitTargetFpsToScreenRefresh",
+    "LimitTargetFpsToScreenRefreshRate",
+    "TaskSchedulerLimitTargetFpsToScreenRefreshRate",
     "TaskSchedulerLimitTargetFpsTo240",
+    "TaskSchedulerLimitTargetFpsTo2402",
     "DebugDisableVsync",
     "DebugNoVsync",
     "DebugExperimentalVSyncFramePacing",
@@ -689,7 +692,10 @@ class Arm64Scanner:
     def _resolve_flag_name(self, suffix: str, inferred_kind: str) -> tuple[str, str, str]:
         aliases = {
             "LimitTargetFpsToScreenRefresh": ("FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate", "FFlag"),
+            "LimitTargetFpsToScreenRefreshRate": ("FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate", "FFlag"),
+            "TaskSchedulerLimitTargetFpsToScreenRefreshRate": ("FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate", "FFlag"),
             "TaskSchedulerLimitTargetFpsTo240": ("FFlagTaskSchedulerLimitTargetFpsTo2402", "FFlag"),
+            "TaskSchedulerLimitTargetFpsTo2402": ("FFlagTaskSchedulerLimitTargetFpsTo2402", "FFlag"),
             "DebugNoVsync": ("FFlagDebugDisableVsync", "FFlag"),
         }
         if suffix in aliases:
