@@ -181,6 +181,13 @@ class AppBridgeTests(unittest.TestCase):
         self.assertIn("atoll(value)", hook_source)
         self.assertIn("[DYNAMIC_JSON_UNSUPPORTED]", hook_source)
 
+    def test_bridge_sanitizes_shader_postfx_conflicts_before_document_write(self):
+        hook_source = self.roblox_builder.generate_native_hook_source([], [], 0, [], {})
+        self.assertIn("sanitize_shader_client_json", hook_source)
+        self.assertIn("FFlagDisablePostFx", hook_source)
+        self.assertIn("DFIntRenderPostFxBasePixelCount", hook_source)
+        self.assertIn("g_bridge_shader_selector", hook_source)
+
     def test_runtime_log_reports_actual_backend_capabilities(self):
         hook_source = self.roblox_builder.generate_native_hook_source([], [], 0, [], {})
 

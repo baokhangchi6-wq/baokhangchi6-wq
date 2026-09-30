@@ -1310,14 +1310,27 @@ def configure_ios_runtime_html(html: str) -> str:
 
 function prepareFlagsForRoblox(flags) {
     const clean = sanitizeFlagsForRoblox(flags);
-    const shaderEnabled = (document.getElementById("display-shader-pkg")?.value || "none") !== "none"
-        || Boolean(document.getElementById("sw-display-wet-floor")?.checked);
+    const shaderPackage = document.getElementById("display-shader-pkg")?.value || "none";
+    const wetFloor = Boolean(document.getElementById("sw-display-wet-floor")?.checked);
+    const shaderSelectors = {
+        daytime: 2001, desert: 2001, ghibli_anime: 2001,
+        rtx_ultra: 2002, "RTX High": 2002,
+        sunset: 2003, cherry_blossom: 2003,
+        night: 2004, arctic: 2004, blood_moon: 2004,
+        cyberpunk: 2005, synthwave: 2005,
+        cloudy: 2006, noir: 2006
+    };
+    const shaderEnabled = shaderPackage !== "none" || wetFloor;
     if (shaderEnabled) {
         for (const key of ["FFlagDisablePostFx", "DFFlagDebugGraphicsDisablePostFx",
                            "FFlagDebugGraphicsDisablePostFx", "FFlagDebugGraphicsDisablePostFxUI"]){
             delete clean[key];
         }
         clean["DFIntRenderPostFxBasePixelCount"] = 2000000;
+        const selector = shaderSelectors[shaderPackage] || 2005;
+        clean["FIntRenderShadowHugeRadius"] = selector + (wetFloor ? 1000 : 0);
+    } else {
+        delete clean["FIntRenderShadowHugeRadius"];
     }
     return clean;
 }
