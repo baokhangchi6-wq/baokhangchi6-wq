@@ -1313,12 +1313,19 @@ function prepareFlagsForRoblox(flags) {
     const shaderPackage = document.getElementById("display-shader-pkg")?.value || "none";
     const wetFloor = Boolean(document.getElementById("sw-display-wet-floor")?.checked);
     const shaderSelectors = {
-        daytime: 2001, desert: 2001, ghibli_anime: 2001,
+        daytime: 2001,
         rtx_ultra: 2002, "RTX High": 2002,
-        sunset: 2003, cherry_blossom: 2003,
-        night: 2004, arctic: 2004, blood_moon: 2004,
-        cyberpunk: 2005, synthwave: 2005,
-        cloudy: 2006, noir: 2006
+        sunset: 2003,
+        night: 2004,
+        cloudy: 2005,
+        desert: 2006,
+        arctic: 2007,
+        blood_moon: 2008,
+        cyberpunk: 2009,
+        cherry_blossom: 2010,
+        ghibli_anime: 2011,
+        synthwave: 2012,
+        noir: 2013
     };
     const shaderEnabled = shaderPackage !== "none" || wetFloor;
     if (shaderEnabled) {

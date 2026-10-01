@@ -695,15 +695,20 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static void runtime_note(const char* fmt, ...);",
         "",
         "static int shader_sky_selector(void) {",
-        "    if (strcmp(g_shader_package, \"daytime\") == 0 || strcmp(g_shader_package, \"desert\") == 0",
-        "            || strcmp(g_shader_package, \"ghibli_anime\") == 0) return 2001;",
+        "    if (strcmp(g_shader_package, \"daytime\") == 0) return 2001;",
         "    if (strcmp(g_shader_package, \"rtx_ultra\") == 0 || strcmp(g_shader_package, \"RTX High\") == 0) return 2002;",
-        "    if (strcmp(g_shader_package, \"sunset\") == 0 || strcmp(g_shader_package, \"cherry_blossom\") == 0) return 2003;",
-        "    if (strcmp(g_shader_package, \"night\") == 0 || strcmp(g_shader_package, \"arctic\") == 0",
-        "            || strcmp(g_shader_package, \"blood_moon\") == 0) return 2004;",
-        "    if (strcmp(g_shader_package, \"cyberpunk\") == 0 || strcmp(g_shader_package, \"synthwave\") == 0) return 2005;",
-        "    if (strcmp(g_shader_package, \"cloudy\") == 0 || strcmp(g_shader_package, \"noir\") == 0) return 2006;",
-        "    return 2000;",
+        "    if (strcmp(g_shader_package, \"sunset\") == 0) return 2003;",
+        "    if (strcmp(g_shader_package, \"night\") == 0) return 2004;",
+        "    if (strcmp(g_shader_package, \"cloudy\") == 0) return 2005;",
+        "    if (strcmp(g_shader_package, \"desert\") == 0) return 2006;",
+        "    if (strcmp(g_shader_package, \"arctic\") == 0) return 2007;",
+        "    if (strcmp(g_shader_package, \"blood_moon\") == 0) return 2008;",
+        "    if (strcmp(g_shader_package, \"cyberpunk\") == 0) return 2009;",
+        "    if (strcmp(g_shader_package, \"cherry_blossom\") == 0) return 2010;",
+        "    if (strcmp(g_shader_package, \"ghibli_anime\") == 0) return 2011;",
+        "    if (strcmp(g_shader_package, \"synthwave\") == 0) return 2012;",
+        "    if (strcmp(g_shader_package, \"noir\") == 0) return 2013;",
+        "    return 2002;",
         "}",
         "",
         "static void apply_shader_lighting_flags(uintptr_t base) {",
@@ -1500,7 +1505,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "}",
         "",
         "static bool g_bridge_shader_active = false;",
-        "static int g_bridge_shader_selector = 2005;",
+        "static int g_bridge_shader_selector = 2002;",
         "static bool bridge_replace_json_scalar(char* json, size_t capacity, const char* key, const char* replacement) {",
         "    if (!json || !key || !replacement) return false;",
         "    char needle[160]; snprintf(needle, sizeof(needle), \"\\\"%s\\\"\", key);",
@@ -1516,12 +1521,20 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    memmove(colon + new_len, end, total - (size_t)(end - json) + 1); memcpy(colon, replacement, new_len); return true;",
         "}",
         "static int bridge_shader_selector_from_json(const char* json) {",
-        "    int selector = 2005; if (!json) return selector;",
-        "    if (strstr(json, \"daytime\") || strstr(json, \"desert\") || strstr(json, \"ghibli_anime\")) selector = 2001;",
+        "    int selector = 2002; if (!json) return selector;",
+        "    if (strstr(json, \"daytime\")) selector = 2001;",
         "    else if (strstr(json, \"rtx_ultra\") || strstr(json, \"RTX High\")) selector = 2002;",
-        "    else if (strstr(json, \"sunset\") || strstr(json, \"cherry_blossom\")) selector = 2003;",
-        "    else if (strstr(json, \"night\") || strstr(json, \"arctic\") || strstr(json, \"blood_moon\")) selector = 2004;",
-        "    else if (strstr(json, \"cloudy\") || strstr(json, \"noir\")) selector = 2006;",
+        "    else if (strstr(json, \"sunset\")) selector = 2003;",
+        "    else if (strstr(json, \"night\")) selector = 2004;",
+        "    else if (strstr(json, \"cloudy\")) selector = 2005;",
+        "    else if (strstr(json, \"desert\")) selector = 2006;",
+        "    else if (strstr(json, \"arctic\")) selector = 2007;",
+        "    else if (strstr(json, \"blood_moon\")) selector = 2008;",
+        "    else if (strstr(json, \"cyberpunk\")) selector = 2009;",
+        "    else if (strstr(json, \"cherry_blossom\")) selector = 2010;",
+        "    else if (strstr(json, \"ghibli_anime\")) selector = 2011;",
+        "    else if (strstr(json, \"synthwave\")) selector = 2012;",
+        "    else if (strstr(json, \"noir\")) selector = 2013;",
         "    if (strstr(json, \"\\\"wetFloor\\\": true\") || strstr(json, \"\\\"wetFloor\\\":true\")) selector += 1000;",
         "    return selector;",
         "}",
@@ -2667,27 +2680,34 @@ if _G.__MASTERSTRAP_SHADER_V2 ~= "applied" and _G.__MASTERSTRAP_SHADER_V2 ~= "ru
 
         local lighting = game:GetService("Lighting")
         if not lighting then return end
-        local selector = 2005
+        local selector = 2002
         local reportedSelector
         pcall(function() reportedSelector = game:GetFastInt("RenderShadowHugeRadius") end)
         if type(reportedSelector) == "number" then selector = reportedSelector end
-        if selector < 2001 or selector > 3006 then selector = 2005 end
+        if selector < 2001 or selector > 3013 then selector = 2002 end
         local wetFloorEnabled = selector >= 3000
         if wetFloorEnabled then selector = selector - 1000 end
-        local shaderEnabled = selector >= 2001 and selector <= 2006
+        local shaderEnabled = selector >= 2001 and selector <= 2013
 
-        -- Use bundled Roblox texture paths. rbxassetid URLs bypass the
-        -- replaced IPA assets and fetch a different remote cubemap.
-        local skies = {
-            [2001] = {"sky512_bk.tex", "sky512_dn.tex", "sky512_ft.tex", "sky512_lf.tex", "sky512_rt.tex", "sky512_up.tex"},
-            [2002] = {"sky512_bk.tex", "sky512_dn.tex", "sky512_ft.tex", "sky512_lf.tex", "sky512_rt.tex", "sky512_up.tex"},
-            [2003] = {"sky512_bk.tex", "sky512_dn.tex", "sky512_ft.tex", "sky512_lf.tex", "sky512_rt.tex", "sky512_up.tex"},
-            [2004] = {"sky512_bk.tex", "sky512_dn.tex", "sky512_ft.tex", "sky512_lf.tex", "sky512_rt.tex", "sky512_up.tex"},
-            [2005] = {"sky512_bk.tex", "sky512_dn.tex", "sky512_ft.tex", "sky512_lf.tex", "sky512_rt.tex", "sky512_up.tex"},
-            [2006] = {"sky512_bk.tex", "sky512_dn.tex", "sky512_ft.tex", "sky512_lf.tex", "sky512_rt.tex", "sky512_up.tex"},
+        -- Android parity: use stable Roblox asset IDs, not Windows PurpleVoid
+        -- or one shared local cubemap for every package.
+        local androidSkies = {
+            [2001] = {"7018216393", "7018216233", "7018216091", "7018215904", "7018215758", "7018215582"},
+            [2002] = {"159454299", "159454296", "159454293", "159454286", "159454300", "159454288"},
+            [2003] = {"600830446", "600831635", "600832720", "600886090", "600833862", "600835177"},
+            [2004] = {"12064107", "12064152", "12064121", "12064114", "12064131", "12064147"},
+            [2005] = {"570557514", "570557775", "570557559", "570557620", "570557672", "570557727"},
+            [2006] = {"7018216393", "7018216233", "7018216091", "7018215904", "7018215758", "7018215582"},
+            [2007] = {"12064107", "12064152", "12064121", "12064114", "12064131", "12064147"},
+            [2008] = {"12064107", "12064152", "12064121", "12064114", "12064131", "12064147"},
+            [2009] = {"271042516", "271077243", "271042556", "271042310", "271042467", "271077958"},
+            [2010] = {"600830446", "600831635", "600832720", "600886090", "600833862", "600835177"},
+            [2011] = {"7018216393", "7018216233", "7018216091", "7018215904", "7018215758", "7018215582"},
+            [2012] = {"271042516", "271077243", "271042556", "271042310", "271042467", "271077958"},
+            [2013] = {"570557514", "570557775", "570557559", "570557620", "570557672", "570557727"},
         }
         if shaderEnabled then
-            local skyIds = skies[selector]
+            local skyIds = androidSkies[selector]
             local fields = {"SkyboxBk", "SkyboxDn", "SkyboxFt", "SkyboxLf", "SkyboxRt", "SkyboxUp"}
             local skyReapplying = false
             local managedSkies = setmetatable({}, {__mode = "k"})
@@ -2696,7 +2716,7 @@ if _G.__MASTERSTRAP_SHADER_V2 ~= "applied" and _G.__MASTERSTRAP_SHADER_V2 ~= "ru
                 if not sky or not sky:IsA("Sky") then return false end
                 local readback = true
                 for i, field in ipairs(fields) do
-                    local value = "rbxasset://textures/sky/" .. skyIds[i]
+                    local value = "rbxassetid://" .. skyIds[i]
                     sky[field] = value
                     if sky[field] ~= value then readback = false end
                 end
@@ -3256,14 +3276,14 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         "keepDisplayActive": True,
                         "stretchScreenPercent": 100,
                         "rendererMode": "Automatic",
-                        "display_shader_package": "RTX High",
+                        "display_shader_package": "rtx_ultra",
                         "display_shader_wet_floor": True
                     }
                     turbo_bytes = json.dumps(turbo_default, indent=4).encode("utf-8")
                     shader_default = {
                         "schema": 1,
                         "enabled": True,
-                        "package": "cyberpunk",
+                        "package": "rtx_ultra",
                         "applyMode": "once_after_datamodel",
                         "maxPostEffects": 5,
                         "wetFloor": True,

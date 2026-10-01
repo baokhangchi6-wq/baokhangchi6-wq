@@ -76,6 +76,18 @@ jobs:
           set -euo pipefail
           PYTHONPATH=roblox python -m unittest discover -s roblox/tests -p test_ios_display_policy.py -v
           python tools/check_ios_luau_audit.py
+          PYTHONPATH=roblox python - <<'PY'
+          from tools.build_integrated_roblox_ipa import LUAU_SHADER_PAYLOAD
+          required = (
+              "7018216393", "159454299", "600830446", "12064107",
+              "271042516", "570557514", "rbxassetid://",
+          )
+          assert "androidSkies" in LUAU_SHADER_PAYLOAD
+          assert "rbxasset://textures/sky/" not in LUAU_SHADER_PAYLOAD
+          for value in required:
+              assert value in LUAU_SHADER_PAYLOAD, value
+          print("PASS: Android sky manifest contract")
+          PY
           clang -std=c11 -Wall -Wextra -Werror -I tools \
             roblox/tests/ios_frame_policy_test.c -o "$RUNNER_TEMP/ios-fps-policy-check"
           "$RUNNER_TEMP/ios-fps-policy-check"
