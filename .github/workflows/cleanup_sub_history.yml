@@ -1,4 +1,4 @@
-name: Clean Sub History
+name: Clean Masterstrap History
 
 on:
   schedule:
@@ -15,12 +15,12 @@ permissions:
   contents: write
 
 concurrency:
-  group: cleanup-sub-history
+  group: cleanup-masterstrap-history-${{ github.repository }}
   cancel-in-progress: false
 
 jobs:
   cleanup:
-    if: github.repository == 'baokhangchi6-wq/baokhangchi6-wq' && github.ref == 'refs/heads/main'
+    if: (github.repository == 'baokhangchi6-wq/baokhangchi6-wq' || github.repository == 'Masterstrap/IOS-source') && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -76,7 +76,7 @@ jobs:
               }
             }
 
-            await core.summary.addHeading('Sub history cleanup').addTable([
+            await core.summary.addHeading(`${owner}/${repo} history cleanup`).addTable([
               [{ data: 'Resource', header: true }, { data: 'Deleted', header: true }],
               ...Object.entries(counts).map(([kind, count]) => [kind, String(count)])
             ]).addRaw(`\nFailed deletions: ${failures.length}\n`).write();
