@@ -67,15 +67,13 @@ jobs:
               await remove('tags', name, () => github.rest.git.deleteRef({ owner, repo, ref: `tags/${name}` }));
             }
 
-            for (;;) {
-              const page = await github.rest.actions.listWorkflowRunsForRepo({
-                owner, repo, status: 'completed', created: `<${cutoff}`, per_page: 100
-              });
-              const runs = page.data.workflow_runs.filter(run => run.id !== context.runId && run.created_at < cutoff);
-              for (const run of runs) {
+            const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, {
+              owner, repo, status: 'completed', per_page: 100
+            });
+            for (const run of runs) {
+              if (run.id !== context.runId && run.created_at < cutoff) {
                 await remove('runs', run.id, () => github.rest.actions.deleteWorkflowRun({ owner, repo, run_id: run.id }));
               }
-              if (!runs.length) break;
             }
 
             await core.summary.addHeading('Sub history cleanup').addTable([
