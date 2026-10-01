@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       confirmation:
-        description: 'Type DELETE_ALL to delete completed main runs, releases, and tags'
+        description: 'Type DELETE_ALL to delete old completed runs, releases, and tags'
         required: true
         type: string
 
@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - name: Delete old runs, releases, and tags
+      - name: Delete old workflow runs, releases, and tags
         uses: actions/github-script@v7
         env:
           CONFIRMATION: ${{ inputs.confirmation }}
@@ -33,14 +33,13 @@ jobs:
             if (context.eventName !== 'schedule' && process.env.CONFIRMATION !== 'DELETE_ALL') {
               throw new Error('Manual cleanup requires DELETE_ALL');
             }
+
             const { owner, repo } = context.repo;
             const current = await github.rest.actions.getWorkflowRun({ owner, repo, run_id: context.runId });
             const cutoff = current.data.created_at;
-            const releases = await github.paginate(github.rest.repos.listReleases, { owner, repo, per_page: 100 });
-            const tags = await github.paginate(github.rest.git.listMatchingRefs, { owner, repo, ref: 'tags/', per_page: 100 });
-            const newReleaseTags = new Set(releases.filter(r => r.created_at >= cutoff).map(r => r.tag_name));
             const counts = { runs: 0, releases: 0, tags: 0 };
             const failures = [];
+
             async function remove(kind, label, request) {
               try {
                 await request();
@@ -52,34 +51,38 @@ jobs:
                   core.warning(failures[failures.length - 1]);
                 }
               }
-              await new Promise(resolve => setTimeout(resolve, 1000));
+              await new Promise(resolve => setTimeout(resolve, 750));
             }
+
+            const releases = await github.paginate(github.rest.repos.listReleases, { owner, repo, per_page: 100 });
             for (const release of releases) {
-              if (release.created_at >= cutoff) continue;
-              await remove('releases', release.id, () => github.rest.repos.deleteRelease({ owner, repo, release_id: release.id }));
+              if (release.created_at < cutoff) {
+                await remove('releases', release.id, () => github.rest.repos.deleteRelease({ owner, repo, release_id: release.id }));
+              }
             }
+
+            const tags = await github.paginate(github.rest.git.listMatchingRefs, { owner, repo, ref: 'tags/', per_page: 100 });
             for (const tag of tags) {
               const name = tag.ref.slice('refs/tags/'.length);
-              if (newReleaseTags.has(name)) continue;
               await remove('tags', name, () => github.rest.git.deleteRef({ owner, repo, ref: `tags/${name}` }));
             }
-            // Drain page one after deletion so pagination cannot skip shifted runs.
+
             for (;;) {
               const page = await github.rest.actions.listWorkflowRunsForRepo({
                 owner, repo, status: 'completed', created: `<${cutoff}`, per_page: 100
               });
               const runs = page.data.workflow_runs.filter(run => run.id !== context.runId && run.created_at < cutoff);
-              if (!runs.length) break;
-              let deleted = 0;
               for (const run of runs) {
-                const before = counts.runs;
                 await remove('runs', run.id, () => github.rest.actions.deleteWorkflowRun({ owner, repo, run_id: run.id }));
-                deleted += counts.runs - before;
               }
-              if (!deleted) break;
+              if (!runs.length) break;
             }
-            await core.summary.addHeading('Sub cleanup').addTable([
+
+            await core.summary.addHeading('Sub history cleanup').addTable([
               [{ data: 'Resource', header: true }, { data: 'Deleted', header: true }],
               ...Object.entries(counts).map(([kind, count]) => [kind, String(count)])
             ]).addRaw(`\nFailed deletions: ${failures.length}\n`).write();
-            if (failures.length) core.setFailed('Some deletions failed; check permissions, tag protection, or API limits');
+
+            if (failures.length) {
+              core.setFailed('Some deletions failed; check permissions or protected tags.');
+            }
