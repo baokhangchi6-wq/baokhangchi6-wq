@@ -188,6 +188,7 @@ jobs:
             --out-dir output \
             --workflow-profile output/workflow/profile.json \
             --disable-shader \
+            --disable-stretch \
             --build-type "$MASTERSTRAP_BUILD_TYPE"
 
           # Collect IPA info emitted by builder to GITHUB_OUTPUT

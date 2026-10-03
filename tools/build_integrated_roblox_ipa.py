@@ -283,7 +283,7 @@ def fetch_or_load_offsets_map(local_hpp: Path) -> dict:
     return table
 
 
-def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_count: int, offset_entries: list = None, all_flags_table: dict = None, expected_uuid: str = None, workflow_profile: dict | None = None, shader_enabled: bool = True) -> str:
+def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_count: int, offset_entries: list = None, all_flags_table: dict = None, expected_uuid: str = None, workflow_profile: dict | None = None, shader_enabled: bool = True, stretch_enabled: bool = True) -> str:
     import uuid
     uuid_bytes = uuid.UUID(expected_uuid).bytes if expected_uuid else bytes(16)
     if offset_entries is None:
@@ -460,6 +460,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static const char* kFontRuntimeBackend = \"native-asset-vfs-v1\";",
         f"static const bool kShaderAbiProfileReady = {'true' if shader_abi_ready else 'false'};",
         f"static const bool kShaderEnabled = {'true' if shader_enabled else 'false'};",
+        f"static const bool kStretchEnabled = {'true' if stretch_enabled else 'false'};",
         "static const char* kShaderRuntimeBackend = \"ios-workflow-profile-v1\";",
         "static const char* kStretchRuntimeBackend = \"view-projection-v73\";",
         "",
@@ -1140,6 +1141,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        profile_read_string(turbo, \"display_font_family\", \"font\", g_font_family, sizeof(g_font_family));",
         "        g_font_size_step = profile_read_signed_int(turbo, \"display_font_size_step\", 0);",
         "        if (!kShaderEnabled) { snprintf(g_shader_package, sizeof(g_shader_package), \"none\"); g_shader_wet_floor = false; }",
+        "        if (!kStretchEnabled) g_stretch_percent = 100;",
         "        if (log_file) fprintf(log_file, \"[PROFILE][TURBO] status=LOADED bytes=%ld enabled=%d targetFps=%d refresh=%d keepDisplay=%d stretch=%d renderer=%s shader=%s wetFloor=%d font=%s step=%d\\n\", turbo_size, g_game_mode_enabled, g_target_fps, g_refresh_requested, g_keep_display_active, g_stretch_percent, g_renderer_mode, g_shader_package, g_shader_wet_floor, g_font_family, g_font_size_step);",
         "        runtime_note(\"[PROFILE][TURBO] status=LOADED bytes=%ld enabled=%d targetFps=%d refresh=%d keepDisplay=%d stretch=%d renderer=%s shader=%s wetFloor=%d font=%s step=%d\", turbo_size, g_game_mode_enabled, g_target_fps, g_refresh_requested, g_keep_display_active, g_stretch_percent, g_renderer_mode, g_shader_package, g_shader_wet_floor, g_font_family, g_font_size_step);",
         "        free(turbo);",
@@ -1814,8 +1816,8 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        if (current_base != 0) {",
         "            int warm_dynamic = load_dynamic_config_files(current_base, NULL);",
         "            int warm_applied = apply_cached_dynamic_flags(current_base);",
-        "            float factor = (g_stretch_percent > 0 && g_stretch_percent != 100) ? (100.0f / (float)g_stretch_percent) : 1.0f;",
-        "            *(volatile float*)(current_base + 0x69ca130) = factor;",
+        "            float factor = (kStretchEnabled && g_stretch_percent > 0 && g_stretch_percent != 100) ? (100.0f / (float)g_stretch_percent) : 1.0f;",
+        "            if (kStretchEnabled) *(volatile float*)(current_base + 0x69ca130) = factor;",
         "            apply_native_fps_registry(current_base);",
         "            if (g_shader_wet_floor || strcmp(g_shader_package, \"none\") != 0) {",
         "                apply_shader_lighting_flags(current_base);",
@@ -1961,10 +1963,10 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "",
         "        // Maintain stretch horizontal factor slot",
         "        float factor = 1.0f;",
-        "        if (g_stretch_percent > 0 && g_stretch_percent != 100) {",
+        "        if (kStretchEnabled && g_stretch_percent > 0 && g_stretch_percent != 100) {",
         "            factor = 100.0f / (float)g_stretch_percent;",
         "        }",
-        "        *(volatile float*)(base + 0x69ca130) = factor;",
+        "        if (kStretchEnabled) *(volatile float*)(base + 0x69ca130) = factor;",
         "    }",
         "    return NULL;",
         "}",
@@ -1997,7 +1999,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    if (!engine_identity_matches(base)) { runtime_note(\"[IDENTITY] UUID status=MISMATCH_OR_UNPINNED engineWrites=BLOCKED\"); base = 0; }",
         "    else runtime_note(\"[IDENTITY] UUID status=MATCH expected=%s engineWrites=ALLOWED functionCalls=STILL_GATED\", kExpectedEngineUuidText);",
         "    g_engine_base = base;",
-        "    if (base != 0 && !g_launch_authorized) { *(volatile float*)(base + 0x69ca130) = 1.0f; }",
+        "    if (kStretchEnabled && base != 0 && !g_launch_authorized) { *(volatile float*)(base + 0x69ca130) = 1.0f; }",
         "",
         "    char log_path[512] = {0};",
         "    const char* home = getenv(\"HOME\");",
@@ -2168,10 +2170,10 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "            // 2c. Native Stretch Resolution Factor (Android Global v73 Parity)",
         "            if (base != 0) {",
         "                float factor = 1.0f;",
-        "                if (g_stretch_percent > 0 && g_stretch_percent != 100) {",
+        "                if (kStretchEnabled && g_stretch_percent > 0 && g_stretch_percent != 100) {",
         "                    factor = 100.0f / (float)g_stretch_percent;",
         "                }",
-        "                *(volatile float*)(base + 0x69ca130) = factor;",
+        "                if (kStretchEnabled) *(volatile float*)(base + 0x69ca130) = factor;",
         "                if (log_file) {",
         "                    fprintf(log_file, \"[STRETCH_PROJECTION] Stored horizontalFactor=%.4f (stretchPercent=%d%%) to slot 0x%lx\\n\",",
         "                            factor, g_stretch_percent, (unsigned long)(base + 0x69ca130));",
@@ -3004,7 +3006,7 @@ SUMMARY:
     runtime_log.write_text(report_text, encoding="utf-8")
 
 
-def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir: Path, embed_flags: bool = False, build_type: str = "release", workflow_profile_path: Path | None = None, shader_enabled: bool = True):
+def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir: Path, embed_flags: bool = False, build_type: str = "release", workflow_profile_path: Path | None = None, shader_enabled: bool = True, stretch_enabled: bool = True):
     out_dir.mkdir(parents=True, exist_ok=True)
     
     # IPA builds must use a verified local dump, never a remote version's map.
@@ -3122,7 +3124,7 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
         with tempfile.TemporaryDirectory() as td:
             tpath = Path(td)
             dylib_path = tpath / "libmasterstrap.dylib"
-            c_src = generate_native_hook_source(verified_entries, miss_offsets, len(flags), offsets_entries, all_flags_table=table, expected_uuid=expected_uuid, workflow_profile=workflow_profile, shader_enabled=shader_enabled)
+            c_src = generate_native_hook_source(verified_entries, miss_offsets, len(flags), offsets_entries, all_flags_table=table, expected_uuid=expected_uuid, workflow_profile=workflow_profile, shader_enabled=shader_enabled, stretch_enabled=stretch_enabled)
             compile_dylib(c_src, dylib_path, build_type=build_type)
             dylib_bytes = dylib_path.read_bytes()
 
@@ -3266,7 +3268,7 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                             )
                             stretch_hook_bytes = bytes.fromhex("5c3ad217")  # b #0x3f80
 
-                            if len(data) > stretch_hook_offset + 4 and data[stretch_hook_offset:stretch_hook_offset+4] in (b'\xfd\x7b\x4a\xa9', stretch_hook_bytes):
+                            if stretch_enabled and len(data) > stretch_hook_offset + 4 and data[stretch_hook_offset:stretch_hook_offset+4] in (b'\xfd\x7b\x4a\xa9', stretch_hook_bytes):
                                 if (data[stretch_cave_offset:stretch_cave_offset + len(stretch_cave_bytes)] == b'\x00' * len(stretch_cave_bytes)
                                         or data[stretch_cave_offset:stretch_cave_offset + 8] == b'\x28\x4e\x03\xf0\x01\x31\x41\xbd'):
                                     data[stretch_cave_offset:stretch_cave_offset + len(stretch_cave_bytes)] = stretch_cave_bytes
@@ -3446,6 +3448,7 @@ def main() -> int:
     ap.add_argument("--build-type", choices=("debug", "release"), default="release")
     ap.add_argument("--workflow-profile", default="", help="Exact IPA workflow/profile.json generated by prepare_ios_workflow_profile.py")
     ap.add_argument("--disable-shader", action="store_true", help="Disable shader, skybox and wet-floor payload for crash isolation")
+    ap.add_argument("--disable-stretch", action="store_true", help="Disable fixed-RVA stretch writes and camera patch for crash isolation")
     ap.add_argument(
         "--embed-flags",
         action="store_true",
@@ -3463,6 +3466,7 @@ def main() -> int:
         build_type=args.build_type,
         workflow_profile_path=Path(args.workflow_profile) if args.workflow_profile else None,
         shader_enabled=not args.disable_shader,
+        stretch_enabled=not args.disable_stretch,
     )
     return 0
 
