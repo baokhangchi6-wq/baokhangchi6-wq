@@ -1,5 +1,5 @@
 name: Build Global IPA
-# Manual rerun marker: keep sub/main debug workflow dispatchable after stale artifacts.
+# Debug crash isolation: preserve Roblox sky and animation assets.
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Immediate threshold = 0: build as soon as ANY new App Store version appears.
@@ -52,7 +52,7 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 90
     env:
-      MASTERSTRAP_BUILD_TYPE: ${{ inputs.build_type || 'debug' }}
+      MASTERSTRAP_BUILD_TYPE: debug
 
     steps:
       - name: Checkout iOS lane
@@ -77,19 +77,9 @@ jobs:
           python -m compileall -q tools roblox
           PYTHONPATH=roblox python -m unittest discover -s roblox/tests -p test_ios_display_policy.py -v
           python tools/check_ios_luau_audit.py
-          python tools/verify_ios_android_shader_parity.py
-          PYTHONPATH=roblox python - <<'PY'
-          from tools.build_integrated_roblox_ipa import LUAU_SHADER_PAYLOAD
-          required = (
-              "7018216393", "159454299", "600830446", "12064107",
-              "271042516", "570557514", "rbxassetid://",
-          )
-          assert "androidSkies" in LUAU_SHADER_PAYLOAD
-          assert "rbxasset://textures/sky/" not in LUAU_SHADER_PAYLOAD
-          for value in required:
-              assert value in LUAU_SHADER_PAYLOAD, value
-          print("PASS: Android sky manifest contract")
-          PY
+          python tools/verify_ios_android_shader_parity.py --expect-disabled
+          python tools/check_ios_crash_isolation.py
+          PYTHONPATH=roblox python -c 'from tools.build_integrated_roblox_ipa import LUAU_SHADER_PAYLOAD; assert "androidProfiles" in LUAU_SHADER_PAYLOAD; print("PASS: builder payload imports")'
           clang -std=c11 -Wall -Wextra -Werror -I tools \
             roblox/tests/ios_frame_policy_test.c -o "$RUNNER_TEMP/ios-fps-policy-check"
           "$RUNNER_TEMP/ios-fps-policy-check"
@@ -197,6 +187,7 @@ jobs:
             $HPP_ARG \
             --out-dir output \
             --workflow-profile output/workflow/profile.json \
+            --disable-shader \
             --build-type "$MASTERSTRAP_BUILD_TYPE"
 
           # Collect IPA info emitted by builder to GITHUB_OUTPUT
@@ -216,13 +207,13 @@ jobs:
           fi
 
       # ── STEP 5: Print Diagnostic Log ─────────────────────────────────────
-      - name: Verify packaged Android shader parity
+      - name: Verify shader-disabled crash-isolation IPA
         if: steps.build_ipa.outputs.has_ipa == 'true'
         shell: bash
         run: |
           set -euo pipefail
           IPA_FILE=$(ls output/Masterstrap-*.ipa | head -n 1)
-          python tools/verify_ios_android_shader_parity.py --ipa "$IPA_FILE"
+          python tools/verify_ios_android_shader_parity.py --ipa "$IPA_FILE" --expect-disabled --input-ipa "${{ steps.prepare_ipa.outputs.ipa_path }}"
 
       - name: Inspect Feature Diagnostic Log
         if: steps.version_gate.outputs.should_build == 'true'
@@ -249,7 +240,7 @@ jobs:
         if: steps.build_ipa.outputs.has_ipa == 'true' && env.MASTERSTRAP_BUILD_TYPE == 'debug'
         uses: actions/upload-artifact@v4
         with:
-          name: ios-fps-debug-run-${{ github.run_number }}
+          name: ios-crash-isolation-debug-${{ github.sha }}-run-${{ github.run_number }}
           path: |
             output/Masterstrap-*.ipa
             output/workflow/profile.json

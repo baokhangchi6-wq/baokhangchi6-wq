@@ -283,7 +283,7 @@ def fetch_or_load_offsets_map(local_hpp: Path) -> dict:
     return table
 
 
-def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_count: int, offset_entries: list = None, all_flags_table: dict = None, expected_uuid: str = None, workflow_profile: dict | None = None) -> str:
+def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_count: int, offset_entries: list = None, all_flags_table: dict = None, expected_uuid: str = None, workflow_profile: dict | None = None, shader_enabled: bool = True) -> str:
     import uuid
     uuid_bytes = uuid.UUID(expected_uuid).bytes if expected_uuid else bytes(16)
     if offset_entries is None:
@@ -459,6 +459,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static const char* kFpsRuntimeBackend = \"cadisplaylink-metal-drawable-decouple-v6\";",
         "static const char* kFontRuntimeBackend = \"native-asset-vfs-v1\";",
         f"static const bool kShaderAbiProfileReady = {'true' if shader_abi_ready else 'false'};",
+        f"static const bool kShaderEnabled = {'true' if shader_enabled else 'false'};",
         "static const char* kShaderRuntimeBackend = \"ios-workflow-profile-v1\";",
         "static const char* kStretchRuntimeBackend = \"view-projection-v73\";",
         "",
@@ -712,7 +713,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "}",
         "",
         "static void apply_shader_lighting_flags(uintptr_t base) {",
-        "    if (!base || (strcmp(g_shader_package, \"none\") == 0 && !g_shader_wet_floor)) return;",
+        "    if (!kShaderEnabled || !base || (strcmp(g_shader_package, \"none\") == 0 && !g_shader_wet_floor)) return;",
         "    if (!kShaderAbiProfileReady) { static int warned = 0; if (!warned) { runtime_note(\"[SHADER][PROFILE_ONLY] exact iOS Lua workflow signature audit pending; applying native flag fallback only\"); warned = 1; } }",
         "    int sky_selector = shader_sky_selector();",
         "    int profile_selector = sky_selector + (g_shader_wet_floor ? 1000 : 0);",
@@ -761,7 +762,9 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "}",
         "",
         "static bool shader_conflicting_flag(const char* name) {",
-        "    if (!name || !(g_shader_wet_floor || strcmp(g_shader_package, \"none\") != 0)) return false;",
+        "    if (!name) return false;",
+        "    if (!kShaderEnabled && strcmp(name, \"FIntRenderShadowHugeRadius\") == 0) return true;",
+        "    if (!(g_shader_wet_floor || strcmp(g_shader_package, \"none\") != 0)) return false;",
         "    const char* blocked[] = {\"FFlagDisablePostFx\", \"DFIntRenderPostFxBasePixelCount\", \"DFIntDebugFRMQualityLevelOverride\", NULL};",
         "    for (int i = 0; blocked[i]; ++i) if (strcmp(name, blocked[i]) == 0) return true;",
         "    return false;",
@@ -1136,6 +1139,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        g_shader_wet_floor = profile_read_bool(turbo, \"display_shader_wet_floor\", \"wetFloor\", false);",
         "        profile_read_string(turbo, \"display_font_family\", \"font\", g_font_family, sizeof(g_font_family));",
         "        g_font_size_step = profile_read_signed_int(turbo, \"display_font_size_step\", 0);",
+        "        if (!kShaderEnabled) { snprintf(g_shader_package, sizeof(g_shader_package), \"none\"); g_shader_wet_floor = false; }",
         "        if (log_file) fprintf(log_file, \"[PROFILE][TURBO] status=LOADED bytes=%ld enabled=%d targetFps=%d refresh=%d keepDisplay=%d stretch=%d renderer=%s shader=%s wetFloor=%d font=%s step=%d\\n\", turbo_size, g_game_mode_enabled, g_target_fps, g_refresh_requested, g_keep_display_active, g_stretch_percent, g_renderer_mode, g_shader_package, g_shader_wet_floor, g_font_family, g_font_size_step);",
         "        runtime_note(\"[PROFILE][TURBO] status=LOADED bytes=%ld enabled=%d targetFps=%d refresh=%d keepDisplay=%d stretch=%d renderer=%s shader=%s wetFloor=%d font=%s step=%d\", turbo_size, g_game_mode_enabled, g_target_fps, g_refresh_requested, g_keep_display_active, g_stretch_percent, g_renderer_mode, g_shader_package, g_shader_wet_floor, g_font_family, g_font_size_step);",
         "        free(turbo);",
@@ -1159,13 +1163,13 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "",
         "    long shader_size = 0;",
         "    char* shader = read_profile_file(\"MasterstrapShaderProfile.json\", &shader_size);",
-        "    if (shader) {",
+        "    if (shader && kShaderEnabled) {",
         "        profile_read_string(shader, \"package\", \"display_shader_package\", g_shader_package, sizeof(g_shader_package));",
         "        g_shader_wet_floor = profile_read_bool(shader, \"wetFloor\", \"display_shader_wet_floor\", false);",
         "        if (log_file) fprintf(log_file, \"[PROFILE][SHADER] status=LOADED bytes=%ld package=%s wetFloor=%d enabled=%d\\n\", shader_size, g_shader_package, g_shader_wet_floor, profile_read_bool(shader, \"enabled\", NULL, false));",
         "        runtime_note(\"[PROFILE][SHADER] status=LOADED bytes=%ld package=%s wetFloor=%d enabled=%d\", shader_size, g_shader_package, g_shader_wet_floor, profile_read_bool(shader, \"enabled\", NULL, false));",
         "        free(shader);",
-        "    } else { if (log_file) fprintf(log_file, \"[PROFILE][SHADER] status=MISSING\\n\"); runtime_note(\"[PROFILE][SHADER] status=MISSING\"); }",
+        "    } else { free(shader); snprintf(g_shader_package, sizeof(g_shader_package), \"none\"); g_shader_wet_floor = false; if (log_file) fprintf(log_file, \"[PROFILE][SHADER] status=%s\\n\", kShaderEnabled ? \"MISSING\" : \"DISABLED\"); runtime_note(\"[PROFILE][SHADER] status=%s\", kShaderEnabled ? \"MISSING\" : \"DISABLED\"); }",
         "",
         "    long font_size = 0;",
         "    char* font = read_profile_file(\"MasterstrapFontProfile.json\", &font_size);",
@@ -1354,7 +1358,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "            kFpsRuntimeBackend, g_target_fps,",
         "            ios_maximum_frames_per_second(), g_display_link_policy_installed ? \"true\" : \"false\",",
         "            g_renderer_mode, g_game_mode_enabled ? \"true\" : \"false\",",
-        "            g_game_mode_enabled ? \"active_turbo_metal\" : \"inactive\",",
+        "            g_game_mode_enabled ? \"active_display_policy\" : \"inactive\",",
         "            g_font_family, g_font_size_step, g_profile_loaded ? \"active_asset_vfs\" : \"inactive\",",
         "            g_shader_package, g_shader_wet_floor ? \"true\" : \"false\", (g_profile_loaded && g_abi_probe_call_gate_open && (g_shader_wet_floor || strcmp(g_shader_package, \"none\") != 0)) ? \"active_luau_workflow\" : (g_profile_loaded && (g_shader_wet_floor || strcmp(g_shader_package, \"none\") != 0)) ? \"profile_only_abi_blocked\" : \"inactive\",",
         "            g_stretch_percent, (g_profile_loaded && g_stretch_percent != 100) ? \"active_view_projection\" : \"inactive_100pct\");",
@@ -1567,6 +1571,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "}",
         "static bool bridge_write_document(const char* file_name, const char* content) {",
         "    if (!file_name || !content || strlen(content) == 0) return false;",
+        "    if (!kShaderEnabled && strcmp(file_name, \"MasterstrapShaderProfile.json\") == 0) content = \"{\\\"schema\\\":1,\\\"enabled\\\":false,\\\"package\\\":\\\"none\\\",\\\"wetFloor\\\":false}\";",
         "    const char* home = getenv(\"HOME\");",
         "    if (!home) return false;",
         "    char path[768];",
@@ -1575,6 +1580,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    if (!file) return false;",
         "    if (strcmp(file_name, \"ClientAppSettings.json\") == 0) {",
         "        bool shader_changed = false; char* copy = g_bridge_shader_active ? sanitize_shader_client_json(content, &shader_changed) : strdup(content);",
+        "        if (copy && !kShaderEnabled && bridge_replace_json_scalar(copy, strlen(copy) + 1, \"FIntRenderShadowHugeRadius\", \"0\")) shader_changed = true;",
         "        if (copy) {",
         "            char* hit = strstr(copy, \"\\\"FFlagPerformanceControlDisplayRefreshRate\\\": \\\"true\\\"\");",
         "            if (hit) memcpy(hit + 44, \"\\\"false\\\"\", 7);",
@@ -1763,7 +1769,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        body, sel_registerName(\"objectForKeyedSubscript:\"), bridge_nsstr(\"fontProfile\"));",
         "",
         "    const char* shader_json = bridge_utf8(shader_value);",
-        "    g_bridge_shader_active = shader_json && (strstr(shader_json, \"\\\"enabled\\\": true\") || strstr(shader_json, \"\\\"wetFloor\\\": true\"));",
+        "    g_bridge_shader_active = kShaderEnabled && shader_json && (strstr(shader_json, \"\\\"enabled\\\": true\") || strstr(shader_json, \"\\\"wetFloor\\\": true\"));",
         "    if (shader_json) g_bridge_shader_selector = bridge_shader_selector_from_json(shader_json);",
         "    purge_local_launch_configuration(\"bridge_replace_previous\", false);",
         "    g_cached_dynamic_count = 0;",
@@ -2953,10 +2959,9 @@ def _render_android_shader_profiles() -> str:
 def _inject_android_shader_profiles(payload: str) -> str:
     marker = "        local androidSkies = {}\n        if shaderEnabled then\n            local skyIds = androidSkies[selector]"
     replacement = (
-        "        }\n"
-        + _render_android_shader_profiles()
+        _render_android_shader_profiles()
         + "\n        local profile = androidProfiles[selector] or {}\n"
-        + "        if shaderEnabled then\n            local skyIds = profile.sky or androidSkies[selector]"
+        + "        if shaderEnabled then\n            local skyIds = profile.sky"
     )
     if marker not in payload:
         raise ValueError("Shader payload marker not found")
@@ -2999,7 +3004,7 @@ SUMMARY:
     runtime_log.write_text(report_text, encoding="utf-8")
 
 
-def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir: Path, embed_flags: bool = False, build_type: str = "release", workflow_profile_path: Path | None = None):
+def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir: Path, embed_flags: bool = False, build_type: str = "release", workflow_profile_path: Path | None = None, shader_enabled: bool = True):
     out_dir.mkdir(parents=True, exist_ok=True)
     
     # IPA builds must use a verified local dump, never a remote version's map.
@@ -3062,6 +3067,8 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
     if settings_json and settings_json.is_file():
         custom = json.loads(settings_json.read_text(encoding="utf-8"))
         flags.update(custom)
+    if not shader_enabled:
+        flags.pop("FIntRenderShadowHugeRadius", None)
 
     verified_entries, miss_offsets = resolve_flags_with_miss_report(flags, table)
     print(f"Flags Requested: {len(flags)} | Verified Active RVAs: {len(verified_entries)} | Miss Offsets: {len(miss_offsets)}")
@@ -3115,7 +3122,7 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
         with tempfile.TemporaryDirectory() as td:
             tpath = Path(td)
             dylib_path = tpath / "libmasterstrap.dylib"
-            c_src = generate_native_hook_source(verified_entries, miss_offsets, len(flags), offsets_entries, all_flags_table=table, expected_uuid=expected_uuid, workflow_profile=workflow_profile)
+            c_src = generate_native_hook_source(verified_entries, miss_offsets, len(flags), offsets_entries, all_flags_table=table, expected_uuid=expected_uuid, workflow_profile=workflow_profile, shader_enabled=shader_enabled)
             compile_dylib(c_src, dylib_path, build_type=build_type)
             dylib_bytes = dylib_path.read_bytes()
 
@@ -3157,7 +3164,8 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                     }
                     sky_dir = ROOT / "resources" / "sky"
                     sky_names = tuple(f"sky512_{face}.tex" for face in ("bk", "dn", "ft", "lf", "rt", "up"))
-                    sky_assets = {name: (sky_dir / name).read_bytes() for name in sky_names}
+                    sky_assets = ({name: (sky_dir / name).read_bytes() for name in sky_names}
+                                  if shader_enabled else {})
                     for sky_name, sky_payload in sky_assets.items():
                         if not sky_payload.startswith(b"\xABKTX 11\xBB\r\n\x1A\n"):
                             raise RuntimeError(f"Skybox asset is not KTX1: {sky_name}")
@@ -3179,7 +3187,7 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         data = zin.read(name)
 
                         sky_name = Path(name).name
-                        if ("RobloxLib.framework/ios/textures/sky/" in name
+                        if (shader_enabled and "RobloxLib.framework/ios/textures/sky/" in name
                                 and sky_name in sky_assets):
                             data = sky_assets[sky_name]
                             replaced_sky_assets.add(sky_name)
@@ -3283,7 +3291,7 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                                 )
                             except Exception as e:
                                 print(f"Warning: Failed to update Info.plist: {e}")
-                        elif any(name.endswith(target) for target in (
+                        elif shader_enabled and any(name.endswith(target) for target in (
                             "AbilityManagerActorClientInitializeIsLocalScript.rbxm",
                             "humanoidAnimateR6WithFace.rbxm",
                             "humanoidAnimateR15CharacterController.rbxm",
@@ -3319,12 +3327,12 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         seen_entries.add(name)
 
                     missing_sky_assets = set(sky_names) - replaced_sky_assets
-                    if missing_sky_assets:
+                    if shader_enabled and missing_sky_assets:
                         raise RuntimeError(f"Roblox IPA is missing stock skybox targets: {sorted(missing_sky_assets)}")
-                    if injected_shader_assets == 0:
+                    if shader_enabled and injected_shader_assets == 0:
                         raise RuntimeError("Roblox IPA contains no injectable RBXM assets; shader/wet-floor payload was not embedded")
-                    print(f"[LUAU_INJECT] Verified {injected_shader_assets} RBXM shader/wet-floor payload injection(s)")
-                    print(f"[ASSET_SKY] Replaced all {len(replaced_sky_assets)} stock cubemap faces with validated KTX assets")
+                    print(f"[LUAU_INJECT] {'Verified ' + str(injected_shader_assets) + ' payload(s)' if shader_enabled else 'DISABLED for crash isolation'}")
+                    print(f"[ASSET_SKY] {'Replaced all ' + str(len(replaced_sky_assets)) + ' stock cubemap faces' if shader_enabled else 'DISABLED; stock sky assets preserved'}")
 
                     # Embed dylib
                     dylib_entry = "Payload/Roblox.app/Frameworks/libmasterstrap.dylib"
@@ -3356,17 +3364,17 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         "keepDisplayActive": True,
                         "stretchScreenPercent": 100,
                         "rendererMode": "Automatic",
-                        "display_shader_package": "rtx_ultra",
-                        "display_shader_wet_floor": True
+                        "display_shader_package": "rtx_ultra" if shader_enabled else "none",
+                        "display_shader_wet_floor": bool(shader_enabled)
                     }
                     turbo_bytes = json.dumps(turbo_default, indent=4).encode("utf-8")
                     shader_default = {
                         "schema": 1,
-                        "enabled": True,
-                        "package": "rtx_ultra",
+                        "enabled": bool(shader_enabled),
+                        "package": "rtx_ultra" if shader_enabled else "none",
                         "applyMode": "once_after_datamodel",
                         "maxPostEffects": 5,
-                        "wetFloor": True,
+                        "wetFloor": bool(shader_enabled),
                         "wetFloorStrategy": "bounded_nearby_once",
                         "wetFloorMaxParts": 1024,
                         "wetFloorRadiusStuds": 384,
@@ -3406,7 +3414,8 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         else:
                             zout.writestr(jp, json_bytes)
 
-            verify_packaged_visual_assets(input_ipa, out_ipa, sky_assets)
+            if shader_enabled:
+                verify_packaged_visual_assets(input_ipa, out_ipa, sky_assets)
             print(f"\nSUCCESS -> {out_ipa} ({out_ipa.stat().st_size / (1024*1024):.1f} MB)")
 
             # Emit version to GitHub Actions output if in CI environment
@@ -3436,6 +3445,7 @@ def main() -> int:
     ap.add_argument("--out-dir", default=str(DEFAULT_OUT_DIR))
     ap.add_argument("--build-type", choices=("debug", "release"), default="release")
     ap.add_argument("--workflow-profile", default="", help="Exact IPA workflow/profile.json generated by prepare_ios_workflow_profile.py")
+    ap.add_argument("--disable-shader", action="store_true", help="Disable shader, skybox and wet-floor payload for crash isolation")
     ap.add_argument(
         "--embed-flags",
         action="store_true",
@@ -3452,6 +3462,7 @@ def main() -> int:
         embed_flags=args.embed_flags,
         build_type=args.build_type,
         workflow_profile_path=Path(args.workflow_profile) if args.workflow_profile else None,
+        shader_enabled=not args.disable_shader,
     )
     return 0
 

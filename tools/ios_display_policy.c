@@ -36,9 +36,6 @@ typedef struct { long fps; MSFrameRateRange range; int has_range, managed; } MSL
 static void write_runtime_capability_receipt(void);
 static bool fps_runtime_requested(void);
 
-typedef unsigned char (*ProcessInfoLowPowerImp)(id, SEL);
-static ProcessInfoLowPowerImp g_original_is_low_power;
-
 static id ms_string(const char* text) {
     return ((id (*)(id, SEL, const char*))objc_msgSend)(objc_getClass("NSString"),
         sel_registerName("stringWithUTF8String:"), text);
@@ -52,21 +49,10 @@ static int ios_maximum_frames_per_second(void) {
     return rate >= 30 && rate <= 240 ? (int)rate : 60;
 }
 static int ms_low_power(void) {
-    if (fps_runtime_requested()) return 0;
     return ((unsigned char (*)(id, SEL))objc_msgSend)(ms_process_info(), sel_registerName("isLowPowerModeEnabled"));
 }
 static int ms_system_low_power(void) {
-    id process = ms_process_info();
-    if (g_original_is_low_power) {
-        return ((unsigned char (*)(id, SEL))g_original_is_low_power)(process,
-            sel_registerName("isLowPowerModeEnabled"));
-    }
-    return ((unsigned char (*)(id, SEL))objc_msgSend)(process,
-        sel_registerName("isLowPowerModeEnabled"));
-}
-static unsigned char process_info_is_low_power_hook(id self, SEL cmd) {
-    if (fps_runtime_requested()) return 0;
-    return g_original_is_low_power ? g_original_is_low_power(self, cmd) : 0;
+    return ms_low_power();
 }
 static int ms_thermal(void) {
     return (int)((long (*)(id, SEL))objc_msgSend)(ms_process_info(), sel_registerName("thermalState"));
@@ -98,7 +84,7 @@ static MSFrameRateRange ms_target_range(long target) {
     }
     float pref = (float)target;
     float min_fps = pref < 60.0f ? pref : 60.0f;
-    float max_fps = pref > (float)screen_max ? pref : (float)screen_max;
+    float max_fps = pref;
     return sanitize_frame_rate_range((MSFrameRateRange){min_fps, max_fps, pref});
 }
 static bool ms_get_link_request(id link, MSLinkRequest* request) {
@@ -276,15 +262,6 @@ static void ms_install_on_main(void* ignored) { (void)ignored; install_display_l
 static bool install_display_link_policy(void) {
     if (!pthread_main_np()) { dispatch_async_f(&_dispatch_main_q, NULL, ms_install_on_main); return false; }
     if (g_display_link_policy_installed) return true;
-
-    Class pi_cls = (Class)objc_getClass("NSProcessInfo");
-    if (pi_cls) {
-        Method lp_m = class_getInstanceMethod(pi_cls, sel_registerName("isLowPowerModeEnabled"));
-        if (lp_m && !g_original_is_low_power) {
-            g_original_is_low_power = (ProcessInfoLowPowerImp)method_setImplementation(
-                lp_m, (IMP)process_info_is_low_power_hook);
-        }
-    }
 
     Class cls = (Class)objc_getClass("CADisplayLink");
     if (!cls) { runtime_note("[CAPABILITY][FPS] status=BLOCKED reason=class_missing"); return false; }
@@ -786,7 +763,7 @@ static void ms_apply_process_main(void* context) {
     runtime_note("[CAPABILITY][SAFE] thermalGuard=SYSTEM_RESPECTED lowPower=%d thermal=%d ramCleanup=UNSUPPORTED networkAcceleration=UNSUPPORTED", ms_low_power(), ms_thermal());
     runtime_note("[CAPABILITY][TURBO] requested=%d cpuOverclock=UNSUPPORTED gpuOverclock=UNSUPPORTED androidPowerHints=UNSUPPORTED", g_ms_policy.boost);
     if (g_ms_policy.boost) {
-        runtime_note("[APPLY][TURBO] sustainedPerformance=ACTIVE thermalGuard=ACTIVE keepDisplay=%d", g_ms_policy.keep_display);
+        runtime_note("[APPLY][TURBO] displayPolicy=ACTIVE thermalGuard=ACTIVE lowPower=SYSTEM_RESPECTED keepDisplay=%d", g_ms_policy.keep_display);
     }
     if (g_shader_wet_floor || strcmp(g_shader_package, "none") != 0) {
         runtime_note("[APPLY][SHADER] package=%s wetFloor=%d status=PROFILE_LOADED runtimeVerified=0", g_shader_package, g_shader_wet_floor);
