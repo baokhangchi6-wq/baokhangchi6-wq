@@ -5,11 +5,13 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import struct
 import zipfile
 
 from build_integrated_roblox_ipa import (
     ANDROID_SHADER_SELECTOR_BY_PACKAGE,
     LUAU_SHADER_PAYLOAD,
+    lz4_decompress_block,
 )
 
 
@@ -48,6 +50,35 @@ def check_payload() -> dict[str, int]:
     return {"packages": len(packages), "payload_bytes": len(LUAU_SHADER_PAYLOAD.encode("utf-8"))}
 
 
+def _rbxm_has_marker(data: bytes, marker: bytes) -> bool:
+    """Read RBXM PROP chunks; Source payload is LZ4-compressed in shipped files."""
+    pos = 32
+    while pos + 16 <= len(data):
+        name = data[pos:pos + 4]
+        compressed_len, uncompressed_len, _reserved = struct.unpack(
+            "<III", data[pos + 4:pos + 16]
+        )
+        payload_len = compressed_len or uncompressed_len
+        end = pos + 16 + payload_len
+        if end > len(data):
+            return False
+        if name == b"PROP":
+            payload = data[pos + 16:end]
+            try:
+                raw = (
+                    lz4_decompress_block(payload, uncompressed_len)
+                    if compressed_len else payload
+                )
+            except ValueError:
+                raw = b""
+            if marker in raw:
+                return True
+        pos = end
+        if name == b"END\x00":
+            break
+    return False
+
+
 def check_ipa(path: Path) -> dict[str, int]:
     with zipfile.ZipFile(path) as archive:
         names = set(archive.namelist())
@@ -60,10 +91,11 @@ def check_ipa(path: Path) -> dict[str, int]:
         if any(not archive.read(name).startswith(b"\xABKTX 11\xBB\r\n\x1A\n") for name in sky_members):
             raise AssertionError("IPA sky asset is not KTX1")
         rbxm_sources = 0
+        marker = b"MASTERSTRAP_SKYBOX_APPLIED_LOCAL"
         for name in names:
             if not name.endswith(".rbxm"):
                 continue
-            if b"MASTERSTRAP_SKYBOX_APPLIED_LOCAL" in archive.read(name):
+            if _rbxm_has_marker(archive.read(name), marker):
                 rbxm_sources += 1
         if rbxm_sources == 0:
             raise AssertionError("IPA contains no injected shader readback payload")
