@@ -9,7 +9,7 @@ name: Build Global IPA
 
 on:
   push:
-    branches: [ master, main ]
+    branches: [ main ]
     paths:
       - 'tools/**'
       - 'resources/**'
@@ -74,8 +74,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python -m compileall -q tools roblox
           PYTHONPATH=roblox python -m unittest discover -s roblox/tests -p test_ios_display_policy.py -v
           python tools/check_ios_luau_audit.py
+          python tools/verify_ios_android_shader_parity.py
           PYTHONPATH=roblox python - <<'PY'
           from tools.build_integrated_roblox_ipa import LUAU_SHADER_PAYLOAD
           required = (
@@ -214,6 +216,14 @@ jobs:
           fi
 
       # ── STEP 5: Print Diagnostic Log ─────────────────────────────────────
+      - name: Verify packaged Android shader parity
+        if: steps.build_ipa.outputs.has_ipa == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          IPA_FILE=$(ls output/Masterstrap-*.ipa | head -n 1)
+          python tools/verify_ios_android_shader_parity.py --ipa "$IPA_FILE"
+
       - name: Inspect Feature Diagnostic Log
         if: steps.version_gate.outputs.should_build == 'true'
         shell: bash
@@ -279,7 +289,7 @@ jobs:
             - Engine FPS target independent of display Hz; CADisplayLink uses actual display limits
             - ✅ Direct-RVA FastFlag write engine
             - ✅ Dynamic JSON config (ClientAppSettings.json + TurboProfile)
-            - ✅ Full diagnostic log: `masterstrap_ios.log` (10/10 feature matrix)
+            - ✅ Full diagnostic log: `masterstrap_ios.log` (runtime gates report verified vs profile-only features)
 
             > **Note:** Open Masterstrap app first to get the launch authorization token, then open Roblox.
           files: |
@@ -305,8 +315,8 @@ jobs:
             --force
 
 
-          git config user.name 'Masterstrap-Bot'
-          git config user.email 'bot@masterstrap.org'
+          git config user.name 'Masterstrap'
+          git config user.email 'contact@masterstrap.org'
           git add last_built_roblox_ios_version.json
           if ! git diff --cached --quiet; then
             git commit -m "chore: update iOS ARM64 checkpoint $BUILT_VERSION"

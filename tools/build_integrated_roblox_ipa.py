@@ -2270,14 +2270,14 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "                else if (strcmp(sn,\"telemetrybuffer\")==0||strcmp(sn,\"telemetrysize\")==0) stl_tel=1;",
         "            }",
         "            int stl_total = stl_abort+stl_rbc+stl_vh+stl_st+stl_vc+stl_vc2+stl_tel;",
-        "            fprintf(log_file, \"[FEATURE_10_STEALTH] status=%s offsetsLoaded=%d/7 \"",
+        "            fprintf(log_file, \"[FEATURE_10_STEALTH] status=%s offsetsMapped=%d/7 runtimeHooks=0 \"",
         "                    \"abortLogger=%d reportBytecode=%d validateHeader=%d \"",
         "                    \"scriptTimeout=%d validateCaller=%d validateAndSetupCaps=%d telemetry=%d \"",
         "                    \"gate=EngineBase(%d) blockedReason=%s\\n\",",
-        "                    base != 0 && stl_total==7 ? \"ACTIVE_ALL\" : base != 0 && stl_total>0 ? \"ACTIVE_PARTIAL\" : \"BLOCKED\",",
+        "                    base != 0 && stl_total==7 ? \"STATIC_MAP_ONLY\" : base != 0 && stl_total>0 ? \"STATIC_MAP_PARTIAL\" : \"BLOCKED\",",
         "                    stl_total, stl_abort, stl_rbc, stl_vh, stl_st, stl_vc, stl_vc2, stl_tel,",
         "                    (base != 0),",
-        "                    base == 0 ? \"ENGINE_BASE_NOT_FOUND\" : stl_total < 7 ? \"SOME_OFFSETS_NOT_DUMPED\" : \"none\");",
+        "                    base == 0 ? \"ENGINE_BASE_NOT_FOUND\" : \"runtime-hooks-not-installed\");",
         "        }",
         "        fprintf(log_file, \"=== [END FEATURE DIAGNOSTIC MATRIX] ===\\n\\n\");",
         "    }",
@@ -2691,21 +2691,7 @@ if _G.__MASTERSTRAP_SHADER_V2 ~= "applied" and _G.__MASTERSTRAP_SHADER_V2 ~= "ru
 
         -- Android parity: use stable Roblox asset IDs, not Windows PurpleVoid
         -- or one shared local cubemap for every package.
-        local androidSkies = {
-            [2001] = {"7018216393", "7018216233", "7018216091", "7018215904", "7018215758", "7018215582"},
-            [2002] = {"159454299", "159454296", "159454293", "159454286", "159454300", "159454288"},
-            [2003] = {"600830446", "600831635", "600832720", "600886090", "600833862", "600835177"},
-            [2004] = {"12064107", "12064152", "12064121", "12064114", "12064131", "12064147"},
-            [2005] = {"570557514", "570557775", "570557559", "570557620", "570557672", "570557727"},
-            [2006] = {"7018216393", "7018216233", "7018216091", "7018215904", "7018215758", "7018215582"},
-            [2007] = {"12064107", "12064152", "12064121", "12064114", "12064131", "12064147"},
-            [2008] = {"12064107", "12064152", "12064121", "12064114", "12064131", "12064147"},
-            [2009] = {"271042516", "271077243", "271042556", "271042310", "271042467", "271077958"},
-            [2010] = {"600830446", "600831635", "600832720", "600886090", "600833862", "600835177"},
-            [2011] = {"7018216393", "7018216233", "7018216091", "7018215904", "7018215758", "7018215582"},
-            [2012] = {"271042516", "271077243", "271042556", "271042310", "271042467", "271077958"},
-            [2013] = {"570557514", "570557775", "570557559", "570557620", "570557672", "570557727"},
-        }
+        local androidSkies = {}
         if shaderEnabled then
             local skyIds = androidSkies[selector]
             local fields = {"SkyboxBk", "SkyboxDn", "SkyboxFt", "SkyboxLf", "SkyboxRt", "SkyboxUp"}
@@ -2720,6 +2706,18 @@ if _G.__MASTERSTRAP_SHADER_V2 ~= "applied" and _G.__MASTERSTRAP_SHADER_V2 ~= "ru
                     sky[field] = value
                     if sky[field] ~= value then readback = false end
                 end
+                for property, assetId in pairs({
+                    SunTextureId = profile.sunTexture,
+                    MoonTextureId = profile.moonTexture,
+                }) do
+                    if assetId then
+                        local value = "rbxassetid://" .. assetId
+                        sky[property] = value
+                        if sky[property] ~= value then readback = false end
+                    end
+                end
+                if profile.sunAngularSize then sky.SunAngularSize = profile.sunAngularSize end
+                if profile.moonAngularSize then sky.MoonAngularSize = profile.moonAngularSize end
                 if not managedSkies[sky] then
                     managedSkies[sky] = true
                     for _, field in ipairs(fields) do
@@ -2755,6 +2753,7 @@ if _G.__MASTERSTRAP_SHADER_V2 ~= "applied" and _G.__MASTERSTRAP_SHADER_V2 ~= "ru
                 local item = lighting:FindFirstChild(name)
                 if not item then item = Instance.new(className) item.Name = name item.Parent = lighting end
                 for property, value in pairs(props) do pcall(function() item[property] = value end) end
+                if className ~= "Atmosphere" then item.Enabled = true end
             end
             local lightingReapplying = false
             local function applyLightingEffects()
@@ -2762,17 +2761,19 @@ if _G.__MASTERSTRAP_SHADER_V2 ~= "applied" and _G.__MASTERSTRAP_SHADER_V2 ~= "ru
                 lightingReapplying = true
                 pcall(function() lighting.Technology = Enum.Technology.Future end)
                 pcall(function()
-                    lighting.GlobalShadows = true
-                    lighting.ShadowSoftness = 0.2
-                    lighting.EnvironmentDiffuseScale = 1
-                    lighting.EnvironmentSpecularScale = 1
-                    lighting.Brightness = 2.2
-                    lighting.ExposureCompensation = 0.1
+                    for property, value in pairs(profile.lighting or {}) do lighting[property] = value end
                 end)
-                effect("BloomEffect", "Masterstrap_Bloom", {Intensity = 0.65, Size = 24, Threshold = 0.9, Enabled = true})
-                effect("ColorCorrectionEffect", "Masterstrap_ColorCorrection", {Brightness = 0.05, Contrast = 0.18, Saturation = 0.22, TintColor = Color3.fromRGB(255, 252, 248), Enabled = true})
-                effect("SunRaysEffect", "Masterstrap_SunRays", {Intensity = 0.15, Spread = 0.85, Enabled = true})
-                effect("Atmosphere", "Masterstrap_Atmosphere", {Density = 0.3, Offset = 0.25, Color = Color3.fromRGB(199, 218, 255), Decay = Color3.fromRGB(106, 112, 125), Glare = 0.35, Haze = 1.2})
+                effect("BloomEffect", "Masterstrap_Bloom", profile.bloom or {})
+                effect("ColorCorrectionEffect", "Masterstrap_ColorCorrection", profile.correction or {})
+                effect("SunRaysEffect", "Masterstrap_SunRays", profile.rays or {})
+                effect("Atmosphere", "Masterstrap_Atmosphere", profile.atmosphere or {})
+                if profile.water then pcall(function()
+                    workspace.Terrain.WaterColor = Color3.fromRGB(45, 155, 215)
+                    workspace.Terrain.WaterReflectance = 1.0
+                    workspace.Terrain.WaterTransparency = 0.15
+                    workspace.Terrain.WaterWaveSize = 0.12
+                    workspace.Terrain.WaterWaveSpeed = 12
+                end) end
                 lightingReapplying = false
             end
             applyLightingEffects()
@@ -2884,6 +2885,85 @@ if _G.__MASTERSTRAP_SHADER_V2 ~= "applied" and _G.__MASTERSTRAP_SHADER_V2 ~= "ru
     end)
 end
 """
+
+
+ANDROID_SHADER_SELECTOR_BY_PACKAGE = {
+    "daytime": 2001,
+    "rtx_ultra": 2002,
+    "sunset": 2003,
+    "night": 2004,
+    "cloudy": 2005,
+    "desert": 2006,
+    "arctic": 2007,
+    "blood_moon": 2008,
+    "cyberpunk": 2009,
+    "cherry_blossom": 2010,
+    "ghibli_anime": 2011,
+    "synthwave": 2012,
+    "noir": 2013,
+}
+
+
+def _lua_shader_value(value: object) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if value is None:
+        return "nil"
+    if isinstance(value, dict) and set(value) == {"rgb"}:
+        r, g, b = value["rgb"]
+        return f"Color3.fromRGB({int(r)}, {int(g)}, {int(b)})"
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=True)
+    return str(value)
+
+
+def _render_android_shader_profiles() -> str:
+    manifest_path = ROOT / "resources" / "shader" / "android_shader_manifest.json"
+    data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    packages = data.get("packages")
+    if not isinstance(packages, dict):
+        raise ValueError("Android shader manifest must contain packages")
+
+    lines = ["        local androidProfiles = {"]
+    for package, selector in ANDROID_SHADER_SELECTOR_BY_PACKAGE.items():
+        profile = packages.get(package)
+        if not isinstance(profile, dict):
+            raise ValueError(f"Missing Android shader package: {package}")
+        sky = profile.get("sky")
+        if not isinstance(sky, list) or len(sky) < 6:
+            raise ValueError(f"Shader package {package} has fewer than six sky faces")
+        lines.append(f"            [{selector}] = {{")
+        lines.append("                sky = {" + ", ".join(_lua_shader_value(item) for item in sky[:6]) + "},")
+        for key, index in (("sunTexture", 6), ("moonTexture", 7),
+                           ("sunAngularSize", 8), ("moonAngularSize", 9)):
+            if len(sky) > index and sky[index] is not None:
+                lines.append(f"                {key} = {_lua_shader_value(sky[index])},")
+        for section in ("lighting", "atmosphere", "correction", "bloom", "rays"):
+            values = profile.get(section, {})
+            lines.append(f"                {section} = {{")
+            for key, value in values.items():
+                lines.append(f"                    {key} = {_lua_shader_value(value)},")
+            lines.append("                },")
+        lines.append(f"                water = {_lua_shader_value(bool(profile.get('water', False)))},")
+        lines.append("            },")
+    lines.append("        }")
+    return "\n".join(lines)
+
+
+def _inject_android_shader_profiles(payload: str) -> str:
+    marker = "        local androidSkies = {}\n        if shaderEnabled then\n            local skyIds = androidSkies[selector]"
+    replacement = (
+        "        }\n"
+        + _render_android_shader_profiles()
+        + "\n        local profile = androidProfiles[selector] or {}\n"
+        + "        if shaderEnabled then\n            local skyIds = profile.sky or androidSkies[selector]"
+    )
+    if marker not in payload:
+        raise ValueError("Shader payload marker not found")
+    return payload.replace(marker, replacement, 1)
+
+
+LUAU_SHADER_PAYLOAD = _inject_android_shader_profiles(LUAU_SHADER_PAYLOAD)
 
 def write_full_inspection_report(out_dir: Path, flags: dict, verified_entries: list, miss_offsets: list, ipa_name: str, out_ipa_name: str, embed_flags: bool = False):
     out_dir.mkdir(parents=True, exist_ok=True)
