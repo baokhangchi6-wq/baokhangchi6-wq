@@ -50,12 +50,14 @@ def main() -> None:
                 raise AssertionError(f"isolation gate accepted changed resource: {tuple(change)}")
     source = generate_native_hook_source([], [], 0,
         [(name, 0x100) for name in DIAGNOSTIC_ONLY_OFFSETS], {},
-        shader_enabled=False, stretch_enabled=False)
+        shader_enabled=False, stretch_enabled=False, fps_enabled=False)
     assert "kShaderEnabled = false" in source
     assert "kStretchEnabled = false" in source
     assert "tiny_hook" not in source
     assert "kOffsetsCount = 0" in source
     assert "runtimeHooks=0" in source
+    assert "kFpsEnabled = false" in source
+    assert "persistence/watchdog disabled" in source
     print("PASS: pristine assets accepted; shader payload, sky mutation and active config rejected")
 
 

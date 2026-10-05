@@ -291,7 +291,7 @@ def fetch_or_load_offsets_map(local_hpp: Path) -> dict:
     return table
 
 
-def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_count: int, offset_entries: list = None, all_flags_table: dict = None, expected_uuid: str = None, workflow_profile: dict | None = None, shader_enabled: bool = True, stretch_enabled: bool = True) -> str:
+def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_count: int, offset_entries: list = None, all_flags_table: dict = None, expected_uuid: str = None, workflow_profile: dict | None = None, shader_enabled: bool = True, stretch_enabled: bool = True, fps_enabled: bool = True) -> str:
     import uuid
     uuid_bytes = uuid.UUID(expected_uuid).bytes if expected_uuid else bytes(16)
     if offset_entries is None:
@@ -471,6 +471,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         f"static const bool kShaderAbiProfileReady = {'true' if shader_abi_ready else 'false'};",
         f"static const bool kShaderEnabled = {'true' if shader_enabled else 'false'};",
         f"static const bool kStretchEnabled = {'true' if stretch_enabled else 'false'};",
+        f"static const bool kFpsEnabled = {'true' if fps_enabled else 'false'};",
         "static const char* kShaderRuntimeBackend = \"ios-workflow-profile-v1\";",
         "static const char* kStretchRuntimeBackend = \"view-projection-v73\";",
         "",
@@ -487,6 +488,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static bool macho_rva_is_executable(uintptr_t base, uintptr_t rva);",
         "",
         "static bool native_fps_owns_flag(const char* name) {",
+        "    if (!kFpsEnabled) return true;",
         "    if (!name) return false;",
         "    const char* prefixes[] = {\"DFInt\", \"DFFlag\", \"FFlag\", \"FInt\", NULL};",
         "    for (int i = 0; prefixes[i]; ++i) {",
@@ -583,6 +585,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "}",
         "",
         "static int apply_native_fps_registry(uintptr_t base) {",
+        "    if (!kFpsEnabled) return 0;",
         "    if (!base) return 0;",
         "    g_owned_fps_count = 0;",
         "    g_fps_critical_missing = 0;",
@@ -994,6 +997,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static int ms_ios_engine_fps(int requested);",
         "static int ms_ios_xml_fps(const char* xml, int fallback);",
         "static inline int get_effective_target_fps(void) {",
+        "    if (!kFpsEnabled) return 60;",
         "    return ms_ios_engine_fps(g_target_fps);",
         "}",
         "static void runtime_note(const char* fmt, ...);",
@@ -1171,6 +1175,11 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "            runtime_note(\"[PROFILE][FPS] source=GLOBAL_XML engineTarget=%d displayBound=0\", g_target_fps);",
         "        } else runtime_note(\"[PROFILE][FPS] source=GLOBAL_XML status=INVALID_VALUE\");",
         "        free(global_xml);",
+        "    }",
+        "    if (!kFpsEnabled) {",
+        "        g_target_fps = 60;",
+        "        g_refresh_requested = false;",
+        "        runtime_note(\"[FPS_ISOLATION] native FPS, XML cap and display policy disabled; target=60\");",
         "    }",
         "",
         "    long shader_size = 0;",
@@ -1819,8 +1828,8 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        snprintf(g_last_bridge_request, sizeof(g_last_bridge_request), \"%s\", request);",
         "        bridge_log(false, \"Import complete: request=%s protocol=%d\", request, protocol_version);",
         "        load_and_apply_runtime_profiles(NULL);",
-        "        install_display_link_policy();",
-        "        apply_ios_process_policies();",
+        "        if (kFpsEnabled) install_display_link_policy();",
+        "        if (kFpsEnabled) apply_ios_process_policies();",
         "        log_runtime_consumer_contract();",
         "        uintptr_t current_base = g_engine_base != 0 ? g_engine_base : get_robloxlib_base();",
         "        if (current_base != 0) {",
@@ -1982,6 +1991,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "}",
         "",
         "static void ensure_fps_slot_guard_thread(uintptr_t base) {",
+        "    if (!kFpsEnabled) return;",
         "    if (!base || g_guard_thread_started) return;",
         "    g_guard_thread_started = true;",
         "    void* th = NULL;",
@@ -2049,7 +2059,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        if (!gbs_check) {",
         "            void* gbs_w = fopen(gbs_path, \"w\");",
         "            if (gbs_w) {",
-        "                const char* gbs_xml = \"<?xml version=\\\"1.0\\\" encoding=\\\"UTF-8\\\"?>\\n<roblox version=\\\"4\\\">\\n  <Item class=\\\"UserGameSettings\\\" referent=\\\"RBX0\\\">\\n    <Properties>\\n      <bool name=\\\"ReducedMotion\\\">false</bool>\\n      <float name=\\\"HapticStrength\\\">1.000000</float>\\n      <int name=\\\"FramerateCap\\\">9999</int>\\n      <bool name=\\\"PlayerNamesEnabled\\\">true</bool>\\n    </Properties>\\n  </Item>\\n</roblox>\\n\";",
+        f"                const char* gbs_xml = \"<?xml version=\\\"1.0\\\" encoding=\\\"UTF-8\\\"?>\\n<roblox version=\\\"4\\\">\\n  <Item class=\\\"UserGameSettings\\\" referent=\\\"RBX0\\\">\\n    <Properties>\\n      <bool name=\\\"ReducedMotion\\\">false</bool>\\n      <float name=\\\"HapticStrength\\\">1.000000</float>\\n      <int name=\\\"FramerateCap\\\">{60 if not fps_enabled else 9999}</int>\\n      <bool name=\\\"PlayerNamesEnabled\\\">true</bool>\\n    </Properties>\\n  </Item>\\n</roblox>\\n\";",
         "                fputs(gbs_xml, gbs_w);",
         "                fclose(gbs_w);",
         "                runtime_note(\"[FPS] Initialized default Documents/GlobalBasicSettings_13.xml (FramerateCap=9999)\");",
@@ -2063,7 +2073,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        if (!gbs_check2) {",
         "            void* gbs_w2 = fopen(gbs_path2, \"w\");",
         "            if (gbs_w2) {",
-        "                const char* gbs_xml = \"<?xml version=\\\"1.0\\\" encoding=\\\"UTF-8\\\"?>\\n<roblox version=\\\"4\\\">\\n  <Item class=\\\"UserGameSettings\\\" referent=\\\"RBX0\\\">\\n    <Properties>\\n      <bool name=\\\"ReducedMotion\\\">false</bool>\\n      <float name=\\\"HapticStrength\\\">1.000000</float>\\n      <int name=\\\"FramerateCap\\\">9999</int>\\n      <bool name=\\\"PlayerNamesEnabled\\\">true</bool>\\n    </Properties>\\n  </Item>\\n</roblox>\\n\";",
+        f"                const char* gbs_xml = \"<?xml version=\\\"1.0\\\" encoding=\\\"UTF-8\\\"?>\\n<roblox version=\\\"4\\\">\\n  <Item class=\\\"UserGameSettings\\\" referent=\\\"RBX0\\\">\\n    <Properties>\\n      <bool name=\\\"ReducedMotion\\\">false</bool>\\n      <float name=\\\"HapticStrength\\\">1.000000</float>\\n      <int name=\\\"FramerateCap\\\">{60 if not fps_enabled else 9999}</int>\\n      <bool name=\\\"PlayerNamesEnabled\\\">true</bool>\\n    </Properties>\\n  </Item>\\n</roblox>\\n\";",
         "                fputs(gbs_xml, gbs_w2);",
         "                fclose(gbs_w2);",
         "            }",
@@ -2140,8 +2150,8 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        dynamic_count = load_dynamic_config_files(base, log_file);",
         "",
         "            // Load every launcher-owned runtime profile and report capability gates",
-        "            install_display_link_policy();",
-        "            apply_ios_process_policies();",
+        "            if (kFpsEnabled) install_display_link_policy();",
+        "            if (kFpsEnabled) apply_ios_process_policies();",
         "            log_runtime_consumer_contract();",
         "",
         "            // 2. Apply verified baseline flags only inside an authorized launch.",
@@ -2223,9 +2233,9 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        fprintf(log_file, \"\\n=== [10/10 FEATURE DIAGNOSTIC MATRIX] ===\\n\");",
         "        // FEATURE_01: FPS Unlock",
         "        fprintf(log_file, \"[FEATURE_01_FPS] status=%s backend=%s targetFps=%d renderedFps=UNMEASURED gate=ProfileLoaded(%d)&&Auth(%d) blockedReason=%s\\n\",",
-        "                g_fps_critical_missing ? \"BLOCKED_OFFSET_AUDIT\" : g_target_fps != 60 ? \"REQUESTED\" : \"DEFAULT_60\", kFpsRuntimeBackend, g_target_fps,",
+        "                !kFpsEnabled ? \"DISABLED_CRASH_ISOLATION\" : g_fps_critical_missing ? \"BLOCKED_OFFSET_AUDIT\" : g_target_fps != 60 ? \"REQUESTED\" : \"DEFAULT_60\", kFpsEnabled ? kFpsRuntimeBackend : \"disabled-crash-isolation-v1\", g_target_fps,",
         "                g_profile_loaded, launch_authorized,",
-        "                !launch_authorized ? \"NO_AUTH\" : !g_profile_loaded ? \"NO_TURBO_PROFILE\" : g_fps_critical_missing ? \"CRITICAL_LIMITER_RVA_MISSING\" : \"none\");",
+        "                !launch_authorized ? \"NO_AUTH\" : !g_profile_loaded ? \"NO_TURBO_PROFILE\" : !kFpsEnabled ? \"FPS_DISABLED\" : g_fps_critical_missing ? \"CRITICAL_LIMITER_RVA_MISSING\" : \"none\");",
         "        // FEATURE_02: Game Mode",
         "        fprintf(log_file, \"[FEATURE_02_GAME_MODE] status=%s enabled=%d verifiedFlags=%d/%zu gate=Auth(%d) blockedReason=%s\\n\",",
         "                launch_authorized && g_game_mode_enabled ? \"ACTIVE\" : \"INACTIVE\",",
@@ -2308,6 +2318,10 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    }",
         "",
 
+        "    if (!kFpsEnabled) {",
+        "        runtime_note(\"[FPS_ISOLATION] persistence/watchdog disabled; returning without periodic engine writes\");",
+        "        return NULL;",
+        "    }",
         "    syslog(LOG_NOTICE, \"[Masterstrap-iOS] Patch finished: %d baseline + %d dynamic active. Starting persistence loop...\", success_count, dynamic_count);",
         "",
         "    // Persistence uses the in-memory cache only; consumed files are never read again.",
@@ -2389,7 +2403,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    if (roma) install_bridge_hooks_for_class(roma);",
         "    Class app_del = objc_getClass(\"AppDelegate\");",
         "    if (app_del) install_bridge_hooks_for_class(app_del);",
-        "    install_display_link_policy();",
+        "    if (kFpsEnabled) install_display_link_policy();",
         "    install_metal_layer_stretch_policy();",
         "    void* thread = NULL;",
         "    pthread_create(&thread, NULL, worker_thread, NULL);",
@@ -3016,7 +3030,7 @@ SUMMARY:
     runtime_log.write_text(report_text, encoding="utf-8")
 
 
-def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir: Path, embed_flags: bool = False, build_type: str = "release", workflow_profile_path: Path | None = None, shader_enabled: bool = True, stretch_enabled: bool = True):
+def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir: Path, embed_flags: bool = False, build_type: str = "release", workflow_profile_path: Path | None = None, shader_enabled: bool = True, stretch_enabled: bool = True, fps_enabled: bool = True):
     out_dir.mkdir(parents=True, exist_ok=True)
     
     # IPA builds must use a verified local dump, never a remote version's map.
@@ -3140,7 +3154,7 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
         with tempfile.TemporaryDirectory() as td:
             tpath = Path(td)
             dylib_path = tpath / "libmasterstrap.dylib"
-            c_src = generate_native_hook_source(verified_entries, miss_offsets, len(flags), offsets_entries, all_flags_table=table, expected_uuid=expected_uuid, workflow_profile=workflow_profile, shader_enabled=shader_enabled, stretch_enabled=stretch_enabled)
+            c_src = generate_native_hook_source(verified_entries, miss_offsets, len(flags), offsets_entries, all_flags_table=table, expected_uuid=expected_uuid, workflow_profile=workflow_profile, shader_enabled=shader_enabled, stretch_enabled=stretch_enabled, fps_enabled=fps_enabled)
             compile_dylib(c_src, dylib_path, build_type=build_type)
             dylib_bytes = dylib_path.read_bytes()
 
@@ -3465,6 +3479,7 @@ def main() -> int:
     ap.add_argument("--workflow-profile", default="", help="Exact IPA workflow/profile.json generated by prepare_ios_workflow_profile.py")
     ap.add_argument("--disable-shader", action="store_true", help="Disable shader, skybox and wet-floor payload for crash isolation")
     ap.add_argument("--disable-stretch", action="store_true", help="Disable fixed-RVA stretch writes and camera patch for crash isolation")
+    ap.add_argument("--disable-fps", action="store_true", help="Disable native FPS flags, display policy and persistence/watchdog for crash isolation")
     ap.add_argument(
         "--embed-flags",
         action="store_true",
@@ -3483,6 +3498,7 @@ def main() -> int:
         workflow_profile_path=Path(args.workflow_profile) if args.workflow_profile else None,
         shader_enabled=not args.disable_shader,
         stretch_enabled=not args.disable_stretch,
+        fps_enabled=not args.disable_fps,
     )
     return 0
 
