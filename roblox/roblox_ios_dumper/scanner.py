@@ -41,6 +41,21 @@ FLAG_ALIASES = {
     "DFFlagDebugNoVsync": "FFlagDebugDisableVsync",
 }
 
+# These targets are diagnostic evidence only.  They need an exact ABI or
+# writable-field proof before any runtime consumer may receive them.
+DIAGNOSTIC_ONLY_OFFSETS = frozenset({
+    "rbx_abortlogger",
+    "rbx_reportbytecode",
+    "luau_validateheader",
+    "scripttimeoutcheck",
+    "validatecaller",
+    "validateandsetupcaps",
+    "telemetrybuffer",
+    "telemetrysize",
+})
+
+TELEMETRY_OFFSETS = frozenset({"telemetrybuffer", "telemetrysize"})
+
 # These flags control the display limiter. Some Roblox builds register them
 # through a different table than EnableLoadModule, so scan their XREFs too.
 FPS_FALLBACK_SUFFIXES = {
@@ -534,6 +549,12 @@ class Arm64Scanner:
                     if address is not None and len(matches) == 1
                     else ("medium" if address is not None else "missing")
                 )
+                if name in DIAGNOSTIC_ONLY_OFFSETS:
+                    evidence.append("diagnostic-only:not-emitted-to-runtime-profile")
+                    if name in TELEMETRY_OFFSETS:
+                        evidence.append("telemetry-field-proof:missing")
+                    address = None
+                    confidence = "missing"
                 if address is None:
                     self.offset_candidates.extend(
                         self.scan_relaxed_hex_candidates(name, hex_pat.strip(), offset_val)
@@ -604,7 +625,34 @@ class Arm64Scanner:
                         f"section:{section.segment_name},{section.name}" if section else "section:unknown",
                     ]
                 )
-            elif xrefs:
+                if name in DIAGNOSTIC_ONLY_OFFSETS:
+                    evidence.append("diagnostic-only:not-emitted-to-runtime-profile")
+                    if name in TELEMETRY_OFFSETS:
+                        evidence.append("telemetry-field-proof:missing")
+                    address = None
+                    confidence = "missing"
+            if name in DIAGNOSTIC_ONLY_OFFSETS and address is None and xrefs:
+                for item, candidate, source in resolved_xrefs[:8]:
+                    self.offset_candidates.append(
+                        {
+                            "name": name,
+                            "address": item.instruction_address,
+                            "rva": self.image.to_rva(item.instruction_address),
+                            "method": "diagnostic-only-candidate",
+                            "score": 0.0,
+                            "rank": 0,
+                            "promoted": False,
+                            "evidence": [
+                                f"xref:{item.instruction_address:#x}",
+                                f"function-boundary:{source}",
+                                f"candidate-function:{candidate:#x}" if candidate is not None else "candidate-function:missing",
+                                f"candidate-functions:{len(unique_functions)}",
+                                "candidate-only:not-emitted-to-Offsets.hpp",
+                                "abi-proof:missing",
+                            ],
+                        }
+                    )
+            elif address is None and xrefs:
                 for item, _candidate, source in resolved_xrefs[:8]:
                     self.offset_candidates.append(
                         {

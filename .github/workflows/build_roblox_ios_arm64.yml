@@ -75,6 +75,9 @@ jobs:
         run: |
           set -euo pipefail
           python -m compileall -q tools roblox
+          for suite in test_scanner.py test_macho.py test_verification.py test_writers.py; do
+            PYTHONPATH=roblox python -m unittest discover -s roblox/tests -t roblox -p "$suite" -v
+          done
           PYTHONPATH=roblox python -m unittest discover -s roblox/tests -p test_ios_display_policy.py -v
           python tools/check_ios_luau_audit.py
           python tools/verify_ios_android_shader_parity.py --expect-disabled
@@ -236,7 +239,7 @@ jobs:
             grep "constexpr" output/FFlags.hpp | wc -l | xargs echo "FFlags count:"
           fi
 
-      # ── STEP 6: Publish to GitHub Release ────────────────────────────────
+      # ── STEP 6: Upload debug artifact; publish only release builds ────────
       - name: Upload Debug IPA for device FPS checks
         if: steps.build_ipa.outputs.has_ipa == 'true' && env.MASTERSTRAP_BUILD_TYPE == 'debug'
         uses: actions/upload-artifact@v4

@@ -30,6 +30,14 @@ REMOTE_OFFSETS_URL = "https://masterstrap.org/Data/IOS/IOS_Offsets.hpp"
 GLOBAL_BRIDGE_SCHEME = "masterstrap-rbx-bridge-v1"
 VNG_BRIDGE_SCHEME = "masterstrap-rbx-vng-bridge-v1"
 
+# Scanner evidence for these roles must never become runtime hook targets.
+# Promote only after an exact ABI or writable-field contract is proven.
+DIAGNOSTIC_ONLY_OFFSETS = frozenset({
+    "rbx_abortlogger", "rbx_reportbytecode", "luau_validateheader",
+    "scripttimeoutcheck", "validatecaller", "validateandsetupcaps",
+    "telemetrybuffer", "telemetrysize",
+})
+
 # Roblox has shipped the refresh limiter under both names. Alias only changes
 # lookup; address still must come from this build's verified dumper map.
 FFLAG_ALIASES = {
@@ -288,6 +296,8 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
     uuid_bytes = uuid.UUID(expected_uuid).bytes if expected_uuid else bytes(16)
     if offset_entries is None:
         offset_entries = []
+    offset_entries = [(name, rva) for name, rva in offset_entries
+                      if name not in DIAGNOSTIC_ONLY_OFFSETS]
     if all_flags_table is None:
         all_flags_table = {}
     workflow_profile = workflow_profile or {}
@@ -3106,7 +3116,11 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
         raise RuntimeError(
             f"iOS workflow profile SHA256 mismatch: profile={profile_sha256 or 'missing'} ipa={expected_sha256}"
         )
-    offsets_entries = sorted(offsets_table.items(), key=lambda x: x[0])
+    offsets_entries = sorted(
+        ((name, rva) for name, rva in offsets_table.items()
+         if name not in DIAGNOSTIC_ONLY_OFFSETS),
+        key=lambda x: x[0],
+    )
     # Feed exact-build audit candidates into diagnostics only. These roles stay
     # read-only evidence; callable Lua ABI remains closed until bridge proof.
     audited_roles = workflow_profile.get("auditedReadOnlyRoles", {})
@@ -3114,7 +3128,9 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
         known_names = {name for name, _ in offsets_entries}
         for name, role in audited_roles.items():
             rva = role.get("rva") if isinstance(role, dict) else None
-            if name not in known_names and type(rva) is int and rva >= 0 and rva % 4 == 0:
+            if (name not in DIAGNOSTIC_ONLY_OFFSETS
+                    and name not in known_names
+                    and type(rva) is int and rva >= 0 and rva % 4 == 0):
                 offsets_entries.append((name, rva))
                 known_names.add(name)
         offsets_entries.sort(key=lambda x: x[0])

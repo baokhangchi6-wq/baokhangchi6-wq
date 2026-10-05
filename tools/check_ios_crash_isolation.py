@@ -6,7 +6,7 @@ import struct
 import tempfile
 import zipfile
 
-from build_integrated_roblox_ipa import generate_native_hook_source, inject_rbxm_script
+from build_integrated_roblox_ipa import DIAGNOSTIC_ONLY_OFFSETS, generate_native_hook_source, inject_rbxm_script
 from verify_ios_android_shader_parity import _rbxm_has_marker, check_ipa
 
 
@@ -48,10 +48,14 @@ def main() -> None:
                 pass
             else:
                 raise AssertionError(f"isolation gate accepted changed resource: {tuple(change)}")
-    source = generate_native_hook_source([], [], 0, [], {}, shader_enabled=False, stretch_enabled=False)
+    source = generate_native_hook_source([], [], 0,
+        [(name, 0x100) for name in DIAGNOSTIC_ONLY_OFFSETS], {},
+        shader_enabled=False, stretch_enabled=False)
     assert "kShaderEnabled = false" in source
     assert "kStretchEnabled = false" in source
     assert "tiny_hook" not in source
+    assert "kOffsetsCount = 0" in source
+    assert "runtimeHooks=0" in source
     print("PASS: pristine assets accepted; shader payload, sky mutation and active config rejected")
 
 
