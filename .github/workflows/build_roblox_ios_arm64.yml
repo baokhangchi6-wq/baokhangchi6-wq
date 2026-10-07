@@ -38,7 +38,7 @@ on:
         required: true
         type: choice
         options: [debug, release]
-        default: debug
+        default: release
 
 permissions:
   contents: write
@@ -52,7 +52,7 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 90
     env:
-      MASTERSTRAP_BUILD_TYPE: debug
+      MASTERSTRAP_BUILD_TYPE: ${{ inputs.build_type || 'release' }}
 
     steps:
       - name: Checkout iOS lane
@@ -240,12 +240,12 @@ jobs:
             grep "constexpr" output/FFlags.hpp | wc -l | xargs echo "FFlags count:"
           fi
 
-      # ── STEP 6: Upload debug artifact; publish only release builds ────────
-      - name: Upload Debug IPA for device FPS checks
-        if: steps.build_ipa.outputs.has_ipa == 'true' && env.MASTERSTRAP_BUILD_TYPE == 'debug'
+      # ── STEP 6: Upload artifact; publish only release builds ──────────────
+      - name: Upload IPA Artifact for device checks
+        if: steps.build_ipa.outputs.has_ipa == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: ios-crash-isolation-debug-${{ github.sha }}-run-${{ github.run_number }}
+          name: ios-crash-isolation-${{ env.MASTERSTRAP_BUILD_TYPE }}-${{ github.sha }}-run-${{ github.run_number }}
           path: |
             output/Masterstrap-*.ipa
             output/workflow/profile.json

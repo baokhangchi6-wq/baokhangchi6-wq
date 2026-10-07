@@ -2055,21 +2055,22 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        }",
         "        char gbs_path[768];",
         "        snprintf(gbs_path, sizeof(gbs_path), \"%s/Documents/GlobalBasicSettings_13.xml\", home);",
-        "        void* gbs_check = fopen(gbs_path, \"r\");",
+        "        bool force_xml_sync = !kFpsEnabled;",
+        "        void* gbs_check = force_xml_sync ? NULL : fopen(gbs_path, \"r\");",
         "        if (!gbs_check) {",
         "            void* gbs_w = fopen(gbs_path, \"w\");",
         "            if (gbs_w) {",
         f"                const char* gbs_xml = \"<?xml version=\\\"1.0\\\" encoding=\\\"UTF-8\\\"?>\\n<roblox version=\\\"4\\\">\\n  <Item class=\\\"UserGameSettings\\\" referent=\\\"RBX0\\\">\\n    <Properties>\\n      <bool name=\\\"ReducedMotion\\\">false</bool>\\n      <float name=\\\"HapticStrength\\\">1.000000</float>\\n      <int name=\\\"FramerateCap\\\">{60 if not fps_enabled else 9999}</int>\\n      <bool name=\\\"PlayerNamesEnabled\\\">true</bool>\\n    </Properties>\\n  </Item>\\n</roblox>\\n\";",
         "                fputs(gbs_xml, gbs_w);",
         "                fclose(gbs_w);",
-        "                runtime_note(\"[FPS] Initialized default Documents/GlobalBasicSettings_13.xml (FramerateCap=9999)\");",
+        f"                runtime_note(\"[FPS] Initialized default Documents/GlobalBasicSettings_13.xml (FramerateCap={60 if not fps_enabled else 9999})\");",
         "            }",
         "        } else {",
         "            fclose(gbs_check);",
         "        }",
         "        char gbs_path2[768];",
         "        snprintf(gbs_path2, sizeof(gbs_path2), \"%s/Documents/GlobalBasicSettings.xml\", home);",
-        "        void* gbs_check2 = fopen(gbs_path2, \"r\");",
+        "        void* gbs_check2 = force_xml_sync ? NULL : fopen(gbs_path2, \"r\");",
         "        if (!gbs_check2) {",
         "            void* gbs_w2 = fopen(gbs_path2, \"w\");",
         "            if (gbs_w2) {",
@@ -2318,7 +2319,10 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    }",
         "",
 
-        "    if (!kFpsEnabled) {",
+        "    #ifndef MS_ENABLE_PERSISTENCE_LOOP",
+        "    #define MS_ENABLE_PERSISTENCE_LOOP 0",
+        "    #endif",
+        "    if (!kFpsEnabled || !MS_ENABLE_PERSISTENCE_LOOP) {",
         "        runtime_note(\"[FPS_ISOLATION] persistence/watchdog disabled; returning without periodic engine writes\");",
         "        return NULL;",
         "    }",
@@ -3231,45 +3235,48 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         elif name == "Payload/Roblox.app/Frameworks/RobloxLib.framework/RobloxLib":
                             data = remove_load_dylib(data, ["libgloop", "delta.dylib"])
                             data = bytearray(data)
-                            # 1. Preserve the engine getter and remove its 240 FPS select.
-                            clamp_offset = 0x46256c4
-                            clamp_original = b'\x09\xb1\x89\x1a'  # csel w9, w8, w9, lt
-                            clamp_patch = b'\xe9\x03\x08\x2a'     # mov w9, w8
-                            if data[clamp_offset:clamp_offset+4] not in (clamp_original, clamp_patch):
-                                raise RuntimeError('FPS getter contract changed; refusing unverified RobloxLib patch')
-                            data[clamp_offset:clamp_offset+4] = clamp_patch
-                            print(f"[FPS_CEILING] Removed TaskScheduler 240 FPS clamp @ 0x{clamp_offset:X}")
+                            if fps_enabled:
+                                # 1. Preserve the engine getter and remove its 240 FPS select.
+                                clamp_offset = 0x46256c4
+                                clamp_original = b'\x09\xb1\x89\x1a'  # csel w9, w8, w9, lt
+                                clamp_patch = b'\xe9\x03\x08\x2a'     # mov w9, w8
+                                if data[clamp_offset:clamp_offset+4] not in (clamp_original, clamp_patch):
+                                    raise RuntimeError('FPS getter contract changed; refusing unverified RobloxLib patch')
+                                data[clamp_offset:clamp_offset+4] = clamp_patch
+                                print(f"[FPS_CEILING] Removed TaskScheduler 240 FPS clamp @ 0x{clamp_offset:X}")
 
-                            # 2. Bypass 240 FPS clamp site 2 in TaskScheduler dt calculator (csel w11, w11, w12, lt -> nop)
-                            clamp2_offset = 0x9165fc
-                            if len(data) > clamp2_offset + 4 and data[clamp2_offset:clamp2_offset+4] in (b'\x6b\xb1\x8c\x1a', b'\x1f\x20\x03\xd5'):
-                                data[clamp2_offset:clamp2_offset+4] = b'\x1f\x20\x03\xd5'
-                                print(f"[FPS_CEILING] Bypassed RobloxLib second 240 FPS clamp site 2 @ 0x{clamp2_offset:X} (csel -> nop)")
+                                # 2. Bypass 240 FPS clamp site 2 in TaskScheduler dt calculator (csel w11, w11, w12, lt -> nop)
+                                clamp2_offset = 0x9165fc
+                                if len(data) > clamp2_offset + 4 and data[clamp2_offset:clamp2_offset+4] in (b'\x6b\xb1\x8c\x1a', b'\x1f\x20\x03\xd5'):
+                                    data[clamp2_offset:clamp2_offset+4] = b'\x1f\x20\x03\xd5'
+                                    print(f"[FPS_CEILING] Bypassed RobloxLib second 240 FPS clamp site 2 @ 0x{clamp2_offset:X} (csel -> nop)")
 
-                            # 3. Bypass 240 FPS clamp site 3 in TaskScheduler target frametime calculator (csel w8, w23, w8, cc -> mov w8, w23)
-                            clamp3_offset = 0x4628128
-                            if len(data) > clamp3_offset + 4 and data[clamp3_offset:clamp3_offset+4] in (b'\xe8\x32\x88\x1a', b'\xe8\x03\x17\x2a'):
-                                data[clamp3_offset:clamp3_offset+4] = b'\xe8\x03\x17\x2a'
-                                print(f"[FPS_CEILING] Bypassed RobloxLib third 240 FPS clamp site 3 @ 0x{clamp3_offset:X} (csel -> mov w8, w23)")
+                                # 3. Bypass 240 FPS clamp site 3 in TaskScheduler target frametime calculator (csel w8, w23, w8, cc -> mov w8, w23)
+                                clamp3_offset = 0x4628128
+                                if len(data) > clamp3_offset + 4 and data[clamp3_offset:clamp3_offset+4] in (b'\xe8\x32\x88\x1a', b'\xe8\x03\x17\x2a'):
+                                    data[clamp3_offset:clamp3_offset+4] = b'\xe8\x03\x17\x2a'
+                                    print(f"[FPS_CEILING] Bypassed RobloxLib third 240 FPS clamp site 3 @ 0x{clamp3_offset:X} (csel -> mov w8, w23)")
 
-                            # 4. Match requested engine cadence when Roblox enters its fallback scheduler path.
-                            fallback_dt_offset = 0x4A60E28
-                            fallback_original = b'\x89\x88\x88\x3c'  # ~1/60 second
-                            fallback_patch = b'\x17\xb7\xd1\x38'     # 0.0001 second
-                            if data[fallback_dt_offset:fallback_dt_offset+4] not in (fallback_original, fallback_patch):
-                                raise RuntimeError('FPS fallback-delta contract changed; refusing unverified RobloxLib patch')
-                            data[fallback_dt_offset:fallback_dt_offset+4] = fallback_patch
-                            print(f"[FPS_CEILING] Patched RobloxLib fallback delta @ 0x{fallback_dt_offset:X} (0.0166s -> 0.0001s)")
+                                # 4. Match requested engine cadence when Roblox enters its fallback scheduler path.
+                                fallback_dt_offset = 0x4A60E28
+                                fallback_original = b'\x89\x88\x88\x3c'  # ~1/60 second
+                                fallback_patch = b'\x17\xb7\xd1\x38'     # 0.0001 second
+                                if data[fallback_dt_offset:fallback_dt_offset+4] not in (fallback_original, fallback_patch):
+                                    raise RuntimeError('FPS fallback-delta contract changed; refusing unverified RobloxLib patch')
+                                data[fallback_dt_offset:fallback_dt_offset+4] = fallback_patch
+                                print(f"[FPS_CEILING] Patched RobloxLib fallback delta @ 0x{fallback_dt_offset:X} (0.0166s -> 0.0001s)")
 
-                            # 5. Keep the target in w22 rather than selecting min(target, screenMax).
-                            dt_clamp_offset = 0x3F64AE4
-                            dt_clamp_patch = b'\x1f\x20\x03\xd5'  # nop
-                            if data[dt_clamp_offset:dt_clamp_offset+4] not in (
-                                b'\xb6\x32\x96\x1a', dt_clamp_patch
-                            ):
-                                raise RuntimeError('FPS DisplayTiming contract changed; refusing unverified RobloxLib patch')
-                            data[dt_clamp_offset:dt_clamp_offset+4] = dt_clamp_patch
-                            print(f"[FPS_CEILING] Removed DisplayTiming screen-Hz clamp @ 0x{dt_clamp_offset:X} (preserve targetFps in w22)")
+                                # 5. Keep the target in w22 rather than selecting min(target, screenMax).
+                                dt_clamp_offset = 0x3F64AE4
+                                dt_clamp_patch = b'\x1f\x20\x03\xd5'  # nop
+                                if data[dt_clamp_offset:dt_clamp_offset+4] not in (
+                                    b'\xb6\x32\x96\x1a', dt_clamp_patch
+                                ):
+                                    raise RuntimeError('FPS DisplayTiming contract changed; refusing unverified RobloxLib patch')
+                                data[dt_clamp_offset:dt_clamp_offset+4] = dt_clamp_patch
+                                print(f"[FPS_CEILING] Removed DisplayTiming screen-Hz clamp @ 0x{dt_clamp_offset:X} (preserve targetFps in w22)")
+                            else:
+                                print("[FPS_CEILING] Skipped RobloxLib static FPS patches (fps_enabled=False for crash isolation)")
 
                             # 6. Stretch Resolution (Architecture v73 Parity with 2D GUI M33 Guard):
                             # Hook View-Projection matrix write at 0xB75610 (inside 0xb75500) -> Code Cave at 0x3F80

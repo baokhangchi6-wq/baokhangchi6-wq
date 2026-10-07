@@ -14,6 +14,13 @@ extern void objc_setAssociatedObject(id, const void*, id, unsigned long);
 
 typedef struct { float minimum, maximum, preferred; } MSFrameRateRange;
 _Static_assert(sizeof(MSFrameRateRange) == 12, "CAFrameRateRange ARM64 ABI");
+
+/* Crash isolation toggle: returning NULL to throttle drawable acquisition can cause
+ * EXC_BAD_ACCESS in Roblox engine's render loop when accessing unverified drawable.
+ * Default to 0 (passthrough) to isolate crash; toggleable to 1 when verified safe. */
+#ifndef MS_ENABLE_DRAWABLE_NIL_THROTTLE
+#define MS_ENABLE_DRAWABLE_NIL_THROTTLE 0
+#endif
 typedef id (*DisplayLinkCreateImp)(id, SEL, id, SEL);
 typedef void (*DisplayLinkSetFpsImp)(id, SEL, long);
 typedef void (*DisplayLinkSetRangeImp)(id, SEL, MSFrameRateRange);
@@ -626,7 +633,9 @@ static id metal_layer_next_drawable_hook(id self, SEL cmd) {
             __atomic_fetch_add(&g_ms_drawable_nil, 1, __ATOMIC_RELAXED);
             __atomic_fetch_add(&g_ms_drawable_decoupled, 1, __ATOMIC_RELAXED);
 #endif
+#if MS_ENABLE_DRAWABLE_NIL_THROTTLE
             return NULL;
+#endif
         }
         if (target_fps > display_fps) {
             drawable_interval = (1000000000ull / (uint64_t)display_fps)
