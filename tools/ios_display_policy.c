@@ -268,12 +268,7 @@ typedef struct { double src_w, src_h, dst_w, dst_h; int applied; } MSLayerStretc
 static id get_ca_gravity_resize(void) {
     static id s_gravity_resize = NULL;
     if (!s_gravity_resize) {
-        void* handle = dlopen("/System/Library/Frameworks/QuartzCore.framework/QuartzCore", 0x1 /* RTLD_LAZY */);
-        if (handle) {
-            id* sym = (id*)dlsym(handle, "kCAGravityResize");
-            if (sym && *sym) s_gravity_resize = *sym;
-        }
-        if (!s_gravity_resize) s_gravity_resize = ms_string("resize");
+        s_gravity_resize = ms_string("resize");
     }
     return s_gravity_resize;
 }

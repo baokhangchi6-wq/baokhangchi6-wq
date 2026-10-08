@@ -1,5 +1,3 @@
-#pragma once
-
 /* Pure policy: requesting a rate is not proof of rendered/presented FPS. */
 static int ms_ios_target_fps(int requested, int maximum, int low_power, int thermal) {
     (void)low_power;
