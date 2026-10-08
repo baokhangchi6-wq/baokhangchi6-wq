@@ -1599,6 +1599,23 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    const char* home = getenv(\"HOME\");",
         "    if (home) {",
         "        snprintf(log_path, sizeof(log_path), \"%s/Documents/masterstrap_ios.log\", home);",
+        "        char gbs_path[768];",
+        "        snprintf(gbs_path, sizeof(gbs_path), \"%s/Documents/GlobalBasicSettings_13.xml\", home);",
+        "        void* gbs_w = fopen(gbs_path, \"w\");",
+        "        if (gbs_w) {",
+        "            const char* gbs_xml = \"<?xml version=\\\"1.0\\\" encoding=\\\"UTF-8\\\"?>\\n<roblox version=\\\"4\\\">\\n  <Item class=\\\"UserGameSettings\\\" referent=\\\"RBX0\\\">\\n    <Properties>\\n      <bool name=\\\"ReducedMotion\\\">false</bool>\\n      <float name=\\\"HapticStrength\\\">1.000000</float>\\n      <int name=\\\"FramerateCap\\\">10000</int>\\n      <bool name=\\\"PlayerNamesEnabled\\\">true</bool>\\n    </Properties>\\n  </Item>\\n</roblox>\\n\";",
+        "            fputs(gbs_xml, gbs_w);",
+        "            fclose(gbs_w);",
+        "            runtime_note(\"[FPS] Initialized Documents/GlobalBasicSettings_13.xml (FramerateCap=10000)\");",
+        "        }",
+        "        char gbs_path2[768];",
+        "        snprintf(gbs_path2, sizeof(gbs_path2), \"%s/Documents/GlobalBasicSettings.xml\", home);",
+        "        void* gbs_w2 = fopen(gbs_path2, \"w\");",
+        "        if (gbs_w2) {",
+        "            const char* gbs_xml = \"<?xml version=\\\"1.0\\\" encoding=\\\"UTF-8\\\"?>\\n<roblox version=\\\"4\\\">\\n  <Item class=\\\"UserGameSettings\\\" referent=\\\"RBX0\\\">\\n    <Properties>\\n      <bool name=\\\"ReducedMotion\\\">false</bool>\\n      <float name=\\\"HapticStrength\\\">1.000000</float>\\n      <int name=\\\"FramerateCap\\\">10000</int>\\n      <bool name=\\\"PlayerNamesEnabled\\\">true</bool>\\n    </Properties>\\n  </Item>\\n</roblox>\\n\";",
+        "            fputs(gbs_xml, gbs_w2);",
+        "            fclose(gbs_w2);",
+        "        }",
         "    } else {",
         "        snprintf(log_path, sizeof(log_path), \"/tmp/masterstrap_ios.log\");",
         "    }",
@@ -2112,6 +2129,9 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         "Payload/Roblox.app/Frameworks/RobloxLib.framework/ClientSettings/ClientAppSettings.json",
                         "Payload/Roblox.app/masterstrap_baked_flags.json",
                         "Payload/Roblox.app/MasterstrapTurboProfile.json",
+                        "Payload/Roblox.app/ClientSettings/MasterstrapTurboProfile.json",
+                        "Payload/Roblox.app/GlobalBasicSettings_13.xml",
+                        "Payload/Roblox.app/GlobalBasicSettings.xml",
                     }
 
                     # ── Direct Asset Font Loading (Android parity) ──
@@ -2253,8 +2273,23 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                             "rendererMode": "Automatic"
                         }
                         turbo_bytes = json.dumps(turbo_default, indent=4).encode("utf-8")
+                        xml_default = (
+                            '<?xml version="1.0" encoding="UTF-8"?>\n'
+                            '<roblox version="4">\n'
+                            '  <Item class="UserGameSettings" referent="RBX0">\n'
+                            '    <Properties>\n'
+                            '      <bool name="ReducedMotion">false</bool>\n'
+                            '      <float name="HapticStrength">1.000000</float>\n'
+                            '      <int name="FramerateCap">10000</int>\n'
+                            '      <bool name="PlayerNamesEnabled">true</bool>\n'
+                            '    </Properties>\n'
+                            '  </Item>\n'
+                            '</roblox>\n'
+                        ).encode("utf-8")
                         for jp in embedded_settings_entries:
-                            if jp.endswith("MasterstrapTurboProfile.json"):
+                            if jp.endswith(".xml"):
+                                zout.writestr(jp, xml_default)
+                            elif jp.endswith("MasterstrapTurboProfile.json"):
                                 zout.writestr(jp, turbo_bytes)
                             else:
                                 zout.writestr(jp, json_bytes)
