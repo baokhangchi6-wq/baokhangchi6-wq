@@ -51,14 +51,16 @@ static int ms_thermal(void) {
     return (int)((long (*)(id, SEL))objc_msgSend)(ms_process_info(), sel_registerName("thermalState"));
 }
 static bool fps_runtime_requested(void) {
-    return g_ms_policy.loaded && (g_ms_policy.refresh || g_ms_policy.target > 60);
+    return (g_ms_policy.loaded && (g_ms_policy.refresh || g_ms_policy.target > 60)) || g_target_fps > 60;
 }
 static long fps_runtime_target(void) {
     return ms_ios_target_fps(g_ms_policy.target, ios_maximum_frames_per_second(), ms_low_power(), ms_thermal());
 }
 static MSFrameRateRange ms_target_range(void) {
-    float target = (float)fps_runtime_target();
-    return (MSFrameRateRange){target < 30 ? target : 30, target, target};
+    int screen_max = ios_maximum_frames_per_second();
+    if (screen_max <= 0) screen_max = 120;
+    float max_limit = (float)screen_max;
+    return (MSFrameRateRange){max_limit, max_limit, max_limit};
 }
 static bool ms_get_link_request(id link, MSLinkRequest* request) {
     id value = objc_getAssociatedObject(link, &g_ms_link_request_key);
@@ -240,6 +242,209 @@ static bool install_display_link_policy(void) {
         g_display_link_policy_installed ? "READY" : "PARTIAL");
     return g_display_link_policy_installed;
 }
+
+typedef void (*SetDisplaySyncImp)(id, SEL, bool);
+static SetDisplaySyncImp g_original_set_display_sync = NULL;
+
+typedef id (*NextDrawableImp)(id, SEL);
+static NextDrawableImp g_original_next_drawable = NULL;
+
+#if defined(__arm64__) || defined(__aarch64__)
+typedef struct { double width; double height; } MSSize;
+#else
+typedef struct { float width; float height; } MSSize;
+#endif
+typedef void (*SetDrawableSizeImp)(id, SEL, MSSize);
+static SetDrawableSizeImp g_original_set_drawable_size = NULL;
+
+typedef void (*SetContentsGravityImp)(id, SEL, id);
+static SetContentsGravityImp g_original_set_contents_gravity = NULL;
+
+static int g_metal_layer_stretch_installed = 0;
+static char g_ms_layer_uncapped_key;
+static char g_ms_stretch_source_size_key;
+typedef struct { double src_w, src_h, dst_w, dst_h; int applied; } MSLayerStretchState;
+
+static id get_ca_gravity_resize(void) {
+    static id s_gravity_resize = NULL;
+    if (!s_gravity_resize) {
+        void* handle = dlopen("/System/Library/Frameworks/QuartzCore.framework/QuartzCore", 0x1 /* RTLD_LAZY */);
+        if (handle) {
+            id* sym = (id*)dlsym(handle, "kCAGravityResize");
+            if (sym && *sym) s_gravity_resize = *sym;
+        }
+        if (!s_gravity_resize) s_gravity_resize = ms_string("resize");
+    }
+    return s_gravity_resize;
+}
+
+static void ms_apply_metal_layer_policies(id layer) {
+    if (!layer) return;
+
+    // 1. Uncap Metal VSync (Allows engine rendering loop to exceed 120Hz up to 10,000 FPS)
+    if (fps_runtime_requested()) {
+        SEL sync_sel = sel_registerName("setDisplaySyncEnabled:");
+        if (((bool (*)(id, SEL, SEL))objc_msgSend)(layer, sel_registerName("respondsToSelector:"), sync_sel)) {
+            ((void (*)(id, SEL, bool))objc_msgSend)(layer, sync_sel, false);
+        }
+        SEL max_sel = sel_registerName("setMaximumDrawableCount:");
+        if (((bool (*)(id, SEL, SEL))objc_msgSend)(layer, sel_registerName("respondsToSelector:"), max_sel)) {
+            ((void (*)(id, SEL, unsigned long))objc_msgSend)(layer, max_sel, 3);
+        }
+    }
+
+    // 2. Stretched Resolution via CAMetalLayer drawableSize + kCAGravityResize
+    if (g_stretch_percent > 0 && g_stretch_percent != 100) {
+        ((void (*)(id, SEL, id))objc_msgSend)(layer, sel_registerName("setContentsGravity:"), get_ca_gravity_resize());
+
+        MSSize size = ((MSSize (*)(id, SEL))objc_msgSend)(layer, sel_registerName("drawableSize"));
+        if (size.width > size.height && size.height > 0) {
+            MSLayerStretchState st = {0};
+            id val = objc_getAssociatedObject(layer, &g_ms_stretch_source_size_key);
+            if (val) {
+                ((void (*)(id, SEL, void*))objc_msgSend)(val, sel_registerName("getValue:"), &st);
+            }
+            double src_w = size.width;
+            double src_h = size.height;
+            if (st.applied && size.width == st.dst_w && size.height == st.dst_h) {
+                src_w = st.src_w;
+                src_h = st.src_h;
+            }
+            double factor = (double)g_stretch_percent / 100.0;
+            double target_w = (double)((long long)(src_w * factor + 0.5));
+            if (target_w < 64.0) target_w = 64.0;
+
+            st.src_w = src_w;
+            st.src_h = src_h;
+            st.dst_w = target_w;
+            st.dst_h = src_h;
+            st.applied = 1;
+
+            id new_val = ((id (*)(id, SEL, const void*, const char*))objc_msgSend)(objc_getClass("NSValue"),
+                sel_registerName("valueWithBytes:objCType:"), &st, "{MSLayerStretchState=ddddi}");
+            objc_setAssociatedObject(layer, &g_ms_stretch_source_size_key, new_val, 1);
+
+            size.width = target_w;
+            size.height = src_h;
+            if (g_original_set_drawable_size) {
+                g_original_set_drawable_size(layer, sel_registerName("setDrawableSize:"), size);
+            }
+        }
+    }
+}
+
+static inline void ms_ensure_layer_vsync_uncapped(id layer) {
+    if (!layer || !fps_runtime_requested()) return;
+    if (objc_getAssociatedObject(layer, &g_ms_layer_uncapped_key)) return;
+
+    ms_apply_metal_layer_policies(layer);
+    objc_setAssociatedObject(layer, &g_ms_layer_uncapped_key, (id)1, 0); /* OBJC_ASSOCIATION_ASSIGN */
+    runtime_note("[METAL][VSYNC] Uncapped CAMetalLayer %p: displaySyncEnabled=NO maxDrawables=3", layer);
+}
+
+static void metal_layer_set_display_sync_hook(id self, SEL cmd, bool enabled) {
+    if (fps_runtime_requested()) {
+        enabled = false;
+    }
+    if (g_original_set_display_sync) {
+        g_original_set_display_sync(self, cmd, enabled);
+    }
+}
+
+static id metal_layer_next_drawable_hook(id self, SEL cmd) {
+    ms_ensure_layer_vsync_uncapped(self);
+    return g_original_next_drawable ? g_original_next_drawable(self, cmd) : NULL;
+}
+
+static void metal_layer_set_drawable_size_hook(id self, SEL cmd, MSSize size) {
+    ms_ensure_layer_vsync_uncapped(self);
+    if (g_stretch_percent > 0 && g_stretch_percent != 100 && size.width > 0 && size.height > 0) {
+        MSLayerStretchState st = {0};
+        id val = objc_getAssociatedObject(self, &g_ms_stretch_source_size_key);
+        if (val) {
+            ((void (*)(id, SEL, void*))objc_msgSend)(val, sel_registerName("getValue:"), &st);
+        }
+
+        double src_w = size.width;
+        double src_h = size.height;
+        if (st.applied && size.width == st.dst_w && size.height == st.dst_h) {
+            src_w = st.src_w;
+            src_h = st.src_h;
+        }
+
+        if (src_w > src_h) {
+            double factor = (double)g_stretch_percent / 100.0;
+            double target_w = (double)((long long)(src_w * factor + 0.5));
+            if (target_w < 64.0) target_w = 64.0;
+
+            st.src_w = src_w;
+            st.src_h = src_h;
+            st.dst_w = target_w;
+            st.dst_h = src_h;
+            st.applied = 1;
+
+            id new_val = ((id (*)(id, SEL, const void*, const char*))objc_msgSend)(objc_getClass("NSValue"),
+                sel_registerName("valueWithBytes:objCType:"), &st, "{MSLayerStretchState=ddddi}");
+            objc_setAssociatedObject(self, &g_ms_stretch_source_size_key, new_val, 1);
+
+            id gravity = get_ca_gravity_resize();
+            ((void (*)(id, SEL, id))objc_msgSend)(self, sel_registerName("setContentsGravity:"), gravity);
+
+            size.width = target_w;
+            size.height = src_h;
+
+            static int s_logged_stretch = 0;
+            if (!s_logged_stretch) {
+                s_logged_stretch = 1;
+                runtime_note("[APPLY][STRETCH] CAMetalLayer in-game landscape stretch=%d%% source=%.1fx%.1f target=%.1fx%.1f contentsGravity=resize",
+                             g_stretch_percent, src_w, src_h, size.width, size.height);
+            }
+        }
+    }
+    if (g_original_set_drawable_size) {
+        g_original_set_drawable_size(self, cmd, size);
+    }
+}
+
+static void metal_layer_set_contents_gravity_hook(id self, SEL cmd, id gravity) {
+    if (g_stretch_percent > 0 && g_stretch_percent != 100) {
+        gravity = get_ca_gravity_resize();
+    }
+    if (g_original_set_contents_gravity) {
+        g_original_set_contents_gravity(self, cmd, gravity);
+    }
+}
+
+static bool install_metal_layer_stretch_policy(void) {
+    if (g_metal_layer_stretch_installed) return true;
+    Class cls = (Class)objc_getClass("CAMetalLayer");
+    if (!cls) return false;
+
+    Method sync_m = class_getInstanceMethod(cls, sel_registerName("setDisplaySyncEnabled:"));
+    if (sync_m && !g_original_set_display_sync) {
+        g_original_set_display_sync = (SetDisplaySyncImp)method_setImplementation(sync_m, (IMP)metal_layer_set_display_sync_hook);
+    }
+
+    Method next_m = class_getInstanceMethod(cls, sel_registerName("nextDrawable"));
+    if (next_m && !g_original_next_drawable) {
+        g_original_next_drawable = (NextDrawableImp)method_setImplementation(next_m, (IMP)metal_layer_next_drawable_hook);
+    }
+
+    Method size_m = class_getInstanceMethod(cls, sel_registerName("setDrawableSize:"));
+    if (size_m && !g_original_set_drawable_size) {
+        g_original_set_drawable_size = (SetDrawableSizeImp)method_setImplementation(size_m, (IMP)metal_layer_set_drawable_size_hook);
+    }
+
+    Method grav_m = class_getInstanceMethod(cls, sel_registerName("setContentsGravity:"));
+    if (grav_m && !g_original_set_contents_gravity) {
+        g_original_set_contents_gravity = (SetContentsGravityImp)method_setImplementation(grav_m, (IMP)metal_layer_set_contents_gravity_hook);
+    }
+
+    g_metal_layer_stretch_installed = 1;
+    runtime_note("[CAPABILITY][STRETCH] backend=cametallayer-drawable-resize status=READY hookInstalled=1 metal_vsync_uncap=ACTIVE");
+    return true;
+}
+
 static void ms_apply_process_main(void* context) {
     MSDisplayPolicy* snapshot = context;
     g_ms_policy = *snapshot;
@@ -247,6 +452,7 @@ static void ms_apply_process_main(void* context) {
     ++g_ms_generation;
     g_display_link_rewrite_count = 0;
     install_display_link_policy();
+    install_metal_layer_stretch_policy();
     ms_install_observer();
     id app = ((id (*)(id, SEL))objc_msgSend)(objc_getClass("UIApplication"), sel_registerName("sharedApplication"));
     if (app && g_ms_policy.loaded && g_ms_policy.keep_display) {

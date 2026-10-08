@@ -4687,21 +4687,17 @@ function updateFlagState() {
         return;
     }
 
-    // Android Parity: FPS ceiling is owned by GlobalBasicSettings.xml FramerateCap + DisplayLink 120Hz ProMotion policy.
-    // Competing FastFlags are explicitly stripped to prevent capping or conflicts.
-    delete activeFlags["DFIntTaskSchedulerTargetFps"];
-    delete activeFlags["FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate"];
-    delete activeFlags["FFlagTaskSchedulerLimitTargetFpsTo2402"];
-    delete activeFlags["FFlagGameBasicSettingsFramerateCap"];
-    delete activeFlags["FFlagAuroraLimit60HzRenderSim"];
-    delete activeFlags["FFlagApplicationFrameRate"];
-    delete activeFlags["FFlagApplicationFrameRatePolicy"];
-    delete activeFlags["FFlagPerformanceControlExecution"];
-    delete activeFlags["FFlagPerformanceControlDisplayRefreshRate"];
-    delete activeFlags["FFlagPerformanceControlDisplayRefreshRateInAdaptiveSync"];
-    delete activeFlags["FFlagPerformanceControlDisplayRefreshRateMigration"];
-    delete activeFlags["FFlagDebugDisableVsync"];
-    delete activeFlags["FFlagMetalVsyncPreferMaximumRefreshRate"];
+    // 10,000 FPS / >1,000 FPS in-game engine throughput
+    const targetFpsVal = parseInt(document.getElementById("sel-target-fps")?.value) || 10000;
+    activeFlags["DFIntTaskSchedulerTargetFps"] = String(targetFpsVal >= 1000 ? 10000 : targetFpsVal);
+    activeFlags["FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate"] = false;
+    activeFlags["FFlagTaskSchedulerLimitTargetFpsTo2402"] = false;
+    activeFlags["FFlagGameBasicSettingsFramerateCap"] = false;
+    activeFlags["FFlagDebugDisableVsync"] = true;
+    activeFlags["FFlagMetalVsyncPreferMaximumRefreshRate"] = true;
+    activeFlags["FFlagPerformanceControlDisplayRefreshRate"] = false;
+    activeFlags["FFlagPerformanceControlDisplayRefreshRateInAdaptiveSync"] = false;
+    activeFlags["FFlagPerformanceControlDisplayRefreshRateMigration"] = false;
 
     const msaa = document.getElementById("sel-msaa").value;
     if (msaa !== "auto") {
@@ -5803,7 +5799,7 @@ function initAppSettings() {
     const wetFloorSw = document.getElementById("sw-display-wet-floor");
     if (wetFloorSw) wetFloorSw.checked = savedWetFloor;
 
-    const savedStretch = parseInt(localStorage.getItem("masterstrap_stretch_screen")) || 100;
+    const savedStretch = parseInt(localStorage.getItem("masterstrap_stretch_screen")) || 80;
     const slider = document.getElementById("slider-stretch-screen");
     if (slider) {
         slider.value = savedStretch;

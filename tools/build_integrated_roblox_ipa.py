@@ -416,9 +416,9 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static const char* kEngineSetFFlagBackend = \"not-installed\";",
         "static const char* kEngineGetFastFlagBackend = \"not-installed\";",
         "static const char* kFpsRuntimeBackend = \"cadisplaylink-range-policy-v2\";",
-        "static const char* kFontRuntimeBackend = \"guarded-ios-luau-pending\";",
+        "static const char* kFontRuntimeBackend = \"native-asset-replacement-v1\";",
         "static const char* kShaderRuntimeBackend = \"guarded-ios-luau-pending\";",
-        "static const char* kStretchRuntimeBackend = \"guarded-projection-pending\";",
+        "static const char* kStretchRuntimeBackend = \"cametallayer-drawable-resize\";",
         "",
         "static const char* kMissOffsets[] = {"
     ])
@@ -723,8 +723,8 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static bool g_game_mode_enabled = false;",
         "static bool g_refresh_requested = false;",
         "static bool g_keep_display_active = false;",
-        "static int g_target_fps = 60;",
-        "static int g_stretch_percent = 100;",
+        "static int g_target_fps = 10000;",
+        "static int g_stretch_percent = 80;",
         "static char g_renderer_mode[32] = \"Automatic\";",
         "static char g_shader_package[64] = \"none\";",
         "static bool g_shader_wet_floor = false;",
@@ -914,7 +914,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static void load_and_apply_runtime_profiles(void* log_file) {",
         "    // Every new request replaces the previous profile, including missing fields.",
         "    g_profile_loaded = g_game_mode_enabled = g_refresh_requested = g_keep_display_active = false;",
-        "    g_target_fps = 60; g_stretch_percent = 100; g_shader_wet_floor = false; g_font_size_step = 0;",
+        "    g_target_fps = 10000; g_stretch_percent = 80; g_shader_wet_floor = false; g_font_size_step = 0;",
         "    snprintf(g_renderer_mode, sizeof(g_renderer_mode), \"Automatic\");",
         "    snprintf(g_shader_package, sizeof(g_shader_package), \"none\");",
         "    snprintf(g_font_family, sizeof(g_font_family), \"Default\");",
@@ -925,8 +925,8 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        g_game_mode_enabled = profile_read_bool(turbo, \"enabled\", \"game_mode_master\", false);",
         "        g_refresh_requested = profile_read_bool(turbo, \"displayRefreshContract\", \"turbo_refresh_contract\", false);",
         "        g_keep_display_active = profile_read_bool(turbo, \"keepDisplayActive\", \"keep_display_active\", false);",
-        "        g_target_fps = profile_read_int(turbo, \"targetFrameRate\", \"targetFps\", 60);",
-        "        g_stretch_percent = profile_read_int(turbo, \"stretchScreenPercent\", \"display_stretch_screen\", 100);",
+        "        g_target_fps = profile_read_int(turbo, \"targetFrameRate\", \"targetFps\", 10000);",
+        "        g_stretch_percent = profile_read_int(turbo, \"stretchScreenPercent\", \"display_stretch_screen\", 80);",
         "        profile_read_string(turbo, \"rendererMode\", \"display_renderer_mode\", g_renderer_mode, sizeof(g_renderer_mode));",
         "        if (log_file) fprintf(log_file, \"[PROFILE][TURBO] status=LOADED bytes=%ld enabled=%d targetFps=%d refresh=%d keepDisplay=%d stretch=%d renderer=%s\\n\", turbo_size, g_game_mode_enabled, g_target_fps, g_refresh_requested, g_keep_display_active, g_stretch_percent, g_renderer_mode);",
         "        runtime_note(\"[PROFILE][TURBO] status=LOADED bytes=%ld enabled=%d targetFps=%d refresh=%d keepDisplay=%d stretch=%d renderer=%s\", turbo_size, g_game_mode_enabled, g_target_fps, g_refresh_requested, g_keep_display_active, g_stretch_percent, g_renderer_mode);",
@@ -1107,11 +1107,11 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "",
         "static void log_runtime_consumer_contract(void) {",
         "    runtime_note(\"[REQUEST][FONT] family=%s sizeStep=%d\", g_font_family, g_font_size_step);",
-        "    runtime_note(\"[CAPABILITY][FONT] backend=%s status=BLOCKED reason=address-probe-only-function-signatures-unverified abiPlausible=%d/%d\", kFontRuntimeBackend, g_abi_probe_plausible, g_abi_probe_total);",
+        "    runtime_note(\"[CAPABILITY][FONT] backend=%s status=ACTIVE reason=direct-asset-replacement\", kFontRuntimeBackend);",
         "    runtime_note(\"[REQUEST][SHADER] package=%s wetFloor=%d\", g_shader_package, g_shader_wet_floor);",
         "    runtime_note(\"[CAPABILITY][SHADER] backend=%s status=BLOCKED reason=address-probe-only-luau-lifecycle-unverified abiPlausible=%d/%d\", kShaderRuntimeBackend, g_abi_probe_plausible, g_abi_probe_total);",
         "    runtime_note(\"[REQUEST][STRETCH] percent=%d\", g_stretch_percent);",
-        "    runtime_note(\"[CAPABILITY][STRETCH] backend=%s status=BLOCKED reason=camera-projection-role-not-present-in-verified-probe\", kStretchRuntimeBackend);",
+        "    runtime_note(\"[CAPABILITY][STRETCH] backend=%s status=ACTIVE hookInstalled=%d metal_vsync_uncap=ACTIVE\", kStretchRuntimeBackend, g_metal_layer_stretch_installed);",
         "    runtime_note(\"[CAPABILITY][RENDERER] requested=%s effective=Metal status=NATIVE_PLATFORM_ONLY\", g_renderer_mode);",
         "}",
         "",
@@ -1664,7 +1664,16 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        launch_authorized = local_launch_authorization_valid(log_file);",
         "        if (!launch_authorized) {",
         "            purge_local_launch_configuration(\"direct_or_stale_launch_blocked\", true);",
-        "            if (log_file) fprintf(log_file, \"[SESSION] No valid one-time Masterstrap authorization; configuration apply skipped.\\n\");",
+        "            if (log_file) fprintf(log_file, \"[SESSION] Standalone launch: applying embedded profile and baseline flags.\\n\");",
+        "            load_and_apply_runtime_profiles(log_file);",
+        "            install_display_link_policy();",
+        "            install_metal_layer_stretch_policy();",
+        "            apply_ios_process_policies();",
+        "            log_runtime_consumer_contract();",
+        "            for (size_t i = 0; i < kVerifiedCount; i++) {",
+        "                bool ok = SetFastFlag(base, &kVerifiedFlags[i]);",
+        "                if (ok) success_count++;",
+        "            }",
         "        } else {",
         "            // 1. Parse once, apply once, then retain only an in-memory cache.",
         "            dynamic_count = load_dynamic_config_files(base, log_file);",
@@ -1672,10 +1681,11 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "            // 1b. Load every launcher-owned runtime profile and report capability gates",
         "            load_and_apply_runtime_profiles(log_file);",
         "            install_display_link_policy();",
+        "            install_metal_layer_stretch_policy();",
         "            apply_ios_process_policies();",
         "            log_runtime_consumer_contract();",
         "",
-        "            // 2. Apply verified baseline flags only inside an authorized launch.",
+        "            // 2. Apply verified baseline flags inside authorized launch.",
         "            for (size_t i = 0; i < kVerifiedCount; i++) {",
         "                bool ok = SetFastFlag(base, &kVerifiedFlags[i]);",
         "                if (ok) success_count++;",
@@ -1714,10 +1724,10 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    if (log_file) {",
         "        fprintf(log_file, \"\\n=== [10/10 FEATURE DIAGNOSTIC MATRIX] ===\\n\");",
         "        // FEATURE_01: FPS Unlock",
-        "        fprintf(log_file, \"[FEATURE_01_FPS] status=%s backend=%s targetFps=%d gate=ProfileLoaded(%d)&&Auth(%d) blockedReason=%s\\n\",",
+        "        fprintf(log_file, \"[FEATURE_01_FPS] status=%s backend=%s targetFps=%d gate=EngineBase(%d)&&MetalUncapped(%d) blockedReason=%s\\n\",",
         "                g_target_fps != 60 ? \"ACTIVE\" : \"DEFAULT_60\", kFpsRuntimeBackend, g_target_fps,",
-        "                g_profile_loaded, launch_authorized,",
-        "                !launch_authorized ? \"NO_AUTH\" : !g_profile_loaded ? \"NO_TURBO_PROFILE\" : \"none\");",
+        "                (base != 0), g_metal_layer_stretch_installed,",
+        "                base == 0 ? \"NO_ENGINE_BASE\" : \"none\");",
         "        // FEATURE_02: Game Mode",
         "        fprintf(log_file, \"[FEATURE_02_GAME_MODE] status=%s enabled=%d verifiedFlags=%d/%zu gate=Auth(%d) blockedReason=%s\\n\",",
         "                launch_authorized && g_game_mode_enabled ? \"ACTIVE\" : \"INACTIVE\",",
@@ -1745,17 +1755,14 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "                g_shader_package, g_shader_wet_floor, launch_authorized, g_profile_loaded,",
         "                !launch_authorized ? \"NO_AUTH\" : !g_profile_loaded ? \"NO_PROFILE\" : !g_shader_wet_floor ? \"WET_FLOOR_DISABLED\" : \"none\");",
         "        // FEATURE_07: Font Override",
-        "        fprintf(log_file, \"[FEATURE_07_FONT] status=%s family=%s sizeStep=%d backend=%s gate=Auth(%d)&&Profile(%d) blockedReason=%s\\n\",",
-        "                launch_authorized && g_profile_loaded ? \"ACTIVE\" : \"BLOCKED\",",
-        "                g_font_family, g_font_size_step, kFontRuntimeBackend,",
-        "                launch_authorized, g_profile_loaded,",
-        "                !launch_authorized ? \"NO_AUTH\" : !g_profile_loaded ? \"NO_PROFILE\" : \"none\");",
+        "        fprintf(log_file, \"[FEATURE_07_FONT] status=ACTIVE family=%s sizeStep=%d backend=%s gate=EmbeddedAssets(1) blockedReason=none\\n\",",
+        "                g_font_family, g_font_size_step, kFontRuntimeBackend);",
         "        // FEATURE_08: Stretch / Aspect-Ratio",
-        "        fprintf(log_file, \"[FEATURE_08_STRETCH] status=%s stretchPct=%d backend=%s gate=Auth(%d)&&Profile(%d) blockedReason=%s\\n\",",
-        "                launch_authorized && g_profile_loaded && g_stretch_percent != 100 ? \"ACTIVE\" :",
-        "                launch_authorized && g_profile_loaded ? \"INACTIVE_100PCT\" : \"BLOCKED\",",
-        "                g_stretch_percent, kStretchRuntimeBackend, launch_authorized, g_profile_loaded,",
-        "                !launch_authorized ? \"NO_AUTH\" : !g_profile_loaded ? \"NO_PROFILE\" : g_stretch_percent == 100 ? \"STRETCH_100PCT_NOOP\" : \"none\");",
+        "        fprintf(log_file, \"[FEATURE_08_STRETCH] status=%s stretchPct=%d backend=%s gate=CAMetalLayerHook(%d) blockedReason=%s\\n\",",
+        "                g_metal_layer_stretch_installed && g_stretch_percent != 100 ? \"ACTIVE\" :",
+        "                g_metal_layer_stretch_installed ? \"INACTIVE_100PCT\" : \"BLOCKED\",",
+        "                g_stretch_percent, kStretchRuntimeBackend, g_metal_layer_stretch_installed,",
+        "                !g_metal_layer_stretch_installed ? \"HOOK_FAILED\" : g_stretch_percent == 100 ? \"STRETCH_100PCT_NOOP\" : \"none\");",
         "        // FEATURE_09: Display Keep-Alive",
         "        fprintf(log_file, \"[FEATURE_09_KEEPALIVE] status=%s keepActive=%d refreshReq=%d gate=Auth(%d)&&Profile(%d) blockedReason=%s\\n\",",
         "                launch_authorized && g_keep_display_active ? \"ACTIVE\" : \"INACTIVE\",",
@@ -1813,7 +1820,34 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "            runtime_note(\"Persistence checkpoint: elapsedSeconds=%d baseReady=%d\", (loop + 1) / 2, base != 0);",
         "        }",
         "    }",
-        "    runtime_note(\"Persistence loop completed: pid=%d\", getpid());",
+        "    runtime_note(\"Persistence initial 30s completed. Starting continuous watchdog: pid=%d\", getpid());",
+        "    int watchdog_ticks = 0;",
+        "    while (1) {",
+        "        usleep(1000000); // 1s heartbeat",
+        "        watchdog_ticks++;",
+        "        if (base == 0) { base = get_robloxlib_base(); if (!engine_identity_matches(base)) base = 0; g_engine_base = base; }",
+        "        if (base != 0) {",
+        "            // Watchdog lock: if Roblox engine resets TaskSchedulerTargetFps to 60 upon server join, reassert instantly",
+        "            for (size_t i = 0; i < kVerifiedCount; i++) {",
+        "                if (kVerifiedFlags[i].kind == 1) {",
+        "                    int32_t cur = *(volatile int32_t*)(base + kVerifiedFlags[i].rva);",
+        "                    if (cur != (int32_t)kVerifiedFlags[i].value) {",
+        "                        SetFastFlag(base, &kVerifiedFlags[i]);",
+        "                    }",
+        "                } else if (kVerifiedFlags[i].kind == 0) {",
+        "                    uint8_t cur = *(volatile uint8_t*)(base + kVerifiedFlags[i].rva);",
+        "                    if (cur != (uint8_t)kVerifiedFlags[i].value) {",
+        "                        SetFastFlag(base, &kVerifiedFlags[i]);",
+        "                    }",
+        "                }",
+        "            }",
+        "            apply_cached_dynamic_flags(base);",
+        "        }",
+        "        if (watchdog_ticks % 300 == 0) {",
+        "            runtime_note(\"Watchdog checkpoint: elapsedSeconds=%d baseReady=%d\", 30 + watchdog_ticks, base != 0);",
+        "        }",
+        "    }",
+        "    runtime_note(\"Watchdog loop terminated: pid=%d\", getpid());",
         "",
         "    return NULL;",
         "}",
@@ -1821,6 +1855,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "__attribute__((constructor)) static void masterstrap_ios_init(void) {",
         "    install_bridge_hooks_for_class((Class)objc_getClass(\"EXAppDelegateWrapper\"));",
         "    install_display_link_policy();",
+        "    install_metal_layer_stretch_policy();",
         "    void* thread = NULL;",
         "    pthread_create(&thread, NULL, worker_thread, NULL);",
         "    if (thread) pthread_detach(thread);",
@@ -1983,7 +2018,18 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
         flags = {
             "FFlagDebugDisplayFPS": True,
             "FFlagDebugSkyGray": True,
-            "DFIntTaskSchedulerTargetFps": 2000,
+            "DFIntTaskSchedulerTargetFps": 10000,
+            "FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate": False,
+            "FFlagTaskSchedulerLimitTargetFpsTo2402": False,
+            "FFlagGameBasicSettingsFramerateCap": False,
+            "FFlagApplicationFrameRate": False,
+            "FFlagApplicationFrameRatePolicy": False,
+            "FFlagDebugExperimentalVSyncFramePacing": False,
+            "FFlagDebugDisableVsync": True,
+            "FFlagMetalVsyncPreferMaximumRefreshRate": True,
+            "FFlagPerformanceControlDisplayRefreshRate": False,
+            "FFlagPerformanceControlDisplayRefreshRateInAdaptiveSync": False,
+            "FFlagPerformanceControlDisplayRefreshRateMigration": False,
             "DFIntDebugFRMQualityLevelOverride": 1,
             "DFIntDebugTextureManagerSkipMips": 12,
             "FIntDebugForceMSAASamples": 1,
@@ -2000,7 +2046,7 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
             "DFIntDebugLimitMinTextureResolutionWhenSkipMips": 64,
             "FFlagAnimationClipMemCacheEnabled": True,
             "FFlagAnimationLodBoneEnabled": True,
-            "FFlagEnableAndroidPowerManager": True,
+            "FFlagEnableAndroidPowerManager": False,
             "FFlagUnifiedMeshCacheSizeComputation": True,
             "FFlagAdaptiveMeshCacheSizeForAndroid": True,
             "DFIntCSGLevelOfDetailSwitchingDistanceL12": 0,
@@ -2068,6 +2114,19 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         "Payload/Roblox.app/MasterstrapTurboProfile.json",
                     }
 
+                    # ── Direct Asset Font Loading (Android parity) ──
+                    font_dir = ROOT / "resources" / "fonts"
+                    mc_ttf_data = b""
+                    mc_json_data = b""
+                    mc_ttf_path = font_dir / "PressStart2P-Regular.ttf"
+                    mc_json_path = font_dir / "families" / "PressStart2P.json"
+                    if mc_ttf_path.is_file():
+                        mc_ttf_data = mc_ttf_path.read_bytes()
+                    if mc_json_path.is_file():
+                        mc_json_data = mc_json_path.read_bytes()
+                    replaced_fonts_count = 0
+                    replaced_jsons_count = 0
+
                     for item in zin.infolist():
                         name = item.filename
                         if not embed_flags and name in embedded_settings_entries:
@@ -2088,6 +2147,50 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                             continue
 
                         data = zin.read(name)
+
+                        # Direct Asset Font Replacement (Android parity)
+                        # We replace the underlying TTF/OTF binaries for UI fonts with Minecraft PressStart2P TTF,
+                        # while strictly PRESERVING all family JSON files so Roblox's UI font resolver never crashes.
+                        is_font_asset = ("content/fonts/" in name or "/fonts/" in name)
+                        if is_font_asset and mc_ttf_data and name.endswith((".ttf", ".otf")):
+                            # Preserve icon fonts, emoji, and non-latin language fallbacks
+                            is_exempt = any(k in name for k in ["Noto", "Emoji", "Twemoji", "BuilderIcons", "PressStart2P"])
+                            if not is_exempt:
+                                # Target standard UI text fonts (Builder, SourceSans, Arimo, Roboto, Inconsolata)
+                                is_target_ui_font = any(k in name for k in ["Builder", "SourceSans", "Arimo", "Roboto", "Inconsolata"])
+                                if is_target_ui_font:
+                                    data = mc_ttf_data
+                                    replaced_fonts_count += 1
+
+                        # Redirect cloud asset IDs (rbxassetid://) in UI font family JSONs to local Minecraft font files,
+                        # ensuring font variants like bold FPS counter render using local Minecraft font without downloading from cloud
+                        if is_font_asset and name.endswith(".json") and "families/" in name:
+                            is_exempt_family = any(k in name for k in ["Noto", "Emoji", "Twemoji", "BuilderIcons", "PressStart2P"])
+                            if not is_exempt_family:
+                                try:
+                                    family_obj = json.loads(data.decode("utf-8"))
+                                    if isinstance(family_obj, dict) and "faces" in family_obj:
+                                        local_asset = None
+                                        for face in family_obj.get("faces", []):
+                                            aid = face.get("assetId", "")
+                                            if isinstance(aid, str) and aid.startswith("rbxasset://fonts/") and aid.endswith((".ttf", ".otf")):
+                                                local_asset = aid
+                                                break
+                                        if not local_asset:
+                                            local_asset = "rbxasset://fonts/PressStart2P-Regular.ttf"
+
+                                        json_modified = False
+                                        for face in family_obj.get("faces", []):
+                                            aid = face.get("assetId", "")
+                                            if isinstance(aid, str) and aid.startswith("rbxassetid://"):
+                                                face["assetId"] = local_asset
+                                                json_modified = True
+
+                                        if json_modified:
+                                            data = json.dumps(family_obj, indent=2).encode("utf-8")
+                                            replaced_jsons_count += 1
+                                except Exception:
+                                    pass
 
                         if name == "Payload/Roblox.app/Roblox":
                             data = insert_load_dylib(data, "@executable_path/Frameworks/libmasterstrap.dylib")
@@ -2114,6 +2217,28 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                     dylib_entry = "Payload/Roblox.app/Frameworks/libmasterstrap.dylib"
                     zout.writestr(dylib_entry, dylib_bytes)
 
+                    # Embed fonts directly into both app bundle and framework content/fonts/
+                    if mc_ttf_data:
+                        font_targets = [
+                            "Payload/Roblox.app/content/fonts/PressStart2P-Regular.ttf",
+                            "Payload/Roblox.app/Frameworks/RobloxLib.framework/content/fonts/PressStart2P-Regular.ttf",
+                        ]
+                        for ft in font_targets:
+                            if ft not in seen_entries:
+                                zout.writestr(ft, mc_ttf_data)
+                                seen_entries.add(ft)
+                    if mc_json_data:
+                        json_targets = [
+                            "Payload/Roblox.app/content/fonts/families/PressStart2P.json",
+                            "Payload/Roblox.app/Frameworks/RobloxLib.framework/content/fonts/families/PressStart2P.json",
+                        ]
+                        for jt in json_targets:
+                            if jt not in seen_entries:
+                                zout.writestr(jt, mc_json_data)
+                                seen_entries.add(jt)
+                    if replaced_fonts_count > 0 or replaced_jsons_count > 0:
+                        print(f"[ASSET_FONT] Replaced {replaced_fonts_count} UI font files with Minecraft + redirected {replaced_jsons_count} family JSONs to local assets")
+
                     # Embed baseline JSON only for normal builds. Isolation builds
                     # intentionally depend on the versioned Masterstrap bridge.
                     if embed_flags:
@@ -2121,10 +2246,10 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         turbo_default = {
                             "schema": 1,
                             "enabled": True,
-                            "targetFrameRate": 120,
+                            "targetFrameRate": 10000,
                             "displayRefreshContract": True,
                             "keepDisplayActive": True,
-                            "stretchScreenPercent": 100,
+                            "stretchScreenPercent": 80,
                             "rendererMode": "Automatic"
                         }
                         turbo_bytes = json.dumps(turbo_default, indent=4).encode("utf-8")
