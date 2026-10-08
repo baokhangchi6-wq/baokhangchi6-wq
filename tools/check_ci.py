@@ -141,11 +141,50 @@ def watch_latest_run_and_download():
         time.sleep(10)
 
     if not matching_release:
-        releases = api_request("releases?per_page=5")
-        matching_release = releases[0] if releases else None
+        print(f"No release tag found for {target_tag}. Checking GitHub Actions artifacts...")
+        download_dir = Path(r"C:\Users\Administrator\Downloads")
+        download_dir.mkdir(parents=True, exist_ok=True)
+        artifacts_data = api_request(f"actions/runs/{run_id}/artifacts")
+        artifacts = artifacts_data.get("artifacts", [])
+        if artifacts:
+            artifact = artifacts[0]
+            artifact_id = artifact.get("id")
+            token = get_token()
+            zip_url = f"https://api.github.com/repos/{get_repo()}/actions/artifacts/{artifact_id}/zip"
+            temp_zip = download_dir / f"artifact_run_{run_id}.zip"
+            print(f"Downloading artifact {artifact.get('name')} (ID: {artifact_id})...", flush=True)
+            cmd = [
+                "curl.exe",
+                "-f",
+                "-L",
+                "-H", f"Authorization: token {token}",
+                zip_url,
+                "-o", str(temp_zip),
+                "--progress-bar"
+            ]
+            res = subprocess.run(cmd)
+            if res.returncode == 0:
+                import zipfile
+                extracted_ipa = None
+                with zipfile.ZipFile(temp_zip) as z:
+                    for info in z.infolist():
+                        if info.filename.endswith(".ipa"):
+                            out_ipa = download_dir / Path(info.filename).name
+                            if out_ipa.exists():
+                                out_ipa.unlink()
+                            z.extract(info, download_dir)
+                            extracted_ipa = out_ipa
+                            break
+                if temp_zip.exists():
+                    temp_zip.unlink()
+                if extracted_ipa:
+                    print(f"\n==========================================")
+                    print(f"[SUCCESS] Downloaded & extracted IPA from artifact: {extracted_ipa.resolve()}")
+                    print(f"==========================================")
+                    return True
 
     if not matching_release:
-        print("No release found!")
+        print("No release or artifact found!")
         return False
 
     print(f"Found release: {matching_release.get('name')} (tag: {matching_release.get('tag_name')})")
