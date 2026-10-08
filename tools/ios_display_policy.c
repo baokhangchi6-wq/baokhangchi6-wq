@@ -331,19 +331,6 @@ static void ms_apply_metal_layer_policies(id layer) {
             ((void (*)(id, SEL, bool))objc_msgSend)(layer, timeout_sel, true);
         }
     }
-
-    // 2. Hardware CoreAnimation stretch transform (preserves native drawableSize & eliminates magenta buffer gap)
-    double scale_x = 1.0;
-    if (g_stretch_percent > 0 && g_stretch_percent != 100) {
-        MSSize size = ((MSSize (*)(id, SEL))objc_msgSend)(layer, sel_registerName("drawableSize"));
-        if (size.width > size.height && size.height > 0) {
-            scale_x = 100.0 / (double)g_stretch_percent;
-        }
-    }
-    id num = ((id (*)(id, SEL, double))objc_msgSend)(objc_getClass("NSNumber"),
-        sel_registerName("numberWithDouble:"), scale_x);
-    ((void (*)(id, SEL, id, id))objc_msgSend)(layer,
-        sel_registerName("setValue:forKeyPath:"), num, ms_string("transform.scale.x"));
 }
 
 static inline void ms_ensure_layer_vsync_uncapped(id layer) {
@@ -374,12 +361,6 @@ static void metal_layer_set_drawable_size_hook(id self, SEL cmd, MSSize size) {
         g_original_set_drawable_size(self, cmd, size);
     }
     ms_apply_metal_layer_policies(self);
-    static int s_logged_stretch = 0;
-    if (!s_logged_stretch && g_stretch_percent > 0 && g_stretch_percent != 100 && size.width > size.height) {
-        s_logged_stretch = 1;
-        runtime_note("[APPLY][STRETCH] CAMetalLayer CoreAnimation transform.scale.x=%.2f stretch=%d%% native=%.0fx%.0f",
-                     100.0 / (double)g_stretch_percent, g_stretch_percent, size.width, size.height);
-    }
 }
 
 static void ms_apply_stretch_to_layer_tree(id layer, Class metalClass) {

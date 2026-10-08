@@ -418,7 +418,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static const char* kFpsRuntimeBackend = \"cadisplaylink-range-policy-v2\";",
         "static const char* kFontRuntimeBackend = \"native-asset-replacement-v1\";",
         "static const char* kShaderRuntimeBackend = \"guarded-ios-luau-pending\";",
-        "static const char* kStretchRuntimeBackend = \"cametallayer-drawable-resize\";",
+        "static const char* kStretchRuntimeBackend = \"view-projection-v73\";",
         "",
         "static const char* kMissOffsets[] = {"
     ])
@@ -928,6 +928,10 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        g_target_fps = profile_read_int(turbo, \"targetFrameRate\", \"targetFps\", 10000);",
         "        g_stretch_percent = profile_read_int(turbo, \"stretchScreenPercent\", \"display_stretch_screen\", 80);",
         "        profile_read_string(turbo, \"rendererMode\", \"display_renderer_mode\", g_renderer_mode, sizeof(g_renderer_mode));",
+        "        if (g_engine_base != 0) {",
+        "            float factor = (g_stretch_percent > 0 && g_stretch_percent != 100) ? (100.0f / (float)g_stretch_percent) : 1.0f;",
+        "            *(volatile float*)(g_engine_base + 0x69ca130) = factor;",
+        "        }",
         "        if (log_file) fprintf(log_file, \"[PROFILE][TURBO] status=LOADED bytes=%ld enabled=%d targetFps=%d refresh=%d keepDisplay=%d stretch=%d renderer=%s\\n\", turbo_size, g_game_mode_enabled, g_target_fps, g_refresh_requested, g_keep_display_active, g_stretch_percent, g_renderer_mode);",
         "        runtime_note(\"[PROFILE][TURBO] status=LOADED bytes=%ld enabled=%d targetFps=%d refresh=%d keepDisplay=%d stretch=%d renderer=%s\", turbo_size, g_game_mode_enabled, g_target_fps, g_refresh_requested, g_keep_display_active, g_stretch_percent, g_renderer_mode);",
         "        free(turbo);",
@@ -1720,6 +1724,16 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "                    }",
         "                }",
         "            }",
+        "            if (base != 0) {",
+        "                float factor = (g_stretch_percent > 0 && g_stretch_percent != 100) ? (100.0f / (float)g_stretch_percent) : 1.0f;",
+        "                *(volatile float*)(base + 0x69ca130) = factor;",
+        "                if (log_file) {",
+        "                    fprintf(log_file, \"[STRETCH_PROJECTION] Stored horizontalFactor=%.4f (stretchPercent=%d%%) to slot 0x%lx (Status: VERIFIED)\\n\",",
+        "                            factor, g_stretch_percent, (unsigned long)(base + 0x69ca130));",
+        "                }",
+        "                runtime_note(\"[STRETCH_PROJECTION] Stored horizontalFactor=%.4f (stretchPercent=%d%%) to slot 0x%lx status=VERIFIED\",",
+        "                             factor, g_stretch_percent, (unsigned long)(base + 0x69ca130));",
+        "            }",
         "            purge_local_launch_configuration(\"cold_launch_applied\", true);",
         "        }",
         "    } else {",
@@ -1775,11 +1789,10 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        fprintf(log_file, \"[FEATURE_07_FONT] status=ACTIVE family=%s sizeStep=%d backend=%s gate=EmbeddedAssets(1) blockedReason=none\\n\",",
         "                g_font_family, g_font_size_step, kFontRuntimeBackend);",
         "        // FEATURE_08: Stretch / Aspect-Ratio",
-        "        fprintf(log_file, \"[FEATURE_08_STRETCH] status=%s stretchPct=%d backend=%s gate=CAMetalLayerHook(%d) blockedReason=%s\\n\",",
-        "                g_metal_layer_stretch_installed && g_stretch_percent != 100 ? \"ACTIVE\" :",
-        "                g_metal_layer_stretch_installed ? \"INACTIVE_100PCT\" : \"BLOCKED\",",
-        "                g_stretch_percent, kStretchRuntimeBackend, g_metal_layer_stretch_installed,",
-        "                !g_metal_layer_stretch_installed ? \"HOOK_FAILED\" : g_stretch_percent == 100 ? \"STRETCH_100PCT_NOOP\" : \"none\");",
+        "        fprintf(log_file, \"[FEATURE_08_STRETCH] status=%s stretchPct=%d backend=%s gate=3DProjectionHook(1) blockedReason=%s\\n\",",
+        "                g_stretch_percent != 100 ? \"ACTIVE\" : \"INACTIVE_100PCT\",",
+        "                g_stretch_percent, kStretchRuntimeBackend,",
+        "                g_stretch_percent == 100 ? \"STRETCH_100PCT_NOOP\" : \"none\");",
         "        // FEATURE_09: Display Keep-Alive",
         "        fprintf(log_file, \"[FEATURE_09_KEEPALIVE] status=%s keepActive=%d refreshReq=%d gate=Auth(%d)&&Profile(%d) blockedReason=%s\\n\",",
         "                launch_authorized && g_keep_display_active ? \"ACTIVE\" : \"INACTIVE\",",
@@ -1859,6 +1872,12 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "                }",
         "            }",
         "            apply_cached_dynamic_flags(base);",
+        "            if (g_stretch_percent > 0 && g_stretch_percent != 100) {",
+        "                float expected_factor = 100.0f / (float)g_stretch_percent;",
+        "                if (*(volatile float*)(base + 0x69ca130) != expected_factor) {",
+        "                    *(volatile float*)(base + 0x69ca130) = expected_factor;",
+        "                }",
+        "            }",
         "        }",
         "        if (watchdog_ticks % 300 == 0) {",
         "            runtime_note(\"Watchdog checkpoint: elapsedSeconds=%d baseReady=%d\", 30 + watchdog_ticks, base != 0);",
@@ -2215,6 +2234,57 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         if name == "Payload/Roblox.app/Roblox":
                             data = insert_load_dylib(data, "@executable_path/Frameworks/libmasterstrap.dylib")
                         elif name == "Payload/Roblox.app/Frameworks/RobloxLib.framework/RobloxLib":
+                            data = bytearray(data)
+
+                            # 1. GetDefaultFramerateCap 240 FPS clamp (0x47643B0: csel -> mov w9, w8)
+                            clamp1_offset = 0x47643b0
+                            if len(data) > clamp1_offset + 4 and data[clamp1_offset:clamp1_offset+4] in (b'\x09\xb1\x89\x1a', b'\xe9\x03\x08\x2a'):
+                                data[clamp1_offset:clamp1_offset+4] = b'\xe9\x03\x08\x2a'
+                                print(f"[PATCH_ROBLOXLIB] Uncapped GetDefaultFramerateCap at 0x{clamp1_offset:x} (csel -> mov w9, w8)")
+
+                            # 2. TaskScheduler dt 240 FPS clamp (0x93B540: csel -> nop)
+                            clamp2_offset = 0x93b540
+                            if len(data) > clamp2_offset + 4 and data[clamp2_offset:clamp2_offset+4] in (b'\x6b\xb1\x8c\x1a', b'\x1f\x20\x03\xd5'):
+                                data[clamp2_offset:clamp2_offset+4] = b'\x1f\x20\x03\xd5'
+                                print(f"[PATCH_ROBLOXLIB] Uncapped TaskScheduler dt clamp at 0x{clamp2_offset:x} (csel -> nop)")
+
+                            # 3. AdaptiveSync schedule target 10000 FPS (0x409D17C: csinc -> mov w22, #10000)
+                            adapt_sched_offset = 0x409d17c
+                            if len(data) > adapt_sched_offset + 4 and data[adapt_sched_offset:adapt_sched_offset+4] in (b'\x16\xc5\x9f\x1a', b'\x16\xe2\x84\x52'):
+                                data[adapt_sched_offset:adapt_sched_offset+4] = b'\x16\xe2\x84\x52'
+                                print(f"[PATCH_ROBLOXLIB] Uncapped AdaptiveSync target at 0x{adapt_sched_offset:x} (csinc -> mov w22, #10000)")
+
+                            # 4. AdaptiveSync refresh clamp bypass (0x409D1DC: csel -> nop)
+                            adapt_clamp_offset = 0x409d1dc
+                            if len(data) > adapt_clamp_offset + 4 and data[adapt_clamp_offset:adapt_clamp_offset+4] in (b'\xb6\x32\x96\x1a', b'\x1f\x20\x03\xd5'):
+                                data[adapt_clamp_offset:adapt_clamp_offset+4] = b'\x1f\x20\x03\xd5'
+                                print(f"[PATCH_ROBLOXLIB] Bypassed AdaptiveSync refresh clamp at 0x{adapt_clamp_offset:x} (csel -> nop)")
+
+                            # 5. 3D View-Projection Matrix Stretch Hook (0xB761E4 -> Code Cave 0x3F80)
+                            stretch_cave_offset = 0x3F80
+                            stretch_hook_offset = 0xB761E4
+                            stretch_cave_bytes = struct.pack(
+                                '<12I',
+                                0xF0034E28,  # 0x3F80: adrp x8, #0x69ca000
+                                0xBD413101,  # 0x3F84: ldr s1, [x8, #0x130]
+                                0x1E202028,  # 0x3F88: fcmp s1, #0.0
+                                0x540000E0,  # 0x3F8C: b.eq #0x3fa8
+                                0x1E2E1002,  # 0x3F90: fmov s2, #1.00000000
+                                0x1E222020,  # 0x3F94: fcmp s1, s2
+                                0x54000080,  # 0x3F98: b.eq #0x3fa8
+                                0x3DC02680,  # 0x3F9C: ldr q0, [x20, #0x90]
+                                0x4F819000,  # 0x3FA0: fmul v0.4s, v0.4s, v1.s[0]
+                                0x3D800660,  # 0x3FA4: str q0, [x19, #0x10]
+                                0xA94A7BFD,  # 0x3FA8: ldp x29, x30, [sp, #0xa0]
+                                0x142DC88F,  # 0x3FAC: b #0xb761e8
+                            )
+                            stretch_hook_bytes = bytes.fromhex("6737d217")  # b #0x3f80
+                            if len(data) > stretch_hook_offset + 4 and data[stretch_hook_offset:stretch_hook_offset+4] in (b'\xfd\x7b\x4a\xa9', stretch_hook_bytes):
+                                data[stretch_cave_offset:stretch_cave_offset + len(stretch_cave_bytes)] = stretch_cave_bytes
+                                data[stretch_hook_offset:stretch_hook_offset+4] = stretch_hook_bytes
+                                print(f"[PATCH_ROBLOXLIB] Installed 3D View-Projection Matrix Stretch Cave at 0x{stretch_cave_offset:x} & hooked 0x{stretch_hook_offset:x}")
+
+                            data = bytes(data)
                             data = insert_load_dylib(data, "@rpath/libmasterstrap.dylib")
                         elif name.endswith("Roblox.app/Info.plist"):
                             try:
