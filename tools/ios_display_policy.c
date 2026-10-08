@@ -48,7 +48,7 @@ static ScreenMaxFpsImp g_original_screen_max_fps = NULL;
 
 static long screen_max_fps_hook(id self, SEL cmd) {
     if (fps_runtime_requested()) {
-        return 240; /* Report ProMotion max rate to prevent Roblox 60Hz throttling */
+        return 120; /* ProMotion hardware maximum is 120Hz */
     }
     return g_original_screen_max_fps ? g_original_screen_max_fps(self, cmd) : 60;
 }
@@ -63,7 +63,7 @@ static id ms_process_info(void) {
 static int ios_maximum_frames_per_second(void) {
     id screen = ((id (*)(id, SEL))objc_msgSend)(objc_getClass("UIScreen"), sel_registerName("mainScreen"));
     long rate = screen ? ((long (*)(id, SEL))objc_msgSend)(screen, sel_registerName("maximumFramesPerSecond")) : 60;
-    return rate >= 30 && rate <= 240 ? (int)rate : 60;
+    return rate >= 30 && rate <= 120 ? (int)rate : 120;
 }
 static int ms_low_power(void) {
     if (fps_runtime_requested()) return 0;
@@ -78,11 +78,22 @@ static bool fps_runtime_requested(void) {
 static long fps_runtime_target(void) {
     return ms_ios_target_fps(g_ms_policy.target, ios_maximum_frames_per_second(), ms_low_power(), ms_thermal());
 }
+static inline MSFrameRateRange sanitize_frame_rate_range(MSFrameRateRange range) {
+    int screen_max = ios_maximum_frames_per_second();
+    if (screen_max <= 0 || screen_max > 120) screen_max = 120;
+    float max_limit = (float)screen_max;
+    if (range.minimum <= 0.0f || range.minimum > max_limit) range.minimum = 1.0f;
+    if (range.maximum <= 0.0f || range.maximum > max_limit) range.maximum = max_limit;
+    if (range.minimum > range.maximum) range.minimum = range.maximum;
+    if (range.preferred < range.minimum) range.preferred = range.minimum;
+    if (range.preferred > range.maximum) range.preferred = range.maximum;
+    return range;
+}
 static MSFrameRateRange ms_target_range(void) {
     int screen_max = ios_maximum_frames_per_second();
-    if (screen_max <= 0) screen_max = 120;
+    if (screen_max <= 0 || screen_max > 120) screen_max = 120;
     float max_limit = (float)screen_max;
-    return (MSFrameRateRange){max_limit, max_limit, max_limit};
+    return sanitize_frame_rate_range((MSFrameRateRange){max_limit, max_limit, max_limit});
 }
 static bool ms_get_link_request(id link, MSLinkRequest* request) {
     id value = objc_getAssociatedObject(link, &g_ms_link_request_key);
@@ -166,6 +177,7 @@ static void display_link_set_fps_hook(id self, SEL cmd, long requested) {
     apply_display_link_policy(self, "fps-setter");
 }
 static void display_link_set_range_hook(id self, SEL cmd, MSFrameRateRange requested) {
+    requested = sanitize_frame_rate_range(requested);
     if (!pthread_main_np() || g_ms_applying) {
         if (g_original_display_link_set_range) g_original_display_link_set_range(self, cmd, requested);
         return;
@@ -189,6 +201,7 @@ static void display_link_add_hook(id self, SEL cmd, id loop, id mode) {
     if (g_original_display_link_add) {
         g_original_display_link_add(self, cmd, loop, mode);
         id commonMode = ms_string("kCFRunLoopCommonModes");
+        id trackingMode = ms_string("UITrackingRunLoopMode");
         if (commonMode && loop) {
             bool is_same = false;
             if (mode) {
@@ -196,6 +209,15 @@ static void display_link_add_hook(id self, SEL cmd, id loop, id mode) {
             }
             if (!is_same) {
                 g_original_display_link_add(self, cmd, loop, commonMode);
+            }
+        }
+        if (trackingMode && loop) {
+            bool is_same_track = false;
+            if (mode) {
+                is_same_track = ((bool (*)(id, SEL, id))objc_msgSend)(mode, sel_registerName("isEqual:"), trackingMode);
+            }
+            if (!is_same_track) {
+                g_original_display_link_add(self, cmd, loop, trackingMode);
             }
         }
     }
