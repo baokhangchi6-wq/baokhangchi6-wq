@@ -31,6 +31,7 @@ static unsigned g_ms_generation;
 static char g_ms_link_request_key;
 typedef struct { long fps; MSFrameRateRange range; int has_range, managed; } MSLinkRequest;
 static void write_runtime_capability_receipt(void);
+static bool fps_runtime_requested(void);
 
 typedef unsigned char (*ProcessInfoLowPowerImp)(id, SEL);
 static ProcessInfoLowPowerImp g_original_is_low_power = NULL;

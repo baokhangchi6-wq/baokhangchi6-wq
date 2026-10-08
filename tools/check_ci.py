@@ -21,9 +21,22 @@ def get_token():
         print("Could not get token from git credential:", e)
     return None
 
+def get_repo():
+    try:
+        proc = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True, check=True)
+        url = proc.stdout.strip()
+        if "github.com/" in url:
+            repo = url.split("github.com/")[1]
+            if repo.endswith(".git"):
+                repo = repo[:-4]
+            return repo
+    except Exception:
+        pass
+    return "Masterstrap/IOS-source"
+
 def api_request(endpoint):
     token = get_token()
-    url = f"https://api.github.com/repos/baokhangchi6-wq/baokhangchi6-wq/{endpoint}"
+    url = f"https://api.github.com/repos/{get_repo()}/{endpoint}"
     headers = {
         "User-Agent": "Mozilla/5.0",
         "Accept": "application/vnd.github+json"
