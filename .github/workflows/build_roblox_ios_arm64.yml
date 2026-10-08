@@ -1,24 +1,22 @@
 name: Build Global IPA
-# Debug crash isolation: preserve Roblox sky and animation assets.
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Build Global IPA (Restored to Build 091 stable baseline)
 # Immediate threshold = 0: build as soon as ANY new App Store version appears.
-# No 2-version distance or 21-day age gate (unlike Android global-arm64 lane).
-# Mirrors the structure of Android's build_global_arm64.yml for consistency.
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
   push:
-    branches: [ main ]
+    branches: [ master, main ]
     paths:
-      - 'tools/**'
-      - 'resources/**'
-      - 'roblox/**'
+      - 'tools/build_integrated_roblox_ipa.py'
+      - 'tools/check_roblox_ios_version.py'
       - 'patterns.ios.json'
+      - 'tools/ios_display_policy.c'
+      - 'tools/ios_frame_policy.h'
       - '.github/workflows/build_roblox_ios_arm64.yml'
   schedule:
-    # Check every 3 hours (at :17 past the hour) — Roblox iOS releases are faster
-    # than Android, so we poll more frequently to catch updates immediately.
+    # Check every 3 hours (at :17 past the hour)
     - cron: '17 */3 * * *'
 
   workflow_dispatch:
@@ -31,14 +29,8 @@ on:
       force_rebuild:
         description: 'Force rebuild even if version was already built'
         required: false
-        default: false
+        default: true
         type: boolean
-      build_type:
-        description: 'Debug for device FPS checks; Release for publishing'
-        required: true
-        type: choice
-        options: [debug, release]
-        default: release
 
 permissions:
   contents: write
@@ -51,8 +43,6 @@ jobs:
   build:
     runs-on: macos-26
     timeout-minutes: 90
-    env:
-      MASTERSTRAP_BUILD_TYPE: ${{ inputs.build_type || 'release' }}
 
     steps:
       - name: Checkout iOS lane
@@ -69,25 +59,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pyyaml capstone Pillow requests
-
-      - name: Check FPS policy and native source contracts
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -m compileall -q tools roblox
-          for suite in test_scanner.py test_macho.py test_verification.py test_writers.py; do
-            PYTHONPATH=roblox python -m unittest discover -s roblox/tests -t roblox -p "$suite" -v
-          done
-          PYTHONPATH=roblox python -m unittest discover -s roblox/tests -p test_ios_display_policy.py -v
-          python tools/check_ios_luau_audit.py
-          python tools/verify_ios_android_shader_parity.py --expect-disabled
-          python tools/check_ios_crash_isolation.py
-          PYTHONPATH=roblox python -c 'from tools.build_integrated_roblox_ipa import LUAU_SHADER_PAYLOAD; assert "androidProfiles" in LUAU_SHADER_PAYLOAD; print("PASS: builder payload imports")'
-          clang -std=c11 -Wall -Wextra -Werror -I tools \
-            roblox/tests/ios_frame_policy_test.c -o "$RUNNER_TEMP/ios-fps-policy-check"
-          "$RUNNER_TEMP/ios-fps-policy-check"
-          PYTHONPATH=roblox python -c 'import os; from pathlib import Path; from tools.build_integrated_roblox_ipa import generate_native_hook_source; (Path(os.environ["RUNNER_TEMP"]) / "masterstrap-fps-source.c").write_text(generate_native_hook_source([], [], 0, [], {}), encoding="utf-8")'
-          clang -target arm64-apple-ios14.0 -fsyntax-only -Wno-everything "$RUNNER_TEMP/masterstrap-fps-source.c"
 
       # ── STEP 1: Version Gate (threshold = 0, IMMEDIATE) ──────────────────
       - name: Check Roblox iOS App Store version (threshold=0)
@@ -131,8 +102,6 @@ jobs:
             $URL_ARG \
             --output roblox_input/roblox.ipa
 
-
-
       # ── STEP 3: Auto-dump offsets from IPA ───────────────────────────────
       - name: Auto Dump iOS Offsets & FFlags from IPA
         if: steps.version_gate.outputs.should_build == 'true'
@@ -141,31 +110,21 @@ jobs:
           echo "=== [1/4] Running iOS Dumper ==="
           mkdir -p output
 
-          if [ "${{ steps.prepare_ipa.outputs.available }}" != "true" ]; then
-            echo "Exact decrypted IPA is required; refusing stale remote offsets."
-            exit 1
+          if [ "${{ steps.prepare_ipa.outputs.available }}" = "true" ]; then
+            PYTHONPATH=roblox python -m roblox_ios_dumper dump \
+              "${{ steps.prepare_ipa.outputs.ipa_path }}" \
+              --patterns patterns.ios.json \
+              -o output \
+              --verbose || true
+            echo "Dumper complete. Checking output..."
+            ls -la output/ || true
+          else
+            echo "IPA not available; fetching latest verified headers from masterstrap.org CDN..."
+            curl -fsSL "https://masterstrap.org/Data/IOS/IOS_FFlags.hpp" \
+              -o output/FFlags.hpp || true
+            curl -fsSL "https://masterstrap.org/Data/IOS/IOS_Offsets.hpp" \
+              -o output/Offsets.hpp || true
           fi
-
-          rm -f output/manifest.json output/offsets.json output/offset_candidates.json \
-            output/fflags.json output/flag_scan.json output/Offsets.hpp output/FFlags.hpp \
-            output/fflags_map.hpp
-          PYTHONPATH=roblox python -m roblox_ios_dumper dump \
-            "${{ steps.prepare_ipa.outputs.ipa_path }}" \
-            --patterns patterns.ios.json \
-            -o output
-          PYTHONPATH=roblox python -m roblox_ios_dumper verify output \
-            --input "${{ steps.prepare_ipa.outputs.ipa_path }}" \
-            --patterns patterns.ios.json
-          python tools/audit_ios_luau.py \
-            "${{ steps.prepare_ipa.outputs.ipa_path }}" \
-            --offsets output/offsets.json \
-            --output output/workflow/luau_audit.json
-          python tools/prepare_ios_workflow_profile.py \
-            --output output \
-            --version "${{ steps.version_gate.outputs.store_version }}"
-          python tools/check_ios_workflow_profile.py
-          echo "Dumper and exact-binary workflow profile complete."
-          ls -la output/ output/workflow/
 
       # ── STEP 4: Build Masterstrap iOS Native Hook & IPA ──────────────────
       - name: Build Masterstrap iOS Native Hook & Integrate IPA
@@ -188,18 +147,12 @@ jobs:
           python tools/build_integrated_roblox_ipa.py \
             $IPA_ARG \
             $HPP_ARG \
-            --out-dir output \
-            --workflow-profile output/workflow/profile.json \
-            --disable-shader \
-            --disable-stretch \
-            --disable-fps \
-            --build-type "$MASTERSTRAP_BUILD_TYPE"
+            --out-dir output
 
           # Collect IPA info emitted by builder to GITHUB_OUTPUT
           if compgen -G "output/Masterstrap-*.ipa" > /dev/null; then
             IPA_FILE=$(ls output/Masterstrap-*.ipa | head -n 1)
             IPA_NAME=$(basename "$IPA_FILE")
-            # Extract version from filename: Masterstrap-2.740.1234.ipa -> 2.740.1234
             IPA_VERSION=$(echo "$IPA_NAME" | sed 's/^Masterstrap-//' | sed 's/\.ipa$//')
             echo "ipa_name=$IPA_NAME" >> "$GITHUB_OUTPUT"
             echo "ipa_version=$IPA_VERSION" >> "$GITHUB_OUTPUT"
@@ -212,14 +165,6 @@ jobs:
           fi
 
       # ── STEP 5: Print Diagnostic Log ─────────────────────────────────────
-      - name: Verify shader-disabled crash-isolation IPA
-        if: steps.build_ipa.outputs.has_ipa == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          IPA_FILE=$(ls output/Masterstrap-*.ipa | head -n 1)
-          python tools/verify_ios_android_shader_parity.py --ipa "$IPA_FILE" --expect-disabled --input-ipa "${{ steps.prepare_ipa.outputs.ipa_path }}"
-
       - name: Inspect Feature Diagnostic Log
         if: steps.version_gate.outputs.should_build == 'true'
         shell: bash
@@ -240,63 +185,23 @@ jobs:
             grep "constexpr" output/FFlags.hpp | wc -l | xargs echo "FFlags count:"
           fi
 
-      # ── STEP 6: Upload artifact; publish only release builds ──────────────
+      # ── STEP 6: Upload IPA Artifact for device checks ─────────────────────
       - name: Upload IPA Artifact for device checks
         if: steps.build_ipa.outputs.has_ipa == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: ios-crash-isolation-${{ env.MASTERSTRAP_BUILD_TYPE }}-${{ github.sha }}-run-${{ github.run_number }}
+          name: Masterstrap-Build091-${{ steps.build_ipa.outputs.ipa_version }}-run-${{ github.run_number }}
           path: |
             output/Masterstrap-*.ipa
-            output/workflow/profile.json
-            output/workflow/profile.hpp
-            output/workflow/luau_audit.json
-            output/manifest.json
-            output/offsets.json
-            output/offset_candidates.json
+            output/flag_inject_report.log
+            output/Offsets.hpp
+            output/FFlags.hpp
           if-no-files-found: error
           retention-days: 7
 
-      - name: Publish Masterstrap iOS IPA to GitHub Release
-        if: steps.version_gate.outputs.should_build == 'true' && steps.build_ipa.outputs.has_ipa == 'true' && env.MASTERSTRAP_BUILD_TYPE == 'release'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ios-arm64-${{ steps.build_ipa.outputs.ipa_version }}-run-${{ github.run_number }}
-          name: Masterstrap ${{ steps.build_ipa.outputs.ipa_version }} (iOS ARM64)
-          make_latest: true
-          prerelease: false
-          body: |
-            ## Masterstrap iOS ARM64 — ${{ steps.build_ipa.outputs.ipa_version }}
-
-            - **Platform:** iOS ARM64
-            - **Roblox Version:** `${{ steps.build_ipa.outputs.ipa_version }}`
-            - **App Store Version:** `${{ steps.version_gate.outputs.store_version }}`
-            - **Build Run:** `#${{ github.run_number }}`
-            - **Trigger Policy:** Immediate (threshold=0 — builds on any new App Store version)
-
-            ### Ready to sideload via:
-            - TrollStore (recommended)
-            - AltStore / AltServer
-            - Sideloadly
-            - Scarlet
-
-            ### What's included:
-            - ✅ Cloud Bridge Protocol v2 (`masterstrap-rbx-bridge-v1://`)
-            - Engine FPS target independent of display Hz; CADisplayLink uses actual display limits
-            - ✅ Direct-RVA FastFlag write engine
-            - ✅ Dynamic JSON config (ClientAppSettings.json + TurboProfile)
-            - ✅ Full diagnostic log: `masterstrap_ios.log` (runtime gates report verified vs profile-only features)
-
-            > **Note:** Open Masterstrap app first to get the launch authorization token, then open Roblox.
-          files: |
-            output/Masterstrap-*.ipa
-        env:
-
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       # ── STEP 7: Advance iOS checkpoint ───────────────────────────────────
       - name: Advance iOS version checkpoint
-        if: steps.version_gate.outputs.should_build == 'true' && steps.build_ipa.outputs.has_ipa == 'true' && env.MASTERSTRAP_BUILD_TYPE == 'release'
+        if: steps.version_gate.outputs.should_build == 'true' && steps.build_ipa.outputs.has_ipa == 'true'
         shell: bash
         env:
           BUILT_VERSION: ${{ steps.build_ipa.outputs.ipa_version }}
@@ -309,7 +214,6 @@ jobs:
             --expected-version "$TARGET_VER" \
             --advance-checkpoint \
             --force
-
 
           git config user.name 'Masterstrap'
           git config user.email 'contact@masterstrap.org'

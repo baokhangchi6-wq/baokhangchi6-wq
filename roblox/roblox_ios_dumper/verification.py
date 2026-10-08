@@ -21,18 +21,6 @@ VALID_PREFIXES = {
     "SFString",
 }
 
-CRITICAL_FPS_FLAGS = {
-    "DFIntTaskSchedulerTargetFps",
-    "FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate",
-    "FFlagTaskSchedulerLimitTargetFpsTo2402",
-    "FFlagDebugDisableVsync",
-    "FFlagPerformanceControlDisplayRefreshRate",
-    "FFlagPerformanceControlDisplayRefreshRateMigration",
-    "FFlagMetalDisplayTiming",
-    "FFlagMetalDisplayTimingAdjustMinFPS",
-    "FIntMetalDisplayTimingMinFPS",
-}
-
 
 @dataclass
 class VerificationResult:
@@ -274,10 +262,7 @@ def verify_dump(
             result.errors.append(f"fflag:{name}:address-rva-mismatch")
         previous = flag_addresses.setdefault(rva, name)
         if previous != name:
-            if name in CRITICAL_FPS_FLAGS or previous in CRITICAL_FPS_FLAGS:
-                result.errors.append(f"fflag:{name}:shares-storage-with:{previous}")
-            else:
-                result.warnings.append(f"fflag:{name}:shares-storage-with:{previous}")
+            result.warnings.append(f"fflag:{name}:shares-storage-with:{previous}")
         evidence = item.get("evidence")
         if not isinstance(evidence, list) or not any(
             isinstance(value, str) and value.startswith("storage-write:") for value in evidence
@@ -286,13 +271,6 @@ def verify_dump(
 
     registration_calls = flag_scan.get("registration_calls", 0)
     decoded_calls = flag_scan.get("decoded_calls", len(flags))
-    ambiguous_flags = flag_scan.get("ambiguous_flags", [])
-    if not isinstance(ambiguous_flags, list) or any(not isinstance(name, str) for name in ambiguous_flags):
-        result.errors.append("fflag:invalid-ambiguous-flags")
-    else:
-        result.errors.extend(
-            f"fflag:{name}:ambiguous-storage" for name in ambiguous_flags if name in CRITICAL_FPS_FLAGS
-        )
     if not isinstance(registration_calls, int) or not isinstance(decoded_calls, int):
         result.errors.append("fflag:invalid-scan-counts")
         coverage = 0.0

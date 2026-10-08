@@ -32,134 +32,6 @@ KNOWN_PREFIXES = (
     "FLog",
 )
 
-FLAG_ALIASES = {
-    "FFlagLimitTargetFpsToScreenRefresh": "FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate",
-    "DFFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate": "FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate",
-    "FFlagTaskSchedulerLimitTargetFpsTo240": "FFlagTaskSchedulerLimitTargetFpsTo2402",
-    "DFFlagTaskSchedulerLimitTargetFpsTo2402": "FFlagTaskSchedulerLimitTargetFpsTo2402",
-    "FFlagDebugNoVsync": "FFlagDebugDisableVsync",
-    "DFFlagDebugNoVsync": "FFlagDebugDisableVsync",
-}
-
-# These targets are diagnostic evidence only.  They need an exact ABI or
-# writable-field proof before any runtime consumer may receive them.
-DIAGNOSTIC_ONLY_OFFSETS = frozenset({
-    "rbx_abortlogger",
-    "rbx_reportbytecode",
-    "luau_validateheader",
-    "scripttimeoutcheck",
-    "validatecaller",
-    "validateandsetupcaps",
-    "telemetrybuffer",
-    "telemetrysize",
-})
-
-TELEMETRY_OFFSETS = frozenset({"telemetrybuffer", "telemetrysize"})
-
-# These flags control the display limiter. Some Roblox builds register them
-# through a different table than EnableLoadModule, so scan their XREFs too.
-FPS_FALLBACK_SUFFIXES = {
-    "LimitTargetFpsToScreenRefresh",
-    "LimitTargetFpsToScreenRefreshRate",
-    "TaskSchedulerLimitTargetFpsToScreenRefreshRate",
-    "TaskSchedulerLimitTargetFpsTo240",
-    "TaskSchedulerLimitTargetFpsTo2402",
-    "DebugDisableVsync",
-    "DebugNoVsync",
-    "DebugExperimentalVSyncFramePacing",
-    "DebugExperimentalVSyncFramePacingForce",
-    "MetalDisplayTiming",
-    "MetalDisplayTimingAdjustMinFPS",
-    "MetalDisplayTimingMinFPS",
-    "DisablePostFx",
-    "DebugGraphicsDisablePostFx",
-    "RenderPostFxBasePixelCount",
-}
-
-# Reference signatures from the Android ARM64 dumper. They are useful for
-# finding equivalent iOS functions after string anchors disappear, but remain
-# candidate-only until iOS-specific boundary and call-graph checks pass.
-REFERENCE_HEX_PATTERNS = {
-    "taskschedulertargetfps": (
-        "fd 7b bd a9 ?? 0b 00 f9 ?? 4f ?? a9 fd 03 00 91 "
-        "?? ?? ?? 90 ?? ?? ?? 91 ?? ?? ?? ?? ?? ?? ?? 91 "
-        "?? ?? ?? ?? ?? ?? ?? 91 ?? ?? ?? a9"
-    ),
-    "lua_gettop": "?? ?? ?? A9 08 01 09 CB 00 FD 44 D3 C0 03 5F D6",
-    "lua_settop": (
-        "29 51 34 8B 1F 01 09 EB 22 01 00 54 0A 41 00 91 "
-        "1F 0D 00 B9 5F 01 09 EB E8 03 0A AA 83 FF FF 54"
-    ),
-    "lua_getfield": (
-        "fd 7b bc a9 f7 0b 00 f9 f6 57 02 a9 f4 4f 03 a9 "
-        "fd 03 00 91 f4 03 02 aa 3f 04 00 71 f3 03 00 aa "
-        "2b 01 00 54 69 a2 43 a9 08 51 21 8b 08 41 00 d1"
-    ),
-    "lua_setfield": (
-        "fd 7b bc a9 f7 0b 00 f9 f6 57 02 a9 f4 4f 03 a9 "
-        "fd 03 00 91 f4 03 03 2a f5 03 02 aa 3f 04 00 71 "
-        "f3 03 00 aa 2b 01 00 54 69 a2 43 a9 08 51 21 8b "
-        "08 41 00 d1"
-    ),
-    "lua_pushstring": (
-        "fd 7b ?? a9 f4 4f 01 a9 fd 03 00 91 f4 03 00 aa "
-        "?? ?? 00 b4 e0 03 01 aa f3 03 01 aa ?? ?? ?? 94 "
-        "e2 03 00 aa e0 03 14 aa e1 03 13 aa"
-    ),
-    "lua_pushlstring": (
-        "fd 7b bd a9 f6 57 01 a9 f4 4f 02 a9 fd 03 00 91 "
-        "?? ?? ?? ?? f4 03 02 aa f3 03 00 aa f5 03 01 aa "
-        "?? ?? ?? ?? 3f 01 08 eb 83 00 00 54 e0 03 13 aa"
-    ),
-    "lua_checkstack": (
-        "08 e8 83 52 3f 00 08 6b 6d 00 00 54 00 00 80 52 "
-        "c0 03 5f d6 ff c3 00 d1 f4 4f 01 a9 fd 7b 02 a9"
-    ),
-    "lua_xmove": (
-        "f6 57 bd a9 f4 4f 01 a9 fd 7b 02 a9 fd 83 00 91 "
-        "1f 00 01 eb 80 04 00 54 f5 03 02 aa f4 03 01 aa"
-    ),
-    "luaD_rawrunprotected": (
-        "f6 57 bd a9 f4 4f 01 a9 fd 7b 02 a9 fd 83 00 91 "
-        "e8 03 01 aa f5 03 00 aa e1 03 02 aa 00 01 3f d6"
-    ),
-    "lua_resume": (
-        "f6 57 bd a9 f4 4f 01 a9 fd 7b 02 a9 fd 83 00 91 "
-        "f4 03 02 aa f3 03 00 aa 20 00 00 94 f5 03 00 aa"
-    ),
-    "luau_bytecodeload": (
-        "ff 03 02 d1 fd 7b 05 a9 f6 57 06 a9 f4 4f 07 a9 "
-        "fd 43 01 91 ?? ?? ?? ?? 08 00 80 12 f4 03 00 aa"
-    ),
-    # iOS equivalents are evidence only. Promotion requires the resume call
-    # chain and Luau layout checks in audit_ios_luau.py.
-    "luaU_undump": (
-        "fd 7b bd a9 f6 57 01 a9 f4 4f 02 a9 fd 03 00 91 "
-        "f4 03 00 aa f5 03 01 aa ?? ?? ?? ?? 3f 00 00 71"
-    ),
-    "luaV_execute_dispatch": (
-        "fd 7b bc a9 f7 0b 00 f9 f6 57 02 a9 f4 4f 03 a9 "
-        "fd 03 00 91 f4 03 00 aa 08 01 40 f9"
-    ),
-    "resume_start": (
-        "fd 7b bf a9 fd 03 00 91 08 0c 40 39 1f 19 00 71 "
-        "04 19 41 7a 21 01 00 54 41 02 00 b4 28 60 40 79"
-    ),
-    "resume_finish": (
-        "f8 5f bc a9 f6 57 01 a9 f4 4f 02 a9 fd 7b 03 a9 "
-        "fd c3 00 91 f4 03 02 aa f3 03 00 aa 01 04 00 34"
-    ),
-    "lua_newthread": (
-        "f4 4f be a9 fd 7b 01 a9 fd 43 00 91 f3 03 00 aa "
-        "08 24 40 f9 08 a5 43 a9 3f 01 08 eb 83 00 00 54"
-    ),
-    "luaD_precall": (
-        "fd 7b bc a9 f7 0b 00 f9 f6 57 02 a9 f4 4f 03 a9 "
-        "fd 03 00 91 28 0c 40 b9 f4 03 02 2a f6 03 01 aa "
-        "f3 03 00 aa 1f 21 00 71 ?? ?? ?? 54 e0 03 13 aa"
-    ),
-}
-
 
 @dataclass(frozen=True)
 class StringXref:
@@ -224,7 +96,6 @@ class Arm64Scanner:
             self._section_words.append((section, words))
         self._xref_index: dict[int, list[StringXref]] = {}
         self.offset_candidates: list[dict[str, object]] = []
-        self._flag_conflicts: set[str] = set()
 
     def _word(self, address: int) -> int | None:
         for section, words in self._section_words:
@@ -488,29 +359,6 @@ class Arm64Scanner:
             )
         return results
 
-    def scan_reference_patterns(self) -> list[dict[str, object]]:
-        """Collect Android-derived ARM64 matches as iOS audit evidence.
-
-        These rows intentionally stay in offset_candidates.json. They are not
-        safe runtime offsets: iOS Mach-O builds may inline, split, or reuse
-        the same Luau helper, so promotion still needs iOS call-graph checks.
-        """
-        rows: list[dict[str, object]] = []
-        for name, pattern in REFERENCE_HEX_PATTERNS.items():
-            for row in self.scan_relaxed_hex_candidates(
-                name,
-                pattern,
-                minimum_score=0.70,
-                maximum_candidates=8,
-            ):
-                row["method"] = "android-reference-pattern"
-                row["evidence"] = list(row.get("evidence", ())) + [
-                    "source:android-arm64-reference",
-                    "candidate-only:not-emitted-to-Offsets.hpp",
-                ]
-                rows.append(row)
-        return rows
-
     def scan_offsets(self, patterns: list[dict[str, object]]) -> list[OffsetResult]:
         self.offset_candidates = []
         string_addresses: dict[str, list[int]] = {}
@@ -533,28 +381,11 @@ class Arm64Scanner:
                 address, matches, evidence = self.scan_hex_pattern(
                     hex_pat.strip(), offset_val
                 )
-                # Lua patterns often match an instruction in the body. Only
-                # LC_FUNCTION_STARTS can turn such a hit into an entry point.
-                if address is not None and name.startswith("lua"):
-                    entries = set()
-                    for match in matches:
-                        entry, boundary = self.resolve_function_start(match - offset_val)
-                        if boundary == "lc-function-starts" and entry is not None:
-                            entries.add(entry)
-                    address = next(iter(entries)) if len(entries) == 1 else None
-                    evidence.append(f"lua-function-boundaries:{len(entries)}")
-                    evidence.append("callable-abi:not-verified")
                 confidence = (
                     "high"
-                    if address is not None and len(matches) == 1
-                    else ("medium" if address is not None else "missing")
+                    if len(matches) == 1
+                    else ("medium" if len(matches) > 1 else "missing")
                 )
-                if name in DIAGNOSTIC_ONLY_OFFSETS:
-                    evidence.append("diagnostic-only:not-emitted-to-runtime-profile")
-                    if name in TELEMETRY_OFFSETS:
-                        evidence.append("telemetry-field-proof:missing")
-                    address = None
-                    confidence = "missing"
                 if address is None:
                     self.offset_candidates.extend(
                         self.scan_relaxed_hex_candidates(name, hex_pat.strip(), offset_val)
@@ -625,34 +456,7 @@ class Arm64Scanner:
                         f"section:{section.segment_name},{section.name}" if section else "section:unknown",
                     ]
                 )
-                if name in DIAGNOSTIC_ONLY_OFFSETS:
-                    evidence.append("diagnostic-only:not-emitted-to-runtime-profile")
-                    if name in TELEMETRY_OFFSETS:
-                        evidence.append("telemetry-field-proof:missing")
-                    address = None
-                    confidence = "missing"
-            if name in DIAGNOSTIC_ONLY_OFFSETS and address is None and xrefs:
-                for item, candidate, source in resolved_xrefs[:8]:
-                    self.offset_candidates.append(
-                        {
-                            "name": name,
-                            "address": item.instruction_address,
-                            "rva": self.image.to_rva(item.instruction_address),
-                            "method": "diagnostic-only-candidate",
-                            "score": 0.0,
-                            "rank": 0,
-                            "promoted": False,
-                            "evidence": [
-                                f"xref:{item.instruction_address:#x}",
-                                f"function-boundary:{source}",
-                                f"candidate-function:{candidate:#x}" if candidate is not None else "candidate-function:missing",
-                                f"candidate-functions:{len(unique_functions)}",
-                                "candidate-only:not-emitted-to-Offsets.hpp",
-                                "abi-proof:missing",
-                            ],
-                        }
-                    )
-            elif address is None and xrefs:
+            elif xrefs:
                 for item, _candidate, source in resolved_xrefs[:8]:
                     self.offset_candidates.append(
                         {
@@ -684,7 +488,6 @@ class Arm64Scanner:
                     evidence=tuple(evidence),
                 )
             )
-        self.offset_candidates.extend(self.scan_reference_patterns())
         return results
 
     def _first_bl_after(self, xref: int, limit: int = 40) -> int | None:
@@ -739,15 +542,9 @@ class Arm64Scanner:
                 return prefix, value[len(prefix) :]
         return None
 
-    @staticmethod
-    def _canonical_flag_name(value: str) -> str:
-        return FLAG_ALIASES.get(value, value)
-
     def _direct_storage(self, ref: AddressReference) -> tuple[str, int] | None:
         next_pc = ref.instruction_address + ref.instruction_count * 4
-        # Registration wrappers can materialize the storage pointer several
-        # instructions before the final store after compiler inlining.
-        for pc in range(next_pc, next_pc + 64, 4):
+        for pc in range(next_pc, next_pc + 16, 4):
             instruction = self._word(pc)
             if instruction is None:
                 break
@@ -757,17 +554,6 @@ class Arm64Scanner:
         return None
 
     def _resolve_flag_name(self, suffix: str, inferred_kind: str) -> tuple[str, str, str]:
-        aliases = {
-            "LimitTargetFpsToScreenRefresh": ("FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate", "FFlag"),
-            "LimitTargetFpsToScreenRefreshRate": ("FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate", "FFlag"),
-            "TaskSchedulerLimitTargetFpsToScreenRefreshRate": ("FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate", "FFlag"),
-            "TaskSchedulerLimitTargetFpsTo240": ("FFlagTaskSchedulerLimitTargetFpsTo2402", "FFlag"),
-            "TaskSchedulerLimitTargetFpsTo2402": ("FFlagTaskSchedulerLimitTargetFpsTo2402", "FFlag"),
-            "DebugNoVsync": ("FFlagDebugDisableVsync", "FFlag"),
-        }
-        if suffix in aliases:
-            name, prefix = aliases[suffix]
-            return name, prefix, "known-name-alias"
         compatible_prefixes = {
             "bool": {"FFlag", "DFFlag", "SFFlag"},
             "bool16": {"FFlag", "DFFlag", "SFFlag"},
@@ -793,15 +579,10 @@ class Arm64Scanner:
         }.get(inferred_kind, "FFlag")
         return inferred_prefix + suffix, inferred_prefix, "opcode-type-inference"
 
-    def _decode_registration(
-        self,
-        call_site: int,
-        register_function: int,
-        preferred_name: str | None = None,
-    ) -> FastFlagResult | None:
+    def _decode_registration(self, call_site: int, register_function: int) -> FastFlagResult | None:
         references = self._references_before(call_site)
-        string_candidates: list[tuple[int, str, str, str, int]] = []
-        storage_candidates: list[tuple[int, str, bool, str, int, int]] = []
+        string_candidates: list[tuple[int, str, str, str]] = []
+        storage_candidates: list[tuple[int, str, bool, str, int]] = []
         prefix_candidates: list[str] = []
 
         for ref in references:
@@ -810,14 +591,12 @@ class Arm64Scanner:
                 classified = self._classify_string(value)
                 if classified:
                     prefix, suffix = classified
-                    canonical = self._canonical_flag_name(value)
-                    canonical_prefix, canonical_suffix = self._classify_string(canonical) or (prefix, suffix)
-                    string_candidates.append((ref.target_address, canonical_prefix, canonical_suffix, canonical, ref.instruction_address))
+                    string_candidates.append((ref.target_address, prefix, suffix, value))
                 elif value in KNOWN_PREFIXES:
                     prefix_candidates.append(value)
                 else:
                     # Some binaries pass prefix and suffix separately.
-                    string_candidates.append((ref.target_address, "", value, value, ref.instruction_address))
+                    string_candidates.append((ref.target_address, "", value, value))
 
             segment = self.image.segment_for_va(ref.target_address)
             if segment and segment.is_writable:
@@ -830,33 +609,22 @@ class Arm64Scanner:
                             segment.is_writable,
                             direct[0],
                             direct[1],
-                            ref.instruction_address,
                         )
                     )
 
         if not string_candidates or not storage_candidates:
             return None
 
-        if preferred_name is not None:
-            string_candidates = [
-                item for item in string_candidates if item[3] == preferred_name
-            ]
-            if not string_candidates:
-                return None
-
         full = [item for item in string_candidates if item[1]]
         if full:
-            name_address, prefix, suffix, full_name, name_ref_pc = full[-1]
+            name_address, prefix, suffix, full_name = full[-1]
             name_source = "binary-full-name"
         else:
-            name_address, _empty, suffix, _value, name_ref_pc = string_candidates[-1]
+            name_address, _empty, suffix, _value = string_candidates[-1]
             prefix = prefix_candidates[-1] if prefix_candidates else ""
             name_source = "binary-split-prefix" if prefix else ""
 
-        storage_address, segment_name, writable, storage_kind, store_pc, storage_ref_pc = min(
-            storage_candidates,
-            key=lambda item: (abs(item[5] - name_ref_pc), abs(item[0] - name_address)),
-        )
+        storage_address, segment_name, writable, storage_kind, store_pc = storage_candidates[-1]
         if not prefix:
             full_name, prefix, name_source = self._resolve_flag_name(suffix, storage_kind)
         if storage_address == name_address:
@@ -866,11 +634,9 @@ class Arm64Scanner:
             f"call-site:{call_site:#x}",
             f"register-function:{register_function:#x}",
             f"name-address:{name_address:#x}",
-            f"name-ref-pc:{name_ref_pc:#x}",
             f"storage-segment:{segment_name}",
             f"storage-writable:{int(writable)}",
             f"storage-write:{storage_kind}@{store_pc:#x}",
-            f"storage-ref-pc:{storage_ref_pc:#x}",
             f"name-source:{name_source}",
             f"reference-window:{len(references)}",
         )
@@ -889,82 +655,28 @@ class Arm64Scanner:
             evidence=evidence,
         )
 
-    def _iter_fallback_flag_strings(self):
-        """Yield display-limiter strings from every searchable section."""
-        for section in self.image.searchable_string_sections:
-            raw = self.image.data[section.file_offset : section.file_offset + section.size]
-            cursor = 0
-            while cursor < len(raw):
-                end = raw.find(b"\0", cursor)
-                if end < 0:
-                    break
-                if end > cursor:
-                    value = raw[cursor:end]
-                    try:
-                        text = value.decode("ascii")
-                    except UnicodeDecodeError:
-                        text = ""
-                    if text and any(text.endswith(suffix) for suffix in FPS_FALLBACK_SUFFIXES):
-                        yield section.address + cursor, text
-                cursor = end + 1
-
-    def _scan_fallback_flags(self) -> list[FastFlagResult]:
-        """Resolve limiter storage from all string XREFs, independent of one registrar."""
-        results: dict[str, FastFlagResult] = {}
-        seen: set[tuple[int, str]] = set()
-        for address, value in self._iter_fallback_flag_strings():
-            canonical = self._canonical_flag_name(value)
-            if (address, canonical) in seen:
-                continue
-            seen.add((address, canonical))
-            for xref in self.find_xrefs(address):
-                call_site = self._first_bl_after(xref.instruction_address)
-                if call_site is None:
-                    continue
-                candidate = self._decode_registration(call_site, 0, canonical)
-                if candidate is None:
-                    continue
-                self._merge_flag_candidate(results, candidate)
-        return list(results.values())
-
-    def _merge_flag_candidate(
-        self, target: dict[str, FastFlagResult], candidate: FastFlagResult
-    ) -> None:
-        """Keep only one unambiguous storage RVA per logical flag."""
-        if candidate.name in self._flag_conflicts:
-            return
-        old = target.get(candidate.name)
-        if old is None:
-            target[candidate.name] = candidate
-            return
-        if old.rva == candidate.rva:
-            if old.confidence != "high" and candidate.confidence == "high":
-                target[candidate.name] = candidate
-            return
-        # A fuzzy XREF must never silently replace a different writable cell.
-        # Drop both candidates and let the build report the flag as missing.
-        self._flag_conflicts.add(candidate.name)
-        target.pop(candidate.name, None)
-
     def scan_fast_flags(self) -> tuple[list[FastFlagResult], dict[str, object]]:
         register_function, anchor_evidence = self.find_register_function()
+        if register_function is None:
+            return [], {
+                "register_function": None,
+                "registration_calls": 0,
+                "decoded_calls": 0,
+                "anchor_evidence": anchor_evidence,
+            }
+        call_sites = self._registration_calls(register_function)
         decoded: dict[str, FastFlagResult] = {}
-        call_sites = self._registration_calls(register_function) if register_function is not None else []
-        if register_function is not None:
-            for call_site in call_sites:
-                result = self._decode_registration(call_site, register_function)
-                if result is not None:
-                    self._merge_flag_candidate(decoded, result)
-        fallback_flags = self._scan_fallback_flags()
-        for result in fallback_flags:
-            self._merge_flag_candidate(decoded, result)
+        for call_site in call_sites:
+            result = self._decode_registration(call_site, register_function)
+            if result is not None:
+                old = decoded.get(result.name)
+                if old is None or (old.confidence != "high" and result.confidence == "high"):
+                    decoded[result.name] = result
         results = sorted(decoded.values(), key=lambda item: item.name)
         return results, {
             "register_function": register_function,
             "register_function_rva": self.image.to_rva(register_function),
             "registration_calls": len(call_sites),
             "decoded_calls": len(results),
-            "fallback_xref_flags": len(fallback_flags),
-            "ambiguous_flags": sorted(self._flag_conflicts),
             "anchor_evidence": anchor_evidence,
         }

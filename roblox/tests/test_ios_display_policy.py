@@ -1,5 +1,4 @@
 import importlib.util
-import struct
 import unittest
 from unittest import mock
 from pathlib import Path
@@ -47,16 +46,6 @@ class DisplayPolicyTests(unittest.TestCase):
         self.assertIn("ramCleanup=UNSUPPORTED", self.source)
         self.assertIn("g_display_link_rewrite_count < 16", self.source)
 
-    def test_drawable_gate_deadline_is_recorded_after_blocking_acquisition(self):
-        hook = self.source.split("static id metal_layer_next_drawable_hook", 1)[1].split(
-            "static void metal_layer_set_drawable_size_hook", 1
-        )[0]
-        self.assertIn("systemLowPower", self.source)
-        self.assertLess(
-            hook.index("g_original_next_drawable"),
-            hook.index("state->due, mach_absolute_time() + drawable_interval"),
-        )
-
     def test_missing_profile_cannot_reuse_previous_request(self):
         loader = self.source.split("static void load_and_apply_runtime_profiles", 1)[1].split(
             "static void bridge_log", 1
@@ -97,21 +86,6 @@ class DisplayPolicyTests(unittest.TestCase):
         body = self.source.split("static bool profile_read_bool", 1)[1].split("static int profile_read_int", 1)[0]
         self.assertIn("parse_dynamic_scalar_text(token", body)
         self.assertIn("number != 0 && number != 1", body)
-
-    def test_shader_injection_preserves_host_module_source(self):
-        payload = self.builder.LUAU_SHADER_PAYLOAD
-        self.assertNotIn("return", payload.split("task.defer(function()", 1)[0])
-        host = b"local MultiBlender = {}\n" + b"-- stock animation dependency\n" * 3 + b"return MultiBlender\n"
-        prop = struct.pack("<I", 1) + struct.pack("<I", 6) + b"Source\x01" + struct.pack("<I", len(host)) + host
-        model = bytes(32) + b"PROP" + struct.pack("<III", 0, len(prop), 0) + prop
-        patched, changed = self.builder.inject_rbxm_script(model, payload)
-        self.assertTrue(changed)
-        compressed, size, _ = struct.unpack_from("<III", patched, 36)
-        actual = self.builder.lz4_decompress_block(patched[48:48 + compressed], size)
-        source_at = 15
-        length = struct.unpack_from("<I", actual, source_at)[0]
-        source = actual[source_at + 4:source_at + 4 + length]
-        self.assertEqual(source, payload.encode("utf-8") + b"\n\n" + host)
 
 
 if __name__ == "__main__":

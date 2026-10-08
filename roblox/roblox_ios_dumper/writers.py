@@ -4,7 +4,7 @@ import json
 import re
 from pathlib import Path
 
-from .scanner import DIAGNOSTIC_ONLY_OFFSETS, FastFlagResult, OffsetResult
+from .scanner import FastFlagResult, OffsetResult
 
 
 def _cpp_identifier(value: str) -> str:
@@ -108,7 +108,7 @@ def write_offsets_header(path: Path, offsets: list[OffsetResult], identity: str)
         "namespace RobloxIOS::Offsets {",
     ]
     for result in offsets:
-        if result.rva is None or result.name in DIAGNOSTIC_ONLY_OFFSETS:
+        if result.rva is None:
             continue
         lines.append(
             f"    inline constexpr std::uintptr_t {_cpp_identifier(result.name)} = "

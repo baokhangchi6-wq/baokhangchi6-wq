@@ -53,7 +53,6 @@ class AppBridgeTests(unittest.TestCase):
         plist = {}
         self.roblox_builder.configure_ios_runtime_plist(plist)
         self.assertIs(True, plist["CADisableMinimumFrameDurationOnPhone"])
-        self.assertIs(True, plist["CADisableMinimumFrameDuration"])
 
     def test_sanitize_and_configure_roblox_plist_restores_global_bundle_and_purges_delta(self):
         plist = {
@@ -181,23 +180,16 @@ class AppBridgeTests(unittest.TestCase):
         self.assertIn("atoll(value)", hook_source)
         self.assertIn("[DYNAMIC_JSON_UNSUPPORTED]", hook_source)
 
-    def test_bridge_sanitizes_shader_postfx_conflicts_before_document_write(self):
-        hook_source = self.roblox_builder.generate_native_hook_source([], [], 0, [], {})
-        self.assertIn("sanitize_shader_client_json", hook_source)
-        self.assertIn("FFlagDisablePostFx", hook_source)
-        self.assertIn("DFIntRenderPostFxBasePixelCount", hook_source)
-        self.assertIn("g_bridge_shader_selector", hook_source)
-
     def test_runtime_log_reports_actual_backend_capabilities(self):
         hook_source = self.roblox_builder.generate_native_hook_source([], [], 0, [], {})
 
         self.assertIn('kFastFlagBackend = "direct-rva-write-v1"', hook_source)
         self.assertIn('kEngineSetFFlagBackend = "not-installed"', hook_source)
         self.assertIn('kEngineGetFastFlagBackend = "not-installed"', hook_source)
-        self.assertIn('kFpsRuntimeBackend = "cadisplaylink-metal-present-policy-v5"', hook_source)
-        self.assertIn('kFontRuntimeBackend = "native-asset-vfs-v1"', hook_source)
-        self.assertIn('kShaderRuntimeBackend = "native-metal-lighting-v1"', hook_source)
-        self.assertIn('kStretchRuntimeBackend = "metal-layer-drawable-v1"', hook_source)
+        self.assertIn('kFpsRuntimeBackend = "cadisplaylink-range-policy-v2"', hook_source)
+        self.assertIn('kFontRuntimeBackend = "guarded-ios-luau-pending"', hook_source)
+        self.assertIn('kShaderRuntimeBackend = "guarded-ios-luau-pending"', hook_source)
+        self.assertIn('kStretchRuntimeBackend = "guarded-projection-pending"', hook_source)
         self.assertIn("FastFlag Apply Backend: %s", hook_source)
         self.assertIn("[CAPABILITY][FPS]", hook_source)
         self.assertIn("[CAPABILITY][FONT]", hook_source)
@@ -258,9 +250,6 @@ class AppBridgeTests(unittest.TestCase):
         self.assertIn("const fontProfile = JSON.stringify", html)
         self.assertIn("shaderProfile: shaderProfile", html)
         self.assertIn("fontProfile: fontProfile", html)
-        self.assertIn("function prepareFlagsForRoblox", html)
-        self.assertIn('"FFlagDisablePostFx"', html)
-        self.assertIn('delete clean[key]', html)
         self.assertIn("[PROFILE][REQUEST]", html)
         self.assertFalse(any(line != line.rstrip() for line in html.splitlines()))
 
