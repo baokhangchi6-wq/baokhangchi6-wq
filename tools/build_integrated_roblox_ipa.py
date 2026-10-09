@@ -1862,7 +1862,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    runtime_note(\"Persistence initial 30s completed. Starting continuous watchdog: pid=%d\", getpid());",
         "    int watchdog_ticks = 0;",
         "    while (1) {",
-        "        usleep(250000); // 250ms heartbeat",
+        "        usleep(100000); // 100ms heartbeat",
         "        watchdog_ticks++;",
         "        if (base == 0) { base = get_robloxlib_base(); if (!engine_identity_matches(base)) base = 0; g_engine_base = base; }",
         "        if (base != 0) {",
@@ -2078,7 +2078,7 @@ def patch_robloxlib_fps_clamps(data: bytearray) -> bytearray:
         # 1. GetDefaultFramerateCap 240 FPS clamp (cmp w8, #240; mov w9, #240; csel -> mov w9, w8)
         (
             "GetDefaultFramerateCap 240 FPS clamp",
-            re.compile(b"\x1f\xc1\x03\x71\x09\x1e\x80\x52(\x09\xb1\x89\x1a|\xe9\x03\x08\x2a)"),
+            re.compile(re.escape(b"\x1f\xc1\x03\x71\x09\x1e\x80\x52") + b"(" + re.escape(b"\x09\xb1\x89\x1a") + b"|" + re.escape(b"\xe9\x03\x08\x2a") + b")"),
             8,
             b"\xe9\x03\x08\x2a",
             0x47643b0,
@@ -2086,31 +2086,47 @@ def patch_robloxlib_fps_clamps(data: bytearray) -> bytearray:
         # 2. TaskScheduler dt 240 FPS clamp (cmp w11, #240; mov w12, #240; csel -> nop)
         (
             "TaskScheduler dt 240 FPS clamp",
-            re.compile(b"\x7f\xc1\x03\x71\x0c\x1e\x80\x52(\x6b\xb1\x8c\x1a|\x1f\x20\x03\xd5)"),
+            re.compile(re.escape(b"\x7f\xc1\x03\x71\x0c\x1e\x80\x52") + b"(" + re.escape(b"\x6b\xb1\x8c\x1a") + b"|" + re.escape(b"\x1f\x20\x03\xd5") + b")"),
             8,
             b"\x1f\x20\x03\xd5",
             0x93b540,
         ),
-        # 3. AdaptiveSync schedule target 10000 FPS (ldr w8, [x0, #0x118]; cmp w8, #1; csinc/mov w22, #10000)
+        # 3. TaskScheduler target frametime calculator 240 clamp (cmp w23, #240; mov w8, #240; csel -> mov w8, w23)
+        (
+            "TaskScheduler frametime calculator 240 clamp",
+            re.compile(b"[\x00-\xff]\xc2\x03\x71" + re.escape(b"\x08\x1e\x80\x52") + b"(" + re.escape(b"\xe8\x32\x88\x1a") + b"|" + re.escape(b"\xe8\x03\x17\x2a") + b")"),
+            8,
+            b"\xe8\x03\x17\x2a",
+            0x4766e64,
+        ),
+        # 4. TaskScheduler getTargetFps fallback 60 FPS (cmp w8, #0; mov w8, #0x3c -> mov w8, #10000)
+        (
+            "TaskScheduler getTargetFps fallback 60 FPS",
+            re.compile(re.escape(b"\x1f\x01\x00\x71") + b"(" + re.escape(b"\x88\x07\x80\x52") + b"|" + re.escape(b"\x08\xe2\x84\x52") + b")" + re.escape(b"\x00\x01\x89\x1a")),
+            4,
+            b"\x08\xe2\x84\x52",
+            0x47643b8,
+        ),
+        # 5. AdaptiveSync schedule target 10000 FPS (ldr w8, [x0, #0x118]; cmp w8, #1; csinc/mov w22, #10000)
         (
             "AdaptiveSync schedule target 10000 FPS",
-            re.compile(b"\x08\x18\x41\xb9\x1f\x05\x00\x71(\x16\xc5\x9f\x1a|\x16\xe2\x84\x52)"),
+            re.compile(re.escape(b"\x08\x18\x41\xb9\x1f\x05\x00\x71") + b"(" + re.escape(b"\x16\xc5\x9f\x1a") + b"|" + re.escape(b"\x16\xe2\x84\x52") + b")"),
             8,
             b"\x16\xe2\x84\x52",
             0x409d17c,
         ),
-        # 4. AdaptiveSync refresh clamp bypass (cmp w21, w22; csel -> nop)
+        # 6. AdaptiveSync refresh clamp bypass (cmp w21, w22; csel -> nop)
         (
             "AdaptiveSync refresh clamp bypass",
-            re.compile(b"\xbf\x02\x16\x6b(\xb6\x32\x96\x1a|\x1f\x20\x03\xd5)"),
+            re.compile(re.escape(b"\xbf\x02\x16\x6b") + b"(" + re.escape(b"\xb6\x32\x96\x1a") + b"|" + re.escape(b"\x1f\x20\x03\xd5") + b")"),
             4,
             b"\x1f\x20\x03\xd5",
             0x409d1dc,
         ),
-        # 5. DisplayTiming in-game pacing clamp (csel w8, w21, w22, ne -> mov w8, w22; ucvtf s1, w21 -> ucvtf s1, w22)
+        # 7. DisplayTiming in-game pacing clamp (csel w8, w21, w22, ne -> mov w8, w22; ucvtf s1, w21 -> ucvtf s1, w22)
         (
             "DisplayTiming in-game pacing clamp",
-            re.compile(b"(\xa8\x12\x96\x1a|\xe8\x03\x16\x2a)\x80\x02\x23\x1e(\xa1\x02\x23\x1e|\xc1\x02\x23\x1e)\x02\x01\x23\x1e"),
+            re.compile(b"(" + re.escape(b"\xa8\x12\x96\x1a") + b"|" + re.escape(b"\xe8\x03\x16\x2a") + b")" + re.escape(b"\x80\x02\x23\x1e") + b"(" + re.escape(b"\xa1\x02\x23\x1e") + b"|" + re.escape(b"\xc1\x02\x23\x1e") + b")" + re.escape(b"\x02\x01\x23\x1e")),
             0,
             b"\xe8\x03\x16\x2a\x80\x02\x23\x1e\xc1\x02\x23\x1e\x02\x01\x23\x1e",
             0x409d268,
@@ -2172,6 +2188,10 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
             "FFlagMetalDisplayTiming": False,
             "FFlagMetalDisplayTimingAdjustMinFPS": False,
             "FIntMetalDisplayTimingMinFPS": 0,
+            "FFlagPerformanceControlExecution": False,
+            "FFlagPerformanceControlObserveLowPowerMode": False,
+            "FFlagPerformanceControlDynamicFrameTimeTarget": False,
+            "FFlagPerformanceControlComputeUseTSFrameTimeTarget": False,
             "FFlagPerformanceControlDisplayRefreshRate": False,
             "FFlagPerformanceControlDisplayRefreshRateInAdaptiveSync": False,
             "FFlagPerformanceControlDisplayRefreshRateMigration": False,
