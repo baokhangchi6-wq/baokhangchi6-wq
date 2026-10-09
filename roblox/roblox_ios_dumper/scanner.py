@@ -31,11 +31,8 @@ KNOWN_PREFIXES = (
     "SFString",
     "FLog",
     "DFLog",
+    "SFLog",
     "FCString",
-    "Flag",
-    "Int",
-    "String",
-    "Log",
 )
 
 

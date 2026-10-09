@@ -19,6 +19,10 @@ VALID_PREFIXES = {
     "FString",
     "DFString",
     "SFString",
+    "FLog",
+    "DFLog",
+    "SFLog",
+    "FCString",
 }
 
 
