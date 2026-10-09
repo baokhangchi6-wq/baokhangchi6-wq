@@ -361,6 +361,12 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "extern int pthread_detach(void *thread);",
         "extern char* strstr(const char *haystack, const char *needle);",
         "extern int fputs(const char *str, void *stream);",
+        "extern int open(const char *path, int oflag, ...);",
+        "extern int access(const char *path, int amode);",
+        "extern char* strrchr(const char *s, int c);",
+        "extern void* memcpy(void *dst, const void *src, size_t n);",
+        "extern char* strcpy(char *dst, const char *src);",
+        "extern char* strncpy(char *dst, const char *src, size_t n);",
         "typedef void* id;",
         "typedef void* SEL;",
         "typedef void* Class;",
@@ -466,7 +472,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static const char* kEngineSetFFlagBackend = \"not-installed\";",
         "static const char* kEngineGetFastFlagBackend = \"not-installed\";",
         "static const char* kFpsRuntimeBackend = \"cadisplaylink-range-policy-v2\";",
-        "static const char* kFontRuntimeBackend = \"native-asset-replacement-v1\";",
+        "static const char* kFontRuntimeBackend = \"native-asset-vfs-v1\";",
         "static const char* kShaderRuntimeBackend = \"guarded-ios-luau-pending\";",
         "static const char* kStretchRuntimeBackend = \"cametallayer-drawable-resize\";",
         "",
@@ -781,6 +787,85 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static char g_font_family[64] = \"Default\";",
         "static int g_font_size_step = 0;",
         "bool g_launch_authorized = false;",
+        "",
+        "static const char* get_target_font_filename(void) {",
+        "    if (strcmp(g_font_family, \"Minecraft\") == 0) return \"Minecraft.ttf\";",
+        "    if (strcmp(g_font_family, \"GothamBold\") == 0) return \"Montserrat-Bold.ttf\";",
+        "    if (strcmp(g_font_family, \"Cyberpunk\") == 0) return \"zekton_rg.ttf\";",
+        "    if (strcmp(g_font_family, \"Fredoka\") == 0) return \"FredokaOne-Regular.ttf\";",
+        "    if (strcmp(g_font_family, \"AnimeHand\") == 0) return \"Kalam-Regular.ttf\";",
+        "    if (strcmp(g_font_family, \"ComicBangers\") == 0) return \"Bangers-Regular.ttf\";",
+        "    if (strcmp(g_font_family, \"Typewriter\") == 0) return \"SpecialElite-Regular.ttf\";",
+        "    if (strcmp(g_font_family, \"Creepster\") == 0) return \"Creepster-Regular.ttf\";",
+        "    if (strcmp(g_font_family, \"Merriweather\") == 0) return \"Merriweather-Regular.ttf\";",
+        "    if (strcmp(g_font_family, \"Highway\") == 0) return \"HWYGOTH.ttf\";",
+        "    if (strcmp(g_font_family, \"Mario\") == 0) return \"Mario.ttf\";",
+        "    if (strcmp(g_font_family, \"SquidGame\") == 0) return \"SquidGame.ttf\";",
+        "    if (strcmp(g_font_family, \"GenshinImpact\") == 0) return \"GenshinImpact.ttf\";",
+        "    return NULL;",
+        "}",
+        "",
+        "static const char* redirect_font_path(const char* original_path, char* buffer, size_t buf_size) {",
+        "    if (!original_path || strcmp(g_font_family, \"Default\") == 0 || g_font_family[0] == '\\0') {",
+        "        return original_path;",
+        "    }",
+        "    const char* target_filename = get_target_font_filename();",
+        "    if (!target_filename) return original_path;",
+        "    if (strstr(original_path, \"BuilderSans-\") != NULL ||",
+        "        strstr(original_path, \"SourceSansPro-\") != NULL ||",
+        "        strstr(original_path, \"Arimo-\") != NULL ||",
+        "        strstr(original_path, \"Roboto-\") != NULL ||",
+        "        strstr(original_path, \"Inconsolata\") != NULL) {",
+        "        const char* last_slash = strrchr(original_path, '/');",
+        "        if (last_slash) {",
+        "            size_t dir_len = (size_t)(last_slash - original_path + 1);",
+        "            if (dir_len + strlen(target_filename) < buf_size) {",
+        "                memcpy(buffer, original_path, dir_len);",
+        "                strcpy(buffer + dir_len, target_filename);",
+        "                if (access(buffer, 0) == 0) {",
+        "                    static int logged_font = 0;",
+        "                    if (!logged_font) {",
+        "                        logged_font = 1;",
+        "                        runtime_note(\"[FONT_ASSET] Redirected UI font: %s -> %s (family=%s)\", original_path, buffer, g_font_family);",
+        "                    }",
+        "                    return buffer;",
+        "                }",
+        "            }",
+        "        }",
+        "    }",
+        "    return original_path;",
+        "}",
+        "",
+        "static void* ms_interpose_fopen(const char* path, const char* mode) {",
+        "    char redirected[1024];",
+        "    const char* actual_path = redirect_font_path(path, redirected, sizeof(redirected));",
+        "    return fopen(actual_path, mode);",
+        "}",
+        "",
+        "static int ms_interpose_open(const char* path, int oflag, ...) {",
+        "    char redirected[1024];",
+        "    const char* actual_path = redirect_font_path(path, redirected, sizeof(redirected));",
+        "    __builtin_va_list ap;",
+        "    __builtin_va_start(ap, oflag);",
+        "    int mode = __builtin_va_arg(ap, int);",
+        "    __builtin_va_end(ap);",
+        "    return open(actual_path, oflag, mode);",
+        "}",
+        "",
+        "static int ms_interpose_access(const char* path, int amode) {",
+        "    char redirected[1024];",
+        "    const char* actual_path = redirect_font_path(path, redirected, sizeof(redirected));",
+        "    return access(actual_path, amode);",
+        "}",
+        "",
+        "#define DYLD_INTERPOSE(_replacement,_replacee) \\",
+        "   __attribute__((used)) static struct{ const void* replacement; const void* replacee; } _interpose_##_replacee \\",
+        "            __attribute__((section (\"__DATA,__interpose\"))) = { (const void*)(unsigned long)&_replacement, (const void*)(unsigned long)&_replacee };",
+        "",
+        "DYLD_INTERPOSE(ms_interpose_fopen, fopen)",
+        "DYLD_INTERPOSE(ms_interpose_open, open)",
+        "DYLD_INTERPOSE(ms_interpose_access, access)",
+        "",
         "static void runtime_note(const char* fmt, ...);",
         "",
         "static const char* profile_find_value(const char* json, const char* key) {",
@@ -2300,19 +2385,6 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         "Payload/Roblox.app/GlobalBasicSettings.xml",
                     }
 
-                    # ── Direct Asset Font Loading (Android parity) ──
-                    font_dir = ROOT / "resources" / "fonts"
-                    mc_ttf_data = b""
-                    mc_json_data = b""
-                    mc_ttf_path = font_dir / "PressStart2P-Regular.ttf"
-                    mc_json_path = font_dir / "families" / "PressStart2P.json"
-                    if mc_ttf_path.is_file():
-                        mc_ttf_data = mc_ttf_path.read_bytes()
-                    if mc_json_path.is_file():
-                        mc_json_data = mc_json_path.read_bytes()
-                    replaced_fonts_count = 0
-                    replaced_jsons_count = 0
-
                     for item in zin.infolist():
                         name = item.filename
                         if not embed_flags and name in embedded_settings_entries:
@@ -2336,49 +2408,6 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                             continue
 
                         data = zin.read(name)
-
-                        # Direct Asset Font Replacement (Android parity)
-                        # Temporarily disabled per user instruction: diagnostic test for FastFlags only
-                        is_font_asset = False
-                        if is_font_asset and mc_ttf_data and name.endswith((".ttf", ".otf")):
-                            # Preserve icon fonts, emoji, and non-latin language fallbacks
-                            is_exempt = any(k in name for k in ["Noto", "Emoji", "Twemoji", "BuilderIcons", "PressStart2P"])
-                            if not is_exempt:
-                                # Target standard UI text fonts (Builder, SourceSans, Arimo, Roboto, Inconsolata)
-                                is_target_ui_font = any(k in name for k in ["Builder", "SourceSans", "Arimo", "Roboto", "Inconsolata"])
-                                if is_target_ui_font:
-                                    data = mc_ttf_data
-                                    replaced_fonts_count += 1
-
-                        # Redirect cloud asset IDs (rbxassetid://) in UI font family JSONs to local Minecraft font files,
-                        # ensuring font variants like bold FPS counter render using local Minecraft font without downloading from cloud
-                        if is_font_asset and name.endswith(".json") and "families/" in name:
-                            is_exempt_family = any(k in name for k in ["Noto", "Emoji", "Twemoji", "BuilderIcons", "PressStart2P"])
-                            if not is_exempt_family:
-                                try:
-                                    family_obj = json.loads(data.decode("utf-8"))
-                                    if isinstance(family_obj, dict) and "faces" in family_obj:
-                                        local_asset = None
-                                        for face in family_obj.get("faces", []):
-                                            aid = face.get("assetId", "")
-                                            if isinstance(aid, str) and aid.startswith("rbxasset://fonts/") and aid.endswith((".ttf", ".otf")):
-                                                local_asset = aid
-                                                break
-                                        if not local_asset:
-                                            local_asset = "rbxasset://fonts/PressStart2P-Regular.ttf"
-
-                                        json_modified = False
-                                        for face in family_obj.get("faces", []):
-                                            aid = face.get("assetId", "")
-                                            if isinstance(aid, str) and aid.startswith("rbxassetid://"):
-                                                face["assetId"] = local_asset
-                                                json_modified = True
-
-                                        if json_modified:
-                                            data = json.dumps(family_obj, indent=2).encode("utf-8")
-                                            replaced_jsons_count += 1
-                                except Exception:
-                                    pass
 
                         if name == "Payload/Roblox.app/Roblox":
                             data = remove_load_dylib(data, ["libgloop", "gloop", "delta", "libmasterstrap"])
@@ -2411,11 +2440,28 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                     dylib_entry = "Payload/Roblox.app/Frameworks/libmasterstrap.dylib"
                     zout.writestr(dylib_entry, dylib_bytes)
 
-                    # Embed fonts directly into both app bundle and framework content/fonts/
-                    # Temporarily disabled per user instruction: diagnostic test for FastFlags only
-                    # if mc_ttf_data: ...
-                    if replaced_fonts_count > 0 or replaced_jsons_count > 0:
-                        print(f"[ASSET_FONT] Replaced {replaced_fonts_count} UI font files with Minecraft + redirected {replaced_jsons_count} family JSONs to local assets")
+                    # Embed all fonts directly into both app bundle and framework content/fonts/
+                    font_dir = ROOT / "resources" / "fonts"
+                    embedded_font_count = 0
+                    if font_dir.is_dir():
+                        for font_file in font_dir.glob("*.ttf"):
+                            fdata = font_file.read_bytes()
+                            for base_path in ["Payload/Roblox.app/content/fonts/", "Payload/Roblox.app/Frameworks/RobloxLib.framework/content/fonts/"]:
+                                target = base_path + font_file.name
+                                if target not in seen_entries:
+                                    zout.writestr(target, fdata)
+                                    seen_entries.add(target)
+                                    embedded_font_count += 1
+                        families_dir = font_dir / "families"
+                        if families_dir.is_dir():
+                            for fam_file in families_dir.glob("*.json"):
+                                jdata = fam_file.read_bytes()
+                                for base_path in ["Payload/Roblox.app/content/fonts/families/", "Payload/Roblox.app/Frameworks/RobloxLib.framework/content/fonts/families/"]:
+                                    target = base_path + fam_file.name
+                                    if target not in seen_entries:
+                                        zout.writestr(target, jdata)
+                                        seen_entries.add(target)
+                    print(f"[ASSET_FONT] Embedded {embedded_font_count} font assets across app & framework bundles")
 
                     # Embed baseline JSON only for normal builds. Isolation builds
                     # intentionally depend on the versioned Masterstrap bridge.
