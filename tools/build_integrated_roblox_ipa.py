@@ -1699,6 +1699,9 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "                fflush(log_file);",
         "            }",
         "            runtime_note(\"[SESSION] Standalone launch: applying verified baseline FastFlags for diagnostic test\");",
+        "            install_display_link_policy();",
+        "            install_metal_layer_stretch_policy();",
+        "            apply_ios_process_policies();",
         "            for (size_t i = 0; i < kVerifiedCount; i++) {",
         "                bool ok = SetFastFlag(base, &kVerifiedFlags[i]);",
         "                if (ok) success_count++;",
@@ -1898,6 +1901,8 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    s_initialized = 1;",
         "",
         "    install_runtime_bridge_hooks();",
+        "    install_display_link_policy();",
+        "    install_metal_layer_stretch_policy();",
         "    void* thread = NULL;",
         "    pthread_create(&thread, NULL, worker_thread, NULL);",
         "    if (thread) pthread_detach(thread);",
@@ -2273,6 +2278,33 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                                 data = insert_load_dylib(data, "@executable_path/Frameworks/libmasterstrap.dylib")
                         elif name == "Payload/Roblox.app/Frameworks/RobloxLib.framework/RobloxLib":
                             data = remove_load_dylib(data, ["libgloop", "gloop", "delta", "libmasterstrap"])
+                            data = bytearray(data)
+
+                            # 1. GetDefaultFramerateCap 240 FPS clamp (0x47643B0: csel -> mov w9, w8)
+                            clamp1_offset = 0x47643b0
+                            if len(data) > clamp1_offset + 4 and data[clamp1_offset:clamp1_offset+4] in (b'\x09\xb1\x89\x1a', b'\xe9\x03\x08\x2a'):
+                                data[clamp1_offset:clamp1_offset+4] = b'\xe9\x03\x08\x2a'
+                                print(f"[PATCH_ROBLOXLIB] Uncapped GetDefaultFramerateCap at 0x{clamp1_offset:x} (csel -> mov w9, w8)")
+
+                            # 2. TaskScheduler dt 240 FPS clamp (0x93B540: csel -> nop)
+                            clamp2_offset = 0x93b540
+                            if len(data) > clamp2_offset + 4 and data[clamp2_offset:clamp2_offset+4] in (b'\x6b\xb1\x8c\x1a', b'\x1f\x20\x03\xd5'):
+                                data[clamp2_offset:clamp2_offset+4] = b'\x1f\x20\x03\xd5'
+                                print(f"[PATCH_ROBLOXLIB] Uncapped TaskScheduler dt clamp at 0x{clamp2_offset:x} (csel -> nop)")
+
+                            # 3. AdaptiveSync schedule target 10000 FPS (0x409D17C: csinc -> mov w22, #10000)
+                            adapt_sched_offset = 0x409d17c
+                            if len(data) > adapt_sched_offset + 4 and data[adapt_sched_offset:adapt_sched_offset+4] in (b'\x16\xc5\x9f\x1a', b'\x16\xe2\x84\x52'):
+                                data[adapt_sched_offset:adapt_sched_offset+4] = b'\x16\xe2\x84\x52'
+                                print(f"[PATCH_ROBLOXLIB] Uncapped AdaptiveSync target at 0x{adapt_sched_offset:x} (csinc -> mov w22, #10000)")
+
+                            # 4. AdaptiveSync refresh clamp bypass (0x409D1DC: csel -> nop)
+                            adapt_clamp_offset = 0x409d1dc
+                            if len(data) > adapt_clamp_offset + 4 and data[adapt_clamp_offset:adapt_clamp_offset+4] in (b'\xb6\x32\x96\x1a', b'\x1f\x20\x03\xd5'):
+                                data[adapt_clamp_offset:adapt_clamp_offset+4] = b'\x1f\x20\x03\xd5'
+                                print(f"[PATCH_ROBLOXLIB] Bypassed AdaptiveSync refresh clamp at 0x{adapt_clamp_offset:x} (csel -> nop)")
+
+                            data = bytes(data)
                             data = insert_load_dylib(data, "@rpath/libmasterstrap.dylib")
                         elif name.endswith("Roblox.app/Info.plist"):
                             try:

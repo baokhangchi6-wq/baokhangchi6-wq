@@ -49,7 +49,7 @@ static ScreenMaxFpsImp g_original_screen_max_fps = NULL;
 
 static long screen_max_fps_hook(id self, SEL cmd) {
     if (fps_runtime_requested()) {
-        return 120; /* ProMotion hardware maximum is 120Hz */
+        return 240; /* Report ProMotion max rate to prevent Roblox 60Hz throttling */
     }
     return g_original_screen_max_fps ? g_original_screen_max_fps(self, cmd) : 60;
 }
@@ -64,7 +64,7 @@ static id ms_process_info(void) {
 static int ios_maximum_frames_per_second(void) {
     id screen = ((id (*)(id, SEL))objc_msgSend)(objc_getClass("UIScreen"), sel_registerName("mainScreen"));
     long rate = screen ? ((long (*)(id, SEL))objc_msgSend)(screen, sel_registerName("maximumFramesPerSecond")) : 60;
-    return rate >= 30 && rate <= 120 ? (int)rate : 120;
+    return rate >= 30 && rate <= 240 ? (int)rate : 120;
 }
 static int ms_low_power(void) {
     if (fps_runtime_requested()) return 0;
@@ -74,14 +74,14 @@ static int ms_thermal(void) {
     return (int)((long (*)(id, SEL))objc_msgSend)(ms_process_info(), sel_registerName("thermalState"));
 }
 static bool fps_runtime_requested(void) {
-    return g_launch_authorized && (((g_ms_policy.loaded && (g_ms_policy.refresh || g_ms_policy.target > 60)) || g_target_fps > 60));
+    return ((g_ms_policy.loaded && (g_ms_policy.refresh || g_ms_policy.target > 60)) || g_target_fps > 60);
 }
 static long fps_runtime_target(void) {
     return ms_ios_target_fps(g_ms_policy.target, ios_maximum_frames_per_second(), ms_low_power(), ms_thermal());
 }
 static inline MSFrameRateRange sanitize_frame_rate_range(MSFrameRateRange range) {
     int screen_max = ios_maximum_frames_per_second();
-    if (screen_max <= 0 || screen_max > 120) screen_max = 120;
+    if (screen_max <= 0) screen_max = 120;
     float max_limit = (float)screen_max;
     if (range.minimum <= 0.0f || range.minimum > max_limit) range.minimum = 1.0f;
     if (range.maximum <= 0.0f || range.maximum > max_limit) range.maximum = max_limit;
@@ -92,7 +92,7 @@ static inline MSFrameRateRange sanitize_frame_rate_range(MSFrameRateRange range)
 }
 static MSFrameRateRange ms_target_range(void) {
     int screen_max = ios_maximum_frames_per_second();
-    if (screen_max <= 0 || screen_max > 120) screen_max = 120;
+    if (screen_max <= 0) screen_max = 120;
     float max_limit = (float)screen_max;
     return sanitize_frame_rate_range((MSFrameRateRange){max_limit, max_limit, max_limit});
 }
@@ -255,8 +255,6 @@ static void ms_install_observer(void) {
 static bool install_display_link_policy(void);
 static void ms_install_on_main(void* ignored) { (void)ignored; install_display_link_policy(); }
 static bool install_display_link_policy(void) {
-    /* Temporarily disabled per user instruction: diagnostic test for FastFlags only */
-    if (1) { runtime_note("[CAPABILITY][FPS] backend=%s status=STANDBY_TEST_FLAGS_ONLY", kFpsRuntimeBackend); return true; }
     if (!pthread_main_np()) { dispatch_async_f(&_dispatch_main_q, NULL, ms_install_on_main); return false; }
     if (g_display_link_policy_installed) return true;
 
@@ -319,7 +317,7 @@ static int g_metal_layer_stretch_installed = 0;
 static char g_ms_layer_uncapped_key;
 
 static void ms_apply_metal_layer_policies(id layer) {
-    if (!layer || !g_launch_authorized) return;
+    if (!layer) return;
 
     // 1. Uncap Metal VSync (Allows engine rendering loop to exceed 120Hz up to 10,000 FPS)
     if (fps_runtime_requested()) {
@@ -447,8 +445,6 @@ static void ms_refresh_metal_layers(void) {
 }
 
 static bool install_metal_layer_stretch_policy(void) {
-    /* Temporarily disabled per user instruction: diagnostic test for FastFlags only */
-    if (1) { runtime_note("[CAPABILITY][STRETCH] backend=cametallayer-drawable-resize status=STANDBY_TEST_FLAGS_ONLY hookInstalled=0 metal_vsync_uncap=STANDBY"); return true; }
     if (g_metal_layer_stretch_installed) return true;
     Class cls = (Class)objc_getClass("CAMetalLayer");
     if (!cls) return false;
@@ -463,18 +459,11 @@ static bool install_metal_layer_stretch_policy(void) {
         g_original_next_drawable = (NextDrawableImp)method_setImplementation(next_m, (IMP)metal_layer_next_drawable_hook);
     }
 
-    Method size_m = class_getInstanceMethod(cls, sel_registerName("setDrawableSize:"));
-    if (size_m && !g_original_set_drawable_size) {
-        g_original_set_drawable_size = (SetDrawableSizeImp)method_setImplementation(size_m, (IMP)metal_layer_set_drawable_size_hook);
-    }
+    /* Stretch resolution hooks remain dormant per user phase schedule: FPS uncap only */
 
-    Method grav_m = class_getInstanceMethod(cls, sel_registerName("setContentsGravity:"));
-    if (grav_m && !g_original_set_contents_gravity) {
-        g_original_set_contents_gravity = (SetContentsGravityImp)method_setImplementation(grav_m, (IMP)metal_layer_set_contents_gravity_hook);
-    }
-
-    g_metal_layer_stretch_installed = 1;
-    runtime_note("[CAPABILITY][STRETCH] backend=cametallayer-drawable-resize status=READY hookInstalled=1 metal_vsync_uncap=ACTIVE");
+    g_metal_layer_stretch_installed = (sync_m != NULL || next_m != NULL);
+    runtime_note("[CAPABILITY][STRETCH] backend=cametallayer-drawable-resize status=STANDBY_FPS_UNCAP_ONLY hookInstalled=%d metal_vsync_uncap=ACTIVE",
+                 g_metal_layer_stretch_installed);
     return true;
 }
 
