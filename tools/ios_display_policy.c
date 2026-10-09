@@ -9,6 +9,7 @@ extern Class objc_allocateClassPair(Class, const char*, size_t);
 extern void objc_registerClassPair(Class);
 extern id objc_getAssociatedObject(id, const void*);
 extern void objc_setAssociatedObject(id, const void*, id, unsigned long);
+extern bool g_launch_authorized;
 
 typedef struct { float minimum, maximum, preferred; } MSFrameRateRange;
 _Static_assert(sizeof(MSFrameRateRange) == 12, "CAFrameRateRange ARM64 ABI");
@@ -73,7 +74,7 @@ static int ms_thermal(void) {
     return (int)((long (*)(id, SEL))objc_msgSend)(ms_process_info(), sel_registerName("thermalState"));
 }
 static bool fps_runtime_requested(void) {
-    return (g_ms_policy.loaded && (g_ms_policy.refresh || g_ms_policy.target > 60)) || g_target_fps > 60;
+    return g_launch_authorized && (((g_ms_policy.loaded && (g_ms_policy.refresh || g_ms_policy.target > 60)) || g_target_fps > 60));
 }
 static long fps_runtime_target(void) {
     return ms_ios_target_fps(g_ms_policy.target, ios_maximum_frames_per_second(), ms_low_power(), ms_thermal());
@@ -316,7 +317,7 @@ static int g_metal_layer_stretch_installed = 0;
 static char g_ms_layer_uncapped_key;
 
 static void ms_apply_metal_layer_policies(id layer) {
-    if (!layer) return;
+    if (!layer || !g_launch_authorized) return;
 
     // 1. Uncap Metal VSync (Allows engine rendering loop to exceed 120Hz up to 10,000 FPS)
     if (fps_runtime_requested()) {
@@ -367,7 +368,7 @@ static inline id get_ca_gravity_resize(void) {
 }
 
 static void metal_layer_set_drawable_size_hook(id self, SEL cmd, MSSize size) {
-    if (g_stretch_percent > 0 && g_stretch_percent != 100 && size.width > 0 && size.height > 0) {
+    if (g_launch_authorized && g_stretch_percent > 0 && g_stretch_percent != 100 && size.width > 0 && size.height > 0) {
         if (size.width > size.height) { // In-game landscape only
             double factor = (double)g_stretch_percent / 100.0;
             size.width = (double)((long long)(size.width * factor + 0.5));
@@ -389,7 +390,7 @@ static void metal_layer_set_drawable_size_hook(id self, SEL cmd, MSSize size) {
 }
 
 static void metal_layer_set_contents_gravity_hook(id self, SEL cmd, id gravity) {
-    if (g_stretch_percent > 0 && g_stretch_percent != 100) {
+    if (g_launch_authorized && g_stretch_percent > 0 && g_stretch_percent != 100) {
         gravity = get_ca_gravity_resize();
     }
     if (g_original_set_contents_gravity) {
@@ -401,7 +402,7 @@ static void ms_apply_stretch_to_layer_tree(id layer, Class metalClass) {
     if (!layer || !metalClass) return;
     if (((bool (*)(id, SEL, id))objc_msgSend)(layer, sel_registerName("isKindOfClass:"), (id)metalClass)) {
         ms_apply_metal_layer_policies(layer);
-        if (g_stretch_percent > 0 && g_stretch_percent != 100) {
+        if (g_launch_authorized && g_stretch_percent > 0 && g_stretch_percent != 100) {
             MSSize size = ((MSSize (*)(id, SEL))objc_msgSend)(layer, sel_registerName("drawableSize"));
             if (size.width > size.height && size.height > 0) {
                 double factor = (double)g_stretch_percent / 100.0;

@@ -1134,8 +1134,11 @@ def configure_ios_runtime_html(html: str) -> str:
                 <div style="font-size:16px;font-weight:800;color:var(--text-main)" data-i18n="title_stretch_screen">Stretch Screen</div>''',
         '''        <div class="card" id="card-stretch-screen">
             <div style="display:flex;align-items:center;justify-content:space-between">
-                <div style="font-size:16px;font-weight:800;color:var(--text-main)" data-i18n="title_stretch_screen">Stretch Screen</div>''',
-        "card stretch screen id",
+                <div style="font-size:16px;font-weight:800;color:var(--text-main);display:flex;align-items:center;gap:6px">
+                    <span data-i18n="title_stretch_screen">Stretch Screen</span>
+                    <svg class="crown-svg-icon" viewBox="0 0 24 24"><path d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5zm14 3c0 .6-.4 1-1 1H6c-.6 0-1-.4-1-1v-1h14v1z"/></svg>
+                </div>''',
+        "card stretch screen id with crown icon",
     )
 
     gui_blur_row = '''        <div class="setting-row">
