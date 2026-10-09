@@ -1684,6 +1684,16 @@
       "max_function_scan": 4096,
       "required": false,
       "_comment": "DisplayTiming::schedule in-game frame pacing clamps CADisplayLink maximumFrameRate to screen refresh rate (60/120). Patch to mov w8, w22; ucvtf s1, w22."
+    },
+    {
+      "name": "fps_devicemtl_present_timing",
+      "string": null,
+      "hex_pattern": "62 7A 40 F9 08 20 60 1E ?? ?? 00 54",
+      "xref_index": 0,
+      "offset": 8,
+      "max_function_scan": 4096,
+      "required": false,
+      "_comment": "DeviceMtl presentFrame branches to presentDrawable:atTime: when targetTimestamp > 0. Patch b.le to unconditional b to present immediately."
     }
   ]
 }

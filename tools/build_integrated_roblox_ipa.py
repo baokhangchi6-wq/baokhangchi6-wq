@@ -2131,6 +2131,14 @@ def patch_robloxlib_fps_clamps(data: bytearray) -> bytearray:
             b"\xe8\x03\x16\x2a\x80\x02\x23\x1e\xc1\x02\x23\x1e\x02\x01\x23\x1e",
             0x409d268,
         ),
+        # 8. DeviceMtl presentDrawable:atTime: delay clamp bypass (b.le presentDrawable -> b presentDrawable)
+        (
+            "DeviceMtl presentDrawable:atTime: delay clamp bypass",
+            re.compile(b"\x62\x7a\x40\xf9\x08\x20\x60\x1e" + b"([\x00-\xff]{2}\x00\x54|\x5e\x01\x00\x14)"),
+            8,
+            b"\x5e\x01\x00\x14",
+            0x40a43c8,
+        ),
     ]
 
     applied = 0
@@ -2138,7 +2146,17 @@ def patch_robloxlib_fps_clamps(data: bytearray) -> bytearray:
         matches = list(pattern.finditer(data))
         if matches:
             site = matches[0].start() + offset
-            data[site:site + len(replacement)] = replacement
+            rep = replacement
+            if name == "DeviceMtl presentDrawable:atTime: delay clamp bypass":
+                cur_insn = data[site:site + 4]
+                if cur_insn[3] == 0x54:
+                    raw_val = struct.unpack('<I', cur_insn)[0]
+                    imm19 = (raw_val >> 5) & 0x7ffff
+                    if imm19 & (1 << 18):
+                        imm19 -= (1 << 19)
+                    imm26 = imm19 & 0x3ffffff
+                    rep = struct.pack('<I', (0x14 << 24) | imm26)
+            data[site:site + len(rep)] = rep
             applied += 1
             print(f"[PATCH_ROBLOXLIB_DYNAMIC] {name} matched & un-clamped @ 0x{site:X} (signature)")
         elif len(data) > fallback_site + len(replacement):

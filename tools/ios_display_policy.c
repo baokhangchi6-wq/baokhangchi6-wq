@@ -49,7 +49,8 @@ static ScreenMaxFpsImp g_original_screen_max_fps = NULL;
 
 static long screen_max_fps_hook(id self, SEL cmd) {
     if (fps_runtime_requested()) {
-        return 240; /* Report ProMotion max rate to prevent Roblox 60Hz throttling */
+        long target = g_target_fps > 0 ? g_target_fps : (g_ms_policy.target > 0 ? g_ms_policy.target : 10000);
+        return target > 60 ? target : 10000;
     }
     return g_original_screen_max_fps ? g_original_screen_max_fps(self, cmd) : 60;
 }
@@ -62,10 +63,13 @@ static id ms_process_info(void) {
     return ((id (*)(id, SEL))objc_msgSend)(objc_getClass("NSProcessInfo"), sel_registerName("processInfo"));
 }
 static int ios_maximum_frames_per_second(void) {
-    if (fps_runtime_requested()) return 240;
+    if (fps_runtime_requested()) {
+        long target = g_target_fps > 0 ? g_target_fps : (g_ms_policy.target > 0 ? g_ms_policy.target : 10000);
+        return target > 60 ? (int)target : 10000;
+    }
     id screen = ((id (*)(id, SEL))objc_msgSend)(objc_getClass("UIScreen"), sel_registerName("mainScreen"));
     long rate = screen ? ((long (*)(id, SEL))objc_msgSend)(screen, sel_registerName("maximumFramesPerSecond")) : 60;
-    return rate >= 30 && rate <= 240 ? (int)rate : 120;
+    return rate >= 30 ? (int)rate : 120;
 }
 static int ms_low_power(void) {
     if (fps_runtime_requested()) return 0;
@@ -83,7 +87,7 @@ static long fps_runtime_target(void) {
 }
 static inline MSFrameRateRange sanitize_frame_rate_range(MSFrameRateRange range) {
     int screen_max = ios_maximum_frames_per_second();
-    if (screen_max <= 0) screen_max = 120;
+    if (screen_max <= 0) screen_max = 10000;
     float max_limit = (float)screen_max;
     if (range.minimum <= 0.0f || range.minimum > max_limit) range.minimum = 1.0f;
     if (range.maximum <= 0.0f || range.maximum > max_limit) range.maximum = max_limit;
@@ -94,7 +98,7 @@ static inline MSFrameRateRange sanitize_frame_rate_range(MSFrameRateRange range)
 }
 static MSFrameRateRange ms_target_range(void) {
     int screen_max = ios_maximum_frames_per_second();
-    if (screen_max <= 0) screen_max = 120;
+    if (screen_max <= 0) screen_max = 10000;
     float max_limit = (float)screen_max;
     return sanitize_frame_rate_range((MSFrameRateRange){max_limit, max_limit, max_limit});
 }
@@ -337,6 +341,102 @@ static SetContentsGravityImp g_original_set_contents_gravity = NULL;
 static int g_metal_layer_stretch_installed = 0;
 static char g_ms_layer_uncapped_key;
 
+typedef void (*CommandPresentDrawableImp)(id, SEL, id);
+typedef void (*CommandPresentAtTimeImp)(id, SEL, id, double);
+typedef void (*CommandPresentAfterDurationImp)(id, SEL, id, double);
+typedef id (*CommandQueueBufferImp)(id, SEL);
+typedef id (*CommandQueueBufferDescriptorImp)(id, SEL, id);
+static CommandPresentDrawableImp g_original_command_present_drawable = NULL;
+static CommandPresentAtTimeImp g_original_command_present_at_time = NULL;
+static CommandPresentAfterDurationImp g_original_command_present_after_duration = NULL;
+static CommandQueueBufferImp g_original_command_buffer = NULL;
+static CommandQueueBufferDescriptorImp g_original_command_buffer_descriptor = NULL;
+static char g_ms_command_buffer_hook_key;
+static int g_ms_metal_present_hook_installed = 0;
+
+static void command_present_drawable_hook(id self, SEL cmd, id drawable) {
+    if (g_original_command_present_drawable) {
+        g_original_command_present_drawable(self, cmd, drawable);
+    }
+}
+
+static void command_present_at_time_hook(id self, SEL cmd, id drawable, double time) {
+    /* Bypass VBlank delay: present drawable immediately without waiting for future VSync timestamp */
+    if (fps_runtime_requested()) {
+        if (g_original_command_present_drawable) {
+            g_original_command_present_drawable(self, sel_registerName("presentDrawable:"), drawable);
+            return;
+        }
+    }
+    if (g_original_command_present_at_time) {
+        g_original_command_present_at_time(self, cmd, drawable, time);
+    }
+}
+
+static void command_present_after_duration_hook(id self, SEL cmd, id drawable, double duration) {
+    /* Bypass minimum frame duration: present immediately */
+    if (fps_runtime_requested()) {
+        if (g_original_command_present_drawable) {
+            g_original_command_present_drawable(self, sel_registerName("presentDrawable:"), drawable);
+            return;
+        }
+    }
+    if (g_original_command_present_after_duration) {
+        g_original_command_present_after_duration(self, cmd, drawable, duration);
+    }
+}
+
+static void ms_install_command_buffer_present_policy(id command_buffer) {
+    if (!command_buffer || !fps_runtime_requested()) return;
+    Class cls = object_getClass(command_buffer);
+    if (!cls || objc_getAssociatedObject((id)cls, &g_ms_command_buffer_hook_key)) return;
+
+    Method present = class_getInstanceMethod(cls, sel_registerName("presentDrawable:"));
+    Method at_time = class_getInstanceMethod(cls, sel_registerName("presentDrawable:atTime:"));
+    Method after = class_getInstanceMethod(cls, sel_registerName("presentDrawable:afterMinimumDuration:"));
+
+    if (present && !g_original_command_present_drawable)
+        g_original_command_present_drawable = (CommandPresentDrawableImp)method_setImplementation(present, (IMP)command_present_drawable_hook);
+    if (at_time && !g_original_command_present_at_time)
+        g_original_command_present_at_time = (CommandPresentAtTimeImp)method_setImplementation(at_time, (IMP)command_present_at_time_hook);
+    if (after && !g_original_command_present_after_duration)
+        g_original_command_present_after_duration = (CommandPresentAfterDurationImp)method_setImplementation(after, (IMP)command_present_after_duration_hook);
+
+    g_ms_metal_present_hook_installed = (g_original_command_present_drawable != NULL);
+    objc_setAssociatedObject((id)cls, &g_ms_command_buffer_hook_key, (id)1, 0);
+    runtime_note("[METAL][PRESENT] bufferClass=%s present=%d atTime=%d afterDuration=%d policy=IMMEDIATE",
+        class_getName(cls), present != NULL, at_time != NULL, after != NULL);
+}
+
+static id command_queue_buffer_hook(id self, SEL cmd) {
+    id buffer = g_original_command_buffer ? g_original_command_buffer(self, cmd) : NULL;
+    ms_install_command_buffer_present_policy(buffer);
+    return buffer;
+}
+
+static id command_queue_buffer_descriptor_hook(id self, SEL cmd, id descriptor) {
+    id buffer = g_original_command_buffer_descriptor ? g_original_command_buffer_descriptor(self, cmd, descriptor) : NULL;
+    ms_install_command_buffer_present_policy(buffer);
+    return buffer;
+}
+
+static void ms_install_command_queue_present_policy(id layer) {
+    if (g_original_command_buffer || g_original_command_buffer_descriptor) return;
+    id device = layer ? ((id (*)(id, SEL))objc_msgSend)(layer, sel_registerName("device")) : NULL;
+    id queue = device ? ((id (*)(id, SEL))objc_msgSend)(device, sel_registerName("newCommandQueue")) : NULL;
+    Class cls = queue ? object_getClass(queue) : NULL;
+    if (!cls) return;
+    Method buffer = class_getInstanceMethod(cls, sel_registerName("commandBuffer"));
+    Method descriptor = class_getInstanceMethod(cls, sel_registerName("commandBufferWithDescriptor:"));
+    if (buffer && !g_original_command_buffer)
+        g_original_command_buffer = (CommandQueueBufferImp)method_setImplementation(buffer, (IMP)command_queue_buffer_hook);
+    if (descriptor && !g_original_command_buffer_descriptor)
+        g_original_command_buffer_descriptor = (CommandQueueBufferDescriptorImp)method_setImplementation(descriptor, (IMP)command_queue_buffer_descriptor_hook);
+    runtime_note("[METAL][QUEUE] class=%s commandBuffer=%d descriptor=%d status=%s", class_getName(cls),
+        buffer != NULL, descriptor != NULL, (g_original_command_buffer || g_original_command_buffer_descriptor) ? "READY" : "BLOCKED");
+    ((void (*)(id, SEL))objc_msgSend)(queue, sel_registerName("release"));
+}
+
 static void ms_apply_metal_layer_policies(id layer) {
     if (!layer) return;
 
@@ -359,6 +459,7 @@ static void ms_apply_metal_layer_policies(id layer) {
 
 static inline void ms_ensure_layer_vsync_uncapped(id layer) {
     if (!layer || !fps_runtime_requested()) return;
+    ms_install_command_queue_present_policy(layer);
     if (objc_getAssociatedObject(layer, &g_ms_layer_uncapped_key)) return;
 
     ms_apply_metal_layer_policies(layer);
