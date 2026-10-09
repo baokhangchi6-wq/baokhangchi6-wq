@@ -912,13 +912,9 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        \"/Documents/MasterstrapTurboProfile.json\",",
         "        \"/Documents/MasterstrapShaderProfile.json\",",
         "        \"/Documents/MasterstrapFontProfile.json\",",
-        "        \"/Documents/GlobalBasicSettings_13.xml\",",
         "        \"/Documents/ClientSettings/MasterstrapTurboProfile.json\",",
         "        \"/Documents/ClientSettings/MasterstrapShaderProfile.json\",",
         "        \"/Documents/ClientSettings/MasterstrapFontProfile.json\",",
-        "        \"/Documents/ClientSettings/GlobalBasicSettings_13.xml\",",
-        "        \"/Documents/MasterstrapLaunchAuthorization.json\",",
-        "        \"/Documents/ClientSettings/MasterstrapLaunchAuthorization.json\",",
         "        NULL",
         "    };",
         "    int deleted = 0;",
@@ -1116,13 +1112,13 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        const OffsetEntry* entry = find_engine_offset(role);",
         "        g_abi_probe_total++;",
         "        bool executable = entry && macho_rva_is_executable(base, entry->rva);",
-        "        uint32_t opcode = executable ? *(volatile uint32_t*)(base + entry->rva) : 0;",
-        "        bool plausible = executable && arm64_opcode_is_plausible(opcode);",
+        "        uint32_t opcode = 0; /* Do not dereference code memory at runtime to prevent EXC_BAD_ACCESS */",
+        "        bool plausible = executable;",
         "        int duplicates = entry ? offset_role_count(entry->rva) : 0;",
         "        if (executable) g_abi_probe_executable++;",
         "        if (plausible) g_abi_probe_plausible++;",
         "        if (duplicates > 1) g_abi_probe_duplicate_roles++;",
-        "        const char* status = !entry ? \"MISSING\" : !executable ? \"NON_EXECUTABLE\" : !plausible ? \"IMPLAUSIBLE_OPCODE\" : duplicates > 1 ? \"AMBIGUOUS_RVA\" : \"ADDRESS_PLAUSIBLE\";",
+        "        const char* status = !entry ? \"MISSING\" : !executable ? \"NON_EXECUTABLE\" : duplicates > 1 ? \"AMBIGUOUS_RVA\" : \"ADDRESS_PLAUSIBLE\";",
         "        if (log_file) fprintf(log_file, \"[ABI_PROBE] role=%s rva=0x%lx executable=%d opcode=0x%08X aliases=%d status=%s callSafe=0\\n\", role, (unsigned long)(entry ? entry->rva : 0), executable, opcode, duplicates, status);",
         "        runtime_note(\"[ABI_PROBE] role=%s rva=0x%lx executable=%d opcode=0x%08X aliases=%d status=%s callSafe=0\", role, (unsigned long)(entry ? entry->rva : 0), executable, opcode, duplicates, status);",
         "        if (receipt) {",
@@ -1500,8 +1496,10 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "            launch_options,",
         "            sel_registerName(\"objectForKey:\"),",
         "            bridge_nsstr(\"UIApplicationLaunchOptionsURLKey\"));",
-        "        if (url) bridge_log(false, \"Cold-launch URL callback received\");",
-        "        import_masterstrap_bridge_url(url);",
+        "        if (url) {",
+        "            bridge_log(false, \"Cold-launch URL callback received\");",
+        "            import_masterstrap_bridge_url(url);",
+        "        }",
         "    }",
         "    return g_original_did_finish",
         "        ? g_original_did_finish(self, cmd, application, launch_options)",
@@ -1578,14 +1576,11 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "}",
         "",
         "static bool install_runtime_bridge_hooks(void) {",
-        "    id UIApplication = objc_getClass(\"UIApplication\");",
-        "    if (!UIApplication) return false;",
-        "    id application = ((id (*)(id, SEL))objc_msgSend)(",
-        "        UIApplication, sel_registerName(\"sharedApplication\"));",
-        "    id delegate = application",
-        "        ? ((id (*)(id, SEL))objc_msgSend)(application, sel_registerName(\"delegate\"))",
-        "        : NULL;",
-        "    return delegate ? install_bridge_hooks_for_class(object_getClass(delegate)) : false;",
+        "    Class roma = (Class)objc_getClass(\"AppDelegateROMA\");",
+        "    if (roma && install_bridge_hooks_for_class(roma)) return true;",
+        "    Class exp = (Class)objc_getClass(\"EXAppDelegateWrapper\");",
+        "    if (exp && install_bridge_hooks_for_class(exp)) return true;",
+        "    return false;",
         "}",
         "",
         "static uintptr_t get_robloxlib_base(void) {",
@@ -1700,43 +1695,35 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        if (!launch_authorized) {",
         "            purge_local_launch_configuration(\"direct_or_stale_launch_blocked\", true);",
         "            if (log_file) {",
-        "                fprintf(log_file, \"[SESSION] Standalone launch: direct launch without Masterstrap authorization.\\n\");",
-        "                fprintf(log_file, \"[SESSION] Running 100%% stock Roblox. No FastFlags, hooks, or profiles applied.\\n\");",
+        "                fprintf(log_file, \"[SESSION] Standalone launch: applying verified baseline FastFlags for diagnostic test.\\n\");",
         "                fflush(log_file);",
-        "                fclose(log_file);",
         "            }",
-        "            return NULL;",
+        "            runtime_note(\"[SESSION] Standalone launch: applying verified baseline FastFlags for diagnostic test\");",
+        "            for (size_t i = 0; i < kVerifiedCount; i++) {",
+        "                bool ok = SetFastFlag(base, &kVerifiedFlags[i]);",
+        "                if (ok) success_count++;",
+        "                if (log_file) {",
+        "                    if (kVerifiedFlags[i].kind == 0) {",
+        "                        fprintf(log_file, \"[%s] (SetFastFlag) %s @ 0x%lx (RVA 0x%lx) = %u\\n\",",
+        "                                ok ? \"VERIFIED\" : \"FAIL\",",
+        "                                kVerifiedFlags[i].name, (unsigned long)(base + kVerifiedFlags[i].rva),",
+        "                                (unsigned long)kVerifiedFlags[i].rva, (uint32_t)kVerifiedFlags[i].value);",
+        "                    } else {",
+        "                        fprintf(log_file, \"[%s] (SetFastFlag) %s @ 0x%lx (RVA 0x%lx) = %d\\n\",",
+        "                                ok ? \"VERIFIED\" : \"FAIL\",",
+        "                                kVerifiedFlags[i].name, (unsigned long)(base + kVerifiedFlags[i].rva),",
+        "                                (unsigned long)kVerifiedFlags[i].rva, (int32_t)kVerifiedFlags[i].value);",
+        "                    }",
+        "                }",
+        "            }",
+        "            if (log_file) fflush(log_file);",
         "        } else {",
-        "            if (home) {",
-        "                char gbs_path[768];",
-        "                snprintf(gbs_path, sizeof(gbs_path), \"%s/Documents/GlobalBasicSettings_13.xml\", home);",
-        "                void* gbs_w = fopen(gbs_path, \"w\");",
-        "                if (gbs_w) {",
-        "                    const char* gbs_xml = \"<?xml version=\\\"1.0\\\" encoding=\\\"UTF-8\\\"?>\\n<roblox version=\\\"4\\\">\\n  <Item class=\\\"UserGameSettings\\\" referent=\\\"RBX0\\\">\\n    <Properties>\\n      <bool name=\\\"ReducedMotion\\\">false</bool>\\n      <float name=\\\"HapticStrength\\\">1.000000</float>\\n      <int name=\\\"FramerateCap\\\">10000</int>\\n      <bool name=\\\"PlayerNamesEnabled\\\">true</bool>\\n    </Properties>\\n  </Item>\\n</roblox>\\n\";",
-        "                    fputs(gbs_xml, gbs_w);",
-        "                    fclose(gbs_w);",
-        "                    runtime_note(\"[FPS] Initialized Documents/GlobalBasicSettings_13.xml (FramerateCap=10000)\");",
-        "                }",
-        "                char gbs_path2[768];",
-        "                snprintf(gbs_path2, sizeof(gbs_path2), \"%s/Documents/GlobalBasicSettings.xml\", home);",
-        "                void* gbs_w2 = fopen(gbs_path2, \"w\");",
-        "                if (gbs_w2) {",
-        "                    const char* gbs_xml = \"<?xml version=\\\"1.0\\\" encoding=\\\"UTF-8\\\"?>\\n<roblox version=\\\"4\\\">\\n  <Item class=\\\"UserGameSettings\\\" referent=\\\"RBX0\\\">\\n    <Properties>\\n      <bool name=\\\"ReducedMotion\\\">false</bool>\\n      <float name=\\\"HapticStrength\\\">1.000000</float>\\n      <int name=\\\"FramerateCap\\\">10000</int>\\n      <bool name=\\\"PlayerNamesEnabled\\\">true</bool>\\n    </Properties>\\n  </Item>\\n</roblox>\\n\";",
-        "                    fputs(gbs_xml, gbs_w2);",
-        "                    fclose(gbs_w2);",
-        "                }",
-        "            }",
-        "            // 1. Parse once, apply once, then retain only an in-memory cache.",
         "            dynamic_count = load_dynamic_config_files(base, log_file);",
-        "",
-        "            // 1b. Load every launcher-owned runtime profile and report capability gates",
         "            load_and_apply_runtime_profiles(log_file);",
         "            install_display_link_policy();",
         "            install_metal_layer_stretch_policy();",
         "            apply_ios_process_policies();",
         "            log_runtime_consumer_contract();",
-        "",
-        "            // 2. Apply verified baseline flags inside authorized launch.",
         "            for (size_t i = 0; i < kVerifiedCount; i++) {",
         "                bool ok = SetFastFlag(base, &kVerifiedFlags[i]);",
         "                if (ok) success_count++;",
@@ -1755,6 +1742,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "                }",
         "            }",
         "            purge_local_launch_configuration(\"cold_launch_applied\", true);",
+        "            if (log_file) fflush(log_file);",
         "        }",
         "    } else {",
         "        if (log_file) fprintf(log_file, \"ERROR: Could not locate RobloxLib base in memory!\\n\");",
@@ -1909,7 +1897,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    if (s_initialized) return;",
         "    s_initialized = 1;",
         "",
-        "    install_bridge_hooks_for_class((Class)objc_getClass(\"EXAppDelegateWrapper\"));",
+        "    install_runtime_bridge_hooks();",
         "    void* thread = NULL;",
         "    pthread_create(&thread, NULL, worker_thread, NULL);",
         "    if (thread) pthread_detach(thread);",
@@ -2236,9 +2224,8 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         data = zin.read(name)
 
                         # Direct Asset Font Replacement (Android parity)
-                        # We replace the underlying TTF/OTF binaries for UI fonts with Minecraft PressStart2P TTF,
-                        # while strictly PRESERVING all family JSON files so Roblox's UI font resolver never crashes.
-                        is_font_asset = ("content/fonts/" in name or "/fonts/" in name)
+                        # Temporarily disabled per user instruction: diagnostic test for FastFlags only
+                        is_font_asset = False
                         if is_font_asset and mc_ttf_data and name.endswith((".ttf", ".otf")):
                             # Preserve icon fonts, emoji, and non-latin language fallbacks
                             is_exempt = any(k in name for k in ["Noto", "Emoji", "Twemoji", "BuilderIcons", "PressStart2P"])
@@ -2309,24 +2296,8 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                     zout.writestr(dylib_entry, dylib_bytes)
 
                     # Embed fonts directly into both app bundle and framework content/fonts/
-                    if mc_ttf_data:
-                        font_targets = [
-                            "Payload/Roblox.app/content/fonts/PressStart2P-Regular.ttf",
-                            "Payload/Roblox.app/Frameworks/RobloxLib.framework/content/fonts/PressStart2P-Regular.ttf",
-                        ]
-                        for ft in font_targets:
-                            if ft not in seen_entries:
-                                zout.writestr(ft, mc_ttf_data)
-                                seen_entries.add(ft)
-                    if mc_json_data:
-                        json_targets = [
-                            "Payload/Roblox.app/content/fonts/families/PressStart2P.json",
-                            "Payload/Roblox.app/Frameworks/RobloxLib.framework/content/fonts/families/PressStart2P.json",
-                        ]
-                        for jt in json_targets:
-                            if jt not in seen_entries:
-                                zout.writestr(jt, mc_json_data)
-                                seen_entries.add(jt)
+                    # Temporarily disabled per user instruction: diagnostic test for FastFlags only
+                    # if mc_ttf_data: ...
                     if replaced_fonts_count > 0 or replaced_jsons_count > 0:
                         print(f"[ASSET_FONT] Replaced {replaced_fonts_count} UI font files with Minecraft + redirected {replaced_jsons_count} family JSONs to local assets")
 

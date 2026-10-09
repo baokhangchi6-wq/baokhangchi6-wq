@@ -255,6 +255,8 @@ static void ms_install_observer(void) {
 static bool install_display_link_policy(void);
 static void ms_install_on_main(void* ignored) { (void)ignored; install_display_link_policy(); }
 static bool install_display_link_policy(void) {
+    /* Temporarily disabled per user instruction: diagnostic test for FastFlags only */
+    if (1) { runtime_note("[CAPABILITY][FPS] backend=%s status=STANDBY_TEST_FLAGS_ONLY", kFpsRuntimeBackend); return true; }
     if (!pthread_main_np()) { dispatch_async_f(&_dispatch_main_q, NULL, ms_install_on_main); return false; }
     if (g_display_link_policy_installed) return true;
 
@@ -427,6 +429,7 @@ static void ms_apply_stretch_to_layer_tree(id layer, Class metalClass) {
 }
 
 static void ms_refresh_metal_layers(void) {
+    if (1) return;
     if (!pthread_main_np()) return;
     Class metalClass = (Class)objc_getClass("CAMetalLayer");
     if (!metalClass) return;
@@ -444,6 +447,8 @@ static void ms_refresh_metal_layers(void) {
 }
 
 static bool install_metal_layer_stretch_policy(void) {
+    /* Temporarily disabled per user instruction: diagnostic test for FastFlags only */
+    if (1) { runtime_note("[CAPABILITY][STRETCH] backend=cametallayer-drawable-resize status=STANDBY_TEST_FLAGS_ONLY hookInstalled=0 metal_vsync_uncap=STANDBY"); return true; }
     if (g_metal_layer_stretch_installed) return true;
     Class cls = (Class)objc_getClass("CAMetalLayer");
     if (!cls) return false;
