@@ -771,9 +771,9 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static bool g_profile_loaded = false;",
         "static uintptr_t g_engine_base = 0;",
         "static bool g_game_mode_enabled = false;",
-        "static bool g_refresh_requested = false;",
+        "static bool g_refresh_requested = true;",
         "static bool g_keep_display_active = false;",
-        "static int g_target_fps = 60;",
+        "static int g_target_fps = 10000;",
         "static int g_stretch_percent = 100;",
         "static char g_renderer_mode[32] = \"Automatic\";",
         "static char g_shader_package[64] = \"none\";",
@@ -1862,7 +1862,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    runtime_note(\"Persistence initial 30s completed. Starting continuous watchdog: pid=%d\", getpid());",
         "    int watchdog_ticks = 0;",
         "    while (1) {",
-        "        usleep(1000000); // 1s heartbeat",
+        "        usleep(250000); // 250ms heartbeat",
         "        watchdog_ticks++;",
         "        if (base == 0) { base = get_robloxlib_base(); if (!engine_identity_matches(base)) base = 0; g_engine_base = base; }",
         "        if (base != 0) {",
@@ -2068,6 +2068,74 @@ SUMMARY:
     runtime_log.write_text(report_text, encoding="utf-8")
 
 
+def patch_robloxlib_fps_clamps(data: bytearray) -> bytearray:
+    """Version-agnostic dynamic scanner and patcher for RobloxLib ARM64 FPS clamps.
+
+    Automatically locates clamp opcodes across future Roblox engine updates
+    using unique machine instruction signatures, with static offset fallbacks.
+    """
+    patches = [
+        # 1. GetDefaultFramerateCap 240 FPS clamp (cmp w8, #240; mov w9, #240; csel -> mov w9, w8)
+        (
+            "GetDefaultFramerateCap 240 FPS clamp",
+            re.compile(b"\x1f\xc1\x03\x71\x09\x1e\x80\x52(\x09\xb1\x89\x1a|\xe9\x03\x08\x2a)"),
+            8,
+            b"\xe9\x03\x08\x2a",
+            0x47643b0,
+        ),
+        # 2. TaskScheduler dt 240 FPS clamp (cmp w11, #240; mov w12, #240; csel -> nop)
+        (
+            "TaskScheduler dt 240 FPS clamp",
+            re.compile(b"\x7f\xc1\x03\x71\x0c\x1e\x80\x52(\x6b\xb1\x8c\x1a|\x1f\x20\x03\xd5)"),
+            8,
+            b"\x1f\x20\x03\xd5",
+            0x93b540,
+        ),
+        # 3. AdaptiveSync schedule target 10000 FPS (ldr w8, [x0, #0x118]; cmp w8, #1; csinc/mov w22, #10000)
+        (
+            "AdaptiveSync schedule target 10000 FPS",
+            re.compile(b"\x08\x18\x41\xb9\x1f\x05\x00\x71(\x16\xc5\x9f\x1a|\x16\xe2\x84\x52)"),
+            8,
+            b"\x16\xe2\x84\x52",
+            0x409d17c,
+        ),
+        # 4. AdaptiveSync refresh clamp bypass (cmp w21, w22; csel -> nop)
+        (
+            "AdaptiveSync refresh clamp bypass",
+            re.compile(b"\xbf\x02\x16\x6b(\xb6\x32\x96\x1a|\x1f\x20\x03\xd5)"),
+            4,
+            b"\x1f\x20\x03\xd5",
+            0x409d1dc,
+        ),
+        # 5. DisplayTiming in-game pacing clamp (csel w8, w21, w22, ne -> mov w8, w22; ucvtf s1, w21 -> ucvtf s1, w22)
+        (
+            "DisplayTiming in-game pacing clamp",
+            re.compile(b"(\xa8\x12\x96\x1a|\xe8\x03\x16\x2a)\x80\x02\x23\x1e(\xa1\x02\x23\x1e|\xc1\x02\x23\x1e)\x02\x01\x23\x1e"),
+            0,
+            b"\xe8\x03\x16\x2a\x80\x02\x23\x1e\xc1\x02\x23\x1e\x02\x01\x23\x1e",
+            0x409d268,
+        ),
+    ]
+
+    applied = 0
+    for name, pattern, offset, replacement, fallback_site in patches:
+        matches = list(pattern.finditer(data))
+        if matches:
+            site = matches[0].start() + offset
+            data[site:site + len(replacement)] = replacement
+            applied += 1
+            print(f"[PATCH_ROBLOXLIB_DYNAMIC] {name} matched & un-clamped @ 0x{site:X} (signature)")
+        elif len(data) > fallback_site + len(replacement):
+            data[fallback_site:fallback_site + len(replacement)] = replacement
+            applied += 1
+            print(f"[PATCH_ROBLOXLIB_STATIC] {name} un-clamped @ 0x{fallback_site:X} (fallback)")
+        else:
+            print(f"[PATCH_ROBLOXLIB] Warning: {name} signature not found and out of bounds")
+
+    print(f"[PATCH_ROBLOXLIB] Applied {applied}/{len(patches)} version-agnostic FPS uncap clamps")
+    return data
+
+
 def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir: Path, embed_flags: bool = True):
     out_dir.mkdir(parents=True, exist_ok=True)
     
@@ -2100,7 +2168,10 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
             "FFlagApplicationFrameRatePolicy": False,
             "FFlagDebugExperimentalVSyncFramePacing": False,
             "FFlagDebugDisableVsync": True,
-            "FFlagMetalVsyncPreferMaximumRefreshRate": True,
+            "FFlagMetalVsyncPreferMaximumRefreshRate": False,
+            "FFlagMetalDisplayTiming": False,
+            "FFlagMetalDisplayTimingAdjustMinFPS": False,
+            "FIntMetalDisplayTimingMinFPS": 0,
             "FFlagPerformanceControlDisplayRefreshRate": False,
             "FFlagPerformanceControlDisplayRefreshRateInAdaptiveSync": False,
             "FFlagPerformanceControlDisplayRefreshRateMigration": False,
@@ -2278,32 +2349,7 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                                 data = insert_load_dylib(data, "@executable_path/Frameworks/libmasterstrap.dylib")
                         elif name == "Payload/Roblox.app/Frameworks/RobloxLib.framework/RobloxLib":
                             data = remove_load_dylib(data, ["libgloop", "gloop", "delta", "libmasterstrap"])
-                            data = bytearray(data)
-
-                            # 1. GetDefaultFramerateCap 240 FPS clamp (0x47643B0: csel -> mov w9, w8)
-                            clamp1_offset = 0x47643b0
-                            if len(data) > clamp1_offset + 4 and data[clamp1_offset:clamp1_offset+4] in (b'\x09\xb1\x89\x1a', b'\xe9\x03\x08\x2a'):
-                                data[clamp1_offset:clamp1_offset+4] = b'\xe9\x03\x08\x2a'
-                                print(f"[PATCH_ROBLOXLIB] Uncapped GetDefaultFramerateCap at 0x{clamp1_offset:x} (csel -> mov w9, w8)")
-
-                            # 2. TaskScheduler dt 240 FPS clamp (0x93B540: csel -> nop)
-                            clamp2_offset = 0x93b540
-                            if len(data) > clamp2_offset + 4 and data[clamp2_offset:clamp2_offset+4] in (b'\x6b\xb1\x8c\x1a', b'\x1f\x20\x03\xd5'):
-                                data[clamp2_offset:clamp2_offset+4] = b'\x1f\x20\x03\xd5'
-                                print(f"[PATCH_ROBLOXLIB] Uncapped TaskScheduler dt clamp at 0x{clamp2_offset:x} (csel -> nop)")
-
-                            # 3. AdaptiveSync schedule target 10000 FPS (0x409D17C: csinc -> mov w22, #10000)
-                            adapt_sched_offset = 0x409d17c
-                            if len(data) > adapt_sched_offset + 4 and data[adapt_sched_offset:adapt_sched_offset+4] in (b'\x16\xc5\x9f\x1a', b'\x16\xe2\x84\x52'):
-                                data[adapt_sched_offset:adapt_sched_offset+4] = b'\x16\xe2\x84\x52'
-                                print(f"[PATCH_ROBLOXLIB] Uncapped AdaptiveSync target at 0x{adapt_sched_offset:x} (csinc -> mov w22, #10000)")
-
-                            # 4. AdaptiveSync refresh clamp bypass (0x409D1DC: csel -> nop)
-                            adapt_clamp_offset = 0x409d1dc
-                            if len(data) > adapt_clamp_offset + 4 and data[adapt_clamp_offset:adapt_clamp_offset+4] in (b'\xb6\x32\x96\x1a', b'\x1f\x20\x03\xd5'):
-                                data[adapt_clamp_offset:adapt_clamp_offset+4] = b'\x1f\x20\x03\xd5'
-                                print(f"[PATCH_ROBLOXLIB] Bypassed AdaptiveSync refresh clamp at 0x{adapt_clamp_offset:x} (csel -> nop)")
-
+                            data = patch_robloxlib_fps_clamps(bytearray(data))
                             data = bytes(data)
                             data = insert_load_dylib(data, "@rpath/libmasterstrap.dylib")
                         elif name.endswith("Roblox.app/Info.plist"):

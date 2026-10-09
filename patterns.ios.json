@@ -1614,6 +1614,46 @@
       "max_function_scan": 4096,
       "required": false,
       "_comment": "TelemetrySize struct field at +0x1C0 (448). Zero-out alongside TelemetryBuffer to suppress telemetry packet size reporting. Android parity: TelemetrySize offset 0x1C0."
+    },
+    {
+      "name": "fps_taskscheduler_dt",
+      "string": null,
+      "hex_pattern": "7F C1 03 71 0C 1E 80 52",
+      "xref_index": 0,
+      "offset": 8,
+      "max_function_scan": 4096,
+      "required": false,
+      "_comment": "TaskScheduler target framerate dt clamp (cmp w11, #240; mov w12, #240; csel). NOP csel to uncap."
+    },
+    {
+      "name": "fps_adaptivesync_schedule",
+      "string": null,
+      "hex_pattern": "08 18 41 B9 1F 05 00 71",
+      "xref_index": 0,
+      "offset": 8,
+      "max_function_scan": 4096,
+      "required": false,
+      "_comment": "AdaptiveSync schedule target framerate (ldr w8, [x0, #0x118]; cmp w8, #1; csinc). Set to 10000 to uncap."
+    },
+    {
+      "name": "fps_displaytiming_pacing",
+      "string": null,
+      "hex_pattern": "?? ?? 96 1A 80 02 23 1E ?? 02 23 1E 02 01 23 1E",
+      "xref_index": 0,
+      "offset": 0,
+      "max_function_scan": 4096,
+      "required": false,
+      "_comment": "DisplayTiming::schedule in-game frame pacing clamps CADisplayLink maximumFrameRate to screen refresh rate (60/120). Patch to mov w8, w22; ucvtf s1, w22."
+    },
+    {
+      "name": "fps_get_default_cap",
+      "string": null,
+      "hex_pattern": "08 ?? 4A B9 1F C1 03 71 09 1E 80 52",
+      "xref_index": 0,
+      "offset": 12,
+      "max_function_scan": 4096,
+      "required": false,
+      "_comment": "GetDefaultFramerateCap clamps default framerate cap to 240. Patch to mov w9, w8."
     }
   ]
 }

@@ -62,6 +62,7 @@ static id ms_process_info(void) {
     return ((id (*)(id, SEL))objc_msgSend)(objc_getClass("NSProcessInfo"), sel_registerName("processInfo"));
 }
 static int ios_maximum_frames_per_second(void) {
+    if (fps_runtime_requested()) return 240;
     id screen = ((id (*)(id, SEL))objc_msgSend)(objc_getClass("UIScreen"), sel_registerName("mainScreen"));
     long rate = screen ? ((long (*)(id, SEL))objc_msgSend)(screen, sel_registerName("maximumFramesPerSecond")) : 60;
     return rate >= 30 && rate <= 240 ? (int)rate : 120;
@@ -74,10 +75,11 @@ static int ms_thermal(void) {
     return (int)((long (*)(id, SEL))objc_msgSend)(ms_process_info(), sel_registerName("thermalState"));
 }
 static bool fps_runtime_requested(void) {
-    return ((g_ms_policy.loaded && (g_ms_policy.refresh || g_ms_policy.target > 60)) || g_target_fps > 60);
+    return (g_target_fps > 60 || (g_ms_policy.loaded && (g_ms_policy.refresh || g_ms_policy.target > 60)));
 }
 static long fps_runtime_target(void) {
-    return ms_ios_target_fps(g_ms_policy.target, ios_maximum_frames_per_second(), ms_low_power(), ms_thermal());
+    int target = g_target_fps > 0 ? g_target_fps : g_ms_policy.target;
+    return ms_ios_target_fps(target, ios_maximum_frames_per_second(), ms_low_power(), ms_thermal());
 }
 static inline MSFrameRateRange sanitize_frame_rate_range(MSFrameRateRange range) {
     int screen_max = ios_maximum_frames_per_second();
@@ -166,27 +168,26 @@ static void apply_display_link_policy(id link, const char* source) {
     g_ms_applying = 0;
 }
 static void display_link_set_fps_hook(id self, SEL cmd, long requested) {
+    if (fps_runtime_requested()) {
+        requested = fps_runtime_target();
+    }
+    if (g_original_display_link_set_fps) g_original_display_link_set_fps(self, cmd, requested);
     if (!pthread_main_np() || g_ms_applying) {
-        if (g_original_display_link_set_fps) g_original_display_link_set_fps(self, cmd, requested);
         return;
     }
     ms_track_link(self);
-    g_ms_applying = 1;
-    if (g_original_display_link_set_fps) g_original_display_link_set_fps(self, cmd, requested);
-    g_ms_applying = 0;
     ms_capture_link_request(self);
     apply_display_link_policy(self, "fps-setter");
 }
 static void display_link_set_range_hook(id self, SEL cmd, MSFrameRateRange requested) {
-    requested = sanitize_frame_rate_range(requested);
+    if (fps_runtime_requested()) {
+        requested = ms_target_range();
+    }
+    if (g_original_display_link_set_range) g_original_display_link_set_range(self, cmd, requested);
     if (!pthread_main_np() || g_ms_applying) {
-        if (g_original_display_link_set_range) g_original_display_link_set_range(self, cmd, requested);
         return;
     }
     ms_track_link(self);
-    g_ms_applying = 1;
-    if (g_original_display_link_set_range) g_original_display_link_set_range(self, cmd, requested);
-    g_ms_applying = 0;
     ms_capture_link_request(self);
     apply_display_link_policy(self, "range-setter");
 }
@@ -201,6 +202,26 @@ static void display_link_add_hook(id self, SEL cmd, id loop, id mode) {
     apply_display_link_policy(self, "addToRunLoop");
     if (g_original_display_link_add) {
         g_original_display_link_add(self, cmd, loop, mode);
+        id commonMode = ms_string("kCFRunLoopCommonModes");
+        id trackingMode = ms_string("UITrackingRunLoopMode");
+        if (commonMode && loop) {
+            bool is_same = false;
+            if (mode) {
+                is_same = ((bool (*)(id, SEL, id))objc_msgSend)(mode, sel_registerName("isEqual:"), commonMode);
+            }
+            if (!is_same) {
+                g_original_display_link_add(self, cmd, loop, commonMode);
+            }
+        }
+        if (trackingMode && loop) {
+            bool is_same_track = false;
+            if (mode) {
+                is_same_track = ((bool (*)(id, SEL, id))objc_msgSend)(mode, sel_registerName("isEqual:"), trackingMode);
+            }
+            if (!is_same_track) {
+                g_original_display_link_add(self, cmd, loop, trackingMode);
+            }
+        }
     }
 }
 static void ms_write_display_receipt(unsigned long links) {
