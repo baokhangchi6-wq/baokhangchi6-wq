@@ -9,11 +9,9 @@ on:
   push:
     branches: [ master, main ]
     paths:
-      - 'tools/build_integrated_roblox_ipa.py'
-      - 'tools/check_roblox_ios_version.py'
+      - 'tools/**'
+      - 'roblox/**'
       - 'patterns.ios.json'
-      - 'tools/ios_display_policy.c'
-      - 'tools/ios_frame_policy.h'
       - '.github/workflows/build_roblox_ios_arm64.yml'
   schedule:
     # Check every 3 hours (at :17 past the hour)
