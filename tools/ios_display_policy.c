@@ -200,26 +200,6 @@ static void display_link_add_hook(id self, SEL cmd, id loop, id mode) {
     apply_display_link_policy(self, "addToRunLoop");
     if (g_original_display_link_add) {
         g_original_display_link_add(self, cmd, loop, mode);
-        id commonMode = ms_string("kCFRunLoopCommonModes");
-        id trackingMode = ms_string("UITrackingRunLoopMode");
-        if (commonMode && loop) {
-            bool is_same = false;
-            if (mode) {
-                is_same = ((bool (*)(id, SEL, id))objc_msgSend)(mode, sel_registerName("isEqual:"), commonMode);
-            }
-            if (!is_same) {
-                g_original_display_link_add(self, cmd, loop, commonMode);
-            }
-        }
-        if (trackingMode && loop) {
-            bool is_same_track = false;
-            if (mode) {
-                is_same_track = ((bool (*)(id, SEL, id))objc_msgSend)(mode, sel_registerName("isEqual:"), trackingMode);
-            }
-            if (!is_same_track) {
-                g_original_display_link_add(self, cmd, loop, trackingMode);
-            }
-        }
     }
 }
 static void ms_write_display_receipt(unsigned long links) {
@@ -378,17 +358,62 @@ static id metal_layer_next_drawable_hook(id self, SEL cmd) {
     return g_original_next_drawable ? g_original_next_drawable(self, cmd) : NULL;
 }
 
+static inline id get_ca_gravity_resize(void) {
+    static id s_gravity_resize = NULL;
+    if (!s_gravity_resize) {
+        s_gravity_resize = ms_string("resize");
+    }
+    return s_gravity_resize;
+}
+
 static void metal_layer_set_drawable_size_hook(id self, SEL cmd, MSSize size) {
+    if (g_stretch_percent > 0 && g_stretch_percent != 100 && size.width > 0 && size.height > 0) {
+        if (size.width > size.height) { // In-game landscape only
+            double factor = (double)g_stretch_percent / 100.0;
+            size.width = (double)((long long)(size.width * factor + 0.5));
+            if (size.width < 64.0) size.width = 64.0;
+            id gravity = get_ca_gravity_resize();
+            ((void (*)(id, SEL, id))objc_msgSend)(self, sel_registerName("setContentsGravity:"), gravity);
+            static int s_logged_stretch = 0;
+            if (!s_logged_stretch) {
+                s_logged_stretch = 1;
+                runtime_note("[APPLY][STRETCH] CAMetalLayer in-game landscape stretch=%d%% target_width=%.1f contentsGravity=resize",
+                             g_stretch_percent, size.width);
+            }
+        }
+    }
     if (g_original_set_drawable_size) {
         g_original_set_drawable_size(self, cmd, size);
     }
     ms_apply_metal_layer_policies(self);
 }
 
+static void metal_layer_set_contents_gravity_hook(id self, SEL cmd, id gravity) {
+    if (g_stretch_percent > 0 && g_stretch_percent != 100) {
+        gravity = get_ca_gravity_resize();
+    }
+    if (g_original_set_contents_gravity) {
+        g_original_set_contents_gravity(self, cmd, gravity);
+    }
+}
+
 static void ms_apply_stretch_to_layer_tree(id layer, Class metalClass) {
     if (!layer || !metalClass) return;
     if (((bool (*)(id, SEL, id))objc_msgSend)(layer, sel_registerName("isKindOfClass:"), (id)metalClass)) {
         ms_apply_metal_layer_policies(layer);
+        if (g_stretch_percent > 0 && g_stretch_percent != 100) {
+            MSSize size = ((MSSize (*)(id, SEL))objc_msgSend)(layer, sel_registerName("drawableSize"));
+            if (size.width > size.height && size.height > 0) {
+                double factor = (double)g_stretch_percent / 100.0;
+                size.width = (double)((long long)(size.width * factor + 0.5));
+                if (size.width < 64.0) size.width = 64.0;
+                id gravity = get_ca_gravity_resize();
+                ((void (*)(id, SEL, id))objc_msgSend)(layer, sel_registerName("setContentsGravity:"), gravity);
+                if (g_original_set_drawable_size) {
+                    g_original_set_drawable_size(layer, sel_registerName("setDrawableSize:"), size);
+                }
+            }
+        }
     }
     id sublayers = ((id (*)(id, SEL))objc_msgSend)(layer, sel_registerName("sublayers"));
     if (sublayers) {
@@ -437,8 +462,13 @@ static bool install_metal_layer_stretch_policy(void) {
         g_original_set_drawable_size = (SetDrawableSizeImp)method_setImplementation(size_m, (IMP)metal_layer_set_drawable_size_hook);
     }
 
+    Method grav_m = class_getInstanceMethod(cls, sel_registerName("setContentsGravity:"));
+    if (grav_m && !g_original_set_contents_gravity) {
+        g_original_set_contents_gravity = (SetContentsGravityImp)method_setImplementation(grav_m, (IMP)metal_layer_set_contents_gravity_hook);
+    }
+
     g_metal_layer_stretch_installed = 1;
-    runtime_note("[CAPABILITY][STRETCH] backend=metal-layer-transform-v1 status=READY hookInstalled=1 metal_vsync_uncap=ACTIVE");
+    runtime_note("[CAPABILITY][STRETCH] backend=cametallayer-drawable-resize status=READY hookInstalled=1 metal_vsync_uncap=ACTIVE");
     return true;
 }
 

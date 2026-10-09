@@ -50,7 +50,7 @@ class DisplayPolicyTests(unittest.TestCase):
         loader = self.source.split("static void load_and_apply_runtime_profiles", 1)[1].split(
             "static void bridge_log", 1
         )[0]
-        self.assertLess(loader.index("g_target_fps = 60"), loader.index("read_profile_file"))
+        self.assertLess(loader.index("g_target_fps = 10000"), loader.index("read_profile_file"))
         self.assertIn("g_font_size_step = 0", loader)
         self.assertIn('"none"', loader)
 

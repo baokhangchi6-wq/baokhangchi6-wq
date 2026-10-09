@@ -30,6 +30,12 @@ KNOWN_PREFIXES = (
     "DFString",
     "SFString",
     "FLog",
+    "DFLog",
+    "FCString",
+    "Flag",
+    "Int",
+    "String",
+    "Log",
 )
 
 
@@ -498,23 +504,32 @@ class Arm64Scanner:
         return None
 
     def find_register_function(self) -> tuple[int | None, list[str]]:
-        anchor_xrefs = self.find_string_xrefs("EnableLoadModule")
-        counts: collections.Counter[int] = collections.Counter()
-        for xref in anchor_xrefs:
-            target = self._first_bl_after(xref.instruction_address)
-            if target is not None and self._is_code(target):
-                counts[target] += 1
-        if not counts:
-            return None, [
-                "anchor:EnableLoadModule",
-                f"anchor-xrefs:{len(anchor_xrefs)}",
-                "register-function:not-found",
-            ]
-        target, count = counts.most_common(1)[0]
-        return target, [
-            "anchor:EnableLoadModule",
-            f"anchor-xrefs:{len(anchor_xrefs)}",
-            f"register-target-votes:{count}",
+        for anchor in (
+            "EnableLoadModule",
+            "DebugDisplayFPS",
+            "TaskSchedulerTargetFps",
+            "DebugSkyGray",
+            "GameBasicSettingsFramerateCap",
+        ):
+            anchor_xrefs = self.find_string_xrefs(anchor)
+            if not anchor_xrefs:
+                continue
+            counts: collections.Counter[int] = collections.Counter()
+            for xref in anchor_xrefs:
+                target = self._first_bl_after(xref.instruction_address)
+                if target is not None and self._is_code(target):
+                    counts[target] += 1
+            if counts:
+                target, count = counts.most_common(1)[0]
+                return target, [
+                    f"anchor:{anchor}",
+                    f"anchor-xrefs:{len(anchor_xrefs)}",
+                    f"register-target-votes:{count}",
+                ]
+        return None, [
+            "anchor:none",
+            "anchor-xrefs:0",
+            "register-function:not-found",
         ]
 
     def _registration_calls(self, target: int) -> list[int]:

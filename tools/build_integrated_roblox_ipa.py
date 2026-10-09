@@ -195,25 +195,74 @@ def verify_ipa_profile(input_ipa: Path, header: Path) -> str:
 
 
 def resolve_flags_with_miss_report(flags: dict, table: dict):
-    prefixes = ['DFInt', 'DFFlag', 'FFlag', 'FInt', 'DFString', 'FString']
+    all_prefixes = (
+        'SFFlag', 'SFInt', 'SFString', 'SFLog',
+        'DFFlag', 'DFInt', 'DFString', 'DFLog',
+        'FFlag', 'FInt', 'FString', 'FLog',
+        'FCString', 'Flag', 'Int', 'String', 'Log',
+    )
     verified_entries = []
     miss_offsets = []
 
+    # Build multi-index mapping for version-agnostic flag matching
+    exact_lookup = dict(table)
+    lower_lookup = {k.lower(): v for k, v in table.items()}
+    bare_lookup = {}
+    bare_lower_lookup = {}
+
+    for k, v in table.items():
+        bare = k
+        for p in all_prefixes:
+            if k.startswith(p):
+                bare = k[len(p):]
+                break
+        bare_lookup.setdefault(bare, v)
+        bare_lower_lookup.setdefault(bare.lower(), v)
+
     for name, val in flags.items():
         rva = None
-        if name in table:
-            rva = table[name]
+        if name in exact_lookup:
+            rva = exact_lookup[name]
+        elif name.lower() in lower_lookup:
+            rva = lower_lookup[name.lower()]
         else:
-            stripped = name
-            for p in prefixes:
+            # Strip known prefix from query
+            bare = name
+            for p in all_prefixes:
                 if name.startswith(p):
-                    stripped = name[len(p):]
+                    bare = name[len(p):]
                     break
-            for candidate in [stripped] + [p + stripped for p in prefixes]:
-                if candidate in table:
-                    rva = table[candidate]
+
+            # Suffix variations: e.g. "TaskSchedulerLimitTargetFpsTo2402" <-> "TaskSchedulerLimitTargetFpsTo240"
+            bare_variants = [
+                bare,
+                bare.rstrip('0123456789'),
+                bare + '2',
+                bare + '3',
+            ]
+
+            for b in bare_variants:
+                if b in bare_lookup:
+                    rva = bare_lookup[b]
                     break
-        
+                if b.lower() in bare_lower_lookup:
+                    rva = bare_lower_lookup[b.lower()]
+                    break
+                # Try all prefixes
+                matched = False
+                for p in all_prefixes:
+                    cand = p + b
+                    if cand in exact_lookup:
+                        rva = exact_lookup[cand]
+                        matched = True
+                        break
+                    if cand.lower() in lower_lookup:
+                        rva = lower_lookup[cand.lower()]
+                        matched = True
+                        break
+                if matched:
+                    break
+
         if rva is not None:
             if isinstance(val, bool):
                 kind = 0
@@ -290,6 +339,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "extern int getpid(void);",
         "extern long time(long *timer);",
         "extern char* getenv(const char *name);",
+        "extern int setenv(const char *name, const char *value, int overwrite);",
         "extern int snprintf(char *str, size_t size, const char *format, ...);",
         "extern int vsnprintf(char *str, size_t size, const char *format, __builtin_va_list ap);",
         "extern void syslog(int priority, const char *format, ...);",
@@ -418,7 +468,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static const char* kFpsRuntimeBackend = \"cadisplaylink-range-policy-v2\";",
         "static const char* kFontRuntimeBackend = \"native-asset-replacement-v1\";",
         "static const char* kShaderRuntimeBackend = \"guarded-ios-luau-pending\";",
-        "static const char* kStretchRuntimeBackend = \"cametallayer-passthrough\";",
+        "static const char* kStretchRuntimeBackend = \"cametallayer-drawable-resize\";",
         "",
         "static const char* kMissOffsets[] = {"
     ])
@@ -1867,6 +1917,14 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "}",
         "",
         "__attribute__((constructor)) static void masterstrap_ios_init(void) {",
+        "    if (getenv(\"MASTERSTRAP_INITIALIZED\")) {",
+        "        return;",
+        "    }",
+        "    setenv(\"MASTERSTRAP_INITIALIZED\", \"1\", 1);",
+        "    static int s_initialized = 0;",
+        "    if (s_initialized) return;",
+        "    s_initialized = 1;",
+        "",
         "    install_bridge_hooks_for_class((Class)objc_getClass(\"EXAppDelegateWrapper\"));",
         "    install_display_link_policy();",
         "    install_metal_layer_stretch_policy();",
@@ -1943,6 +2001,33 @@ def compile_dylib(c_source: str, out_dylib: Path) -> Path:
     print(f"Compiled native iOS dylib -> {out_dylib} ({out_dylib.stat().st_size} bytes)")
     return out_dylib
 
+
+
+def remove_load_dylib(macho_bytes: bytes, target_substrings: list) -> bytes:
+    data = bytearray(macho_bytes)
+    magic, cputype, cpusubtype, filetype, ncmds, sizeofcmds, flags, reserved = struct.unpack('<IIIIIIII', data[:32])
+    if magic != 0xFEEDFACF:
+        return macho_bytes
+
+    offset = 32
+    cmd_index = 0
+    while cmd_index < ncmds:
+        cmd, cmdsize = struct.unpack('<II', data[offset:offset+8])
+        if cmd in (0x0C, 0x80000018):  # LC_LOAD_DYLIB, LC_LOAD_WEAK_DYLIB
+            name_offset = struct.unpack('<I', data[offset+8:offset+12])[0]
+            name = data[offset+name_offset:offset+cmdsize].split(b'\x00')[0].decode('utf-8', errors='ignore')
+            if any(target.lower() in name.lower() for target in target_substrings):
+                print(f"[PURGE] Removed load command {cmd_index}: {name} (size {cmdsize})")
+                rem_len = (32 + sizeofcmds) - (offset + cmdsize)
+                data[offset:offset+rem_len] = data[offset+cmdsize:offset+cmdsize+rem_len]
+                data[offset+rem_len:offset+rem_len+cmdsize] = b'\x00' * cmdsize
+                sizeofcmds -= cmdsize
+                ncmds -= 1
+                struct.pack_into('<II', data, 16, ncmds, sizeofcmds)
+                continue
+        offset += cmdsize
+        cmd_index += 1
+    return bytes(data)
 
 
 def insert_load_dylib(macho_bytes: bytes, dylib_path: str) -> bytes:
@@ -2156,11 +2241,14 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                             print(f"[PURGE] Removed third-party file -> {name}")
                             continue
 
-                        # 2. If Delta injected libgloop.dylib, replace it with Masterstrap dylib
-                        if name in ("Payload/Roblox.app/libgloop.dylib", "Payload/Roblox.app/Delta.dylib"):
-                            print(f"[PURGE] Replaced third-party injector dylib -> {name} with Masterstrap dylib")
-                            zout.writestr(name, dylib_bytes)
-                            seen_entries.add(name)
+                        # 2. Completely remove any third-party injector dylib (libgloop, Delta)
+                        if name in (
+                            "Payload/Roblox.app/libgloop.dylib",
+                            "Payload/Roblox.app/Delta.dylib",
+                            "Payload/Roblox.app/Frameworks/libgloop.dylib",
+                            "Payload/Roblox.app/Frameworks/Delta.dylib",
+                        ):
+                            print(f"[PURGE] Completely removed third-party injector dylib -> {name}")
                             continue
 
                         data = zin.read(name)
@@ -2210,8 +2298,12 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                                     pass
 
                         if name == "Payload/Roblox.app/Roblox":
-                            data = insert_load_dylib(data, "@executable_path/Frameworks/libmasterstrap.dylib")
+                            data = remove_load_dylib(data, ["libgloop", "gloop", "delta", "libmasterstrap"])
+                            has_robloxlib = any("Frameworks/RobloxLib.framework/RobloxLib" in n for n in zin.namelist())
+                            if not has_robloxlib:
+                                data = insert_load_dylib(data, "@executable_path/Frameworks/libmasterstrap.dylib")
                         elif name == "Payload/Roblox.app/Frameworks/RobloxLib.framework/RobloxLib":
+                            data = remove_load_dylib(data, ["libgloop", "gloop", "delta", "libmasterstrap"])
                             data = insert_load_dylib(data, "@rpath/libmasterstrap.dylib")
                         elif name.endswith("Roblox.app/Info.plist"):
                             try:

@@ -303,6 +303,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Emit metadata/evidence for encrypted input; results are not trusted",
     )
+    dump.add_argument("--verbose", action="store_true", help="Print verbose output")
     dump.set_defaults(handler=run_dump)
 
     verify = subcommands.add_parser(
