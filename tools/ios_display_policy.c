@@ -635,6 +635,7 @@ static void ms_apply_stretch_to_layer_tree(id layer, Class metalClass) {
 }
 
 static void ms_refresh_metal_layers(void) {
+    if (1) return;
     if (!pthread_main_np()) return;
     Class metalClass = (Class)objc_getClass("CAMetalLayer");
     if (!metalClass) return;
@@ -671,18 +672,10 @@ static bool install_metal_layer_stretch_policy(void) {
         g_original_metal_layer_init = (MetalLayerInitImp)method_setImplementation(init_m, (IMP)metal_layer_init_hook);
     }
 
-    Method size_m = class_getInstanceMethod(cls, sel_registerName("setDrawableSize:"));
-    if (size_m && !g_original_set_drawable_size) {
-        g_original_set_drawable_size = (SetDrawableSizeImp)method_setImplementation(size_m, (IMP)metal_layer_set_drawable_size_hook);
-    }
+    /* Stretch resolution hooks remain dormant per user phase schedule: FPS uncap only */
 
-    Method grav_m = class_getInstanceMethod(cls, sel_registerName("setContentsGravity:"));
-    if (grav_m && !g_original_set_contents_gravity) {
-        g_original_set_contents_gravity = (SetContentsGravityImp)method_setImplementation(grav_m, (IMP)metal_layer_set_contents_gravity_hook);
-    }
-
-    g_metal_layer_stretch_installed = (sync_m != NULL || next_m != NULL || init_m != NULL || size_m != NULL);
-    runtime_note("[CAPABILITY][STRETCH] backend=cametallayer-drawable-resize status=ACTIVE hookInstalled=%d metal_vsync_uncap=ACTIVE",
+    g_metal_layer_stretch_installed = (sync_m != NULL || next_m != NULL || init_m != NULL);
+    runtime_note("[CAPABILITY][STRETCH] backend=cametallayer-drawable-resize status=STANDBY_FPS_UNCAP_ONLY hookInstalled=%d metal_vsync_uncap=ACTIVE",
                  g_metal_layer_stretch_installed);
     return true;
 }

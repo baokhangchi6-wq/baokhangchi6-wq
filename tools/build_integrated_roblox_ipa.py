@@ -2359,28 +2359,8 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                     dylib_entry = "Payload/Roblox.app/Frameworks/libmasterstrap.dylib"
                     zout.writestr(dylib_entry, dylib_bytes)
 
-                    # Embed all fonts directly into both app bundle and framework content/fonts/
-                    font_dir = ROOT / "resources" / "fonts"
-                    embedded_font_count = 0
-                    if font_dir.is_dir():
-                        for font_file in font_dir.glob("*.ttf"):
-                            fdata = font_file.read_bytes()
-                            for base_path in ["Payload/Roblox.app/content/fonts/", "Payload/Roblox.app/Frameworks/RobloxLib.framework/content/fonts/"]:
-                                target = base_path + font_file.name
-                                if target not in seen_entries:
-                                    zout.writestr(target, fdata)
-                                    seen_entries.add(target)
-                                    embedded_font_count += 1
-                        families_dir = font_dir / "families"
-                        if families_dir.is_dir():
-                            for fam_file in families_dir.glob("*.json"):
-                                jdata = fam_file.read_bytes()
-                                for base_path in ["Payload/Roblox.app/content/fonts/families/", "Payload/Roblox.app/Frameworks/RobloxLib.framework/content/fonts/families/"]:
-                                    target = base_path + fam_file.name
-                                    if target not in seen_entries:
-                                        zout.writestr(target, jdata)
-                                        seen_entries.add(target)
-                    print(f"[ASSET_FONT] Embedded {embedded_font_count} font assets across app & framework bundles")
+                    # Font asset embedding disabled per user instruction
+                    print("[ASSET_FONT] Font embedding disabled (pure stock assets)")
 
                     # Embed baseline JSON only for normal builds. Isolation builds
                     # intentionally depend on the versioned Masterstrap bridge.
