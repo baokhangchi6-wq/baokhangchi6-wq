@@ -48,25 +48,34 @@ def emit_github_output(key: str, value: str) -> None:
     print(f"[OUTPUT] {line.strip()}", flush=True)
 
 
-def scrape_delta_direct_url(timeout: int = 15) -> str:
-    """Scrape the direct IPA download URL from https://bstshrt.com/u/delta-ios."""
-    log(f"Querying distributor page: {SCRAPE_SOURCE_URL}")
-    req = urllib.request.Request(SCRAPE_SOURCE_URL, headers={"User-Agent": USER_AGENT})
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            html = resp.read().decode("utf-8", errors="ignore")
-    except Exception as exc:
-        log(f"Distributor page request failed: {exc}")
-        return ""
+def scrape_delta_direct_url(timeout: int = 30, max_retries: int = 3) -> str:
+    """Scrape the direct IPA download URL with retry logic and fallback mirrors."""
+    sources = [
+        SCRAPE_SOURCE_URL,
+        "https://delta-executor.com/ios",
+    ]
+    for attempt in range(1, max_retries + 1):
+        for src in sources:
+            try:
+                log(f"Querying distributor page (attempt {attempt}/{max_retries}): {src}")
+                req = urllib.request.Request(src, headers={"User-Agent": USER_AGENT})
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    html = resp.read().decode("utf-8", errors="ignore")
+                match = re.search(r'finalUrl[\\"]+:\s*[\\"]+(https?://[^\\"]+\.ipa)', html)
+                if not match:
+                    match = re.search(r'(https?://deltaexecutor\.filesadda\.com/[^\s"\'<>]+\.ipa)', html)
+                if match:
+                    url = match.group(1)
+                    log(f"Extracted direct IPA URL: {url}")
+                    return url
+            except Exception as exc:
+                log(f"Distributor request failed for {src}: {exc}")
+        if attempt < max_retries:
+            time.sleep(3)
 
-    match = re.search(r'finalUrl[\\"]+:\s*[\\"]+(https?://[^\\"]+\.ipa)', html)
-    if match:
-        url = match.group(1)
-        log(f"Extracted direct IPA URL: {url}")
-        return url
-
-    log("Could not find finalUrl pattern in distributor response.")
-    return ""
+    fallback_url = "https://deltaexecutor.filesadda.com/Delta-2.741.1062.ipa"
+    log(f"All distributor scrape attempts failed; falling back to direct mirror: {fallback_url}")
+    return fallback_url
 
 
 def download_file(url: str, dest_path: Path, max_retries: int = 3) -> bool:

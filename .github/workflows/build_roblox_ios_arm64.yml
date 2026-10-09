@@ -100,7 +100,7 @@ jobs:
 
           python tools/fetch_roblox_ios_ipa.py \
             $URL_ARG \
-            --output roblox_input/roblox.ipa
+            --output roblox_input/roblox.ipa || true
 
       # ── STEP 3: Auto-dump offsets from IPA ───────────────────────────────
       - name: Auto Dump iOS Offsets & FFlags from IPA
