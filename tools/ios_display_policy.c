@@ -10,8 +10,6 @@ extern void objc_registerClassPair(Class);
 extern id objc_getAssociatedObject(id, const void*);
 extern void objc_setAssociatedObject(id, const void*, id, unsigned long);
 extern bool g_launch_authorized;
-extern const char* get_target_font_filename(void);
-extern char g_font_family[64];
 
 typedef struct { float minimum, maximum, preferred; } MSFrameRateRange;
 _Static_assert(sizeof(MSFrameRateRange) == 12, "CAFrameRateRange ARM64 ABI");
@@ -60,27 +58,6 @@ static long screen_max_fps_hook(id self, SEL cmd) {
 static id ms_string(const char* text) {
     return ((id (*)(id, SEL, const char*))objc_msgSend)(objc_getClass("NSString"),
         sel_registerName("stringWithUTF8String:"), text);
-}
-
-typedef id (*BundlePathImp)(id, SEL, id, id, id);
-static BundlePathImp g_original_bundle_path = NULL;
-
-static id bundle_path_hook(id self, SEL cmd, id name, id ext, id subpath) {
-    if (name && strcmp(g_font_family, "Default") != 0 && g_font_family[0] != '\0') {
-        const char* name_c = ((const char* (*)(id, SEL))objc_msgSend)(name, sel_registerName("UTF8String"));
-        if (name_c && (strstr(name_c, "BuilderSans") || strstr(name_c, "SourceSansPro") || strstr(name_c, "Roboto") || strstr(name_c, "Arimo") || strstr(name_c, "Inconsolata"))) {
-            const char* target = get_target_font_filename();
-            if (target) {
-                char stem[64];
-                strncpy(stem, target, sizeof(stem) - 1);
-                stem[sizeof(stem) - 1] = '\0';
-                char* dot = strrchr(stem, '.');
-                if (dot) *dot = '\0';
-                name = ms_string(stem);
-            }
-        }
-    }
-    return g_original_bundle_path ? g_original_bundle_path(self, cmd, name, ext, subpath) : NULL;
 }
 static id ms_process_info(void) {
     return ((id (*)(id, SEL))objc_msgSend)(objc_getClass("NSProcessInfo"), sel_registerName("processInfo"));
@@ -321,14 +298,6 @@ static bool install_display_link_policy(void) {
         }
     }
 
-    Class bundle_cls = (Class)objc_getClass("NSBundle");
-    if (bundle_cls) {
-        Method bm = class_getInstanceMethod(bundle_cls, sel_registerName("pathForResource:ofType:inDirectory:"));
-        if (bm && !g_original_bundle_path) {
-            g_original_bundle_path = (BundlePathImp)method_setImplementation(bm, (IMP)bundle_path_hook);
-        }
-    }
-
     Class cls = (Class)objc_getClass("CADisplayLink");
     if (!cls) { runtime_note("[CAPABILITY][FPS] status=BLOCKED reason=class_missing"); return false; }
     Method setter = class_getInstanceMethod(cls, sel_registerName("setPreferredFramesPerSecond:"));
@@ -414,15 +383,22 @@ static void drawable_present_after_duration_hook(id self, SEL cmd, double durati
     }
 }
 
-static void ms_install_drawable_present_policy(void) {
-    Class cls = (Class)objc_getClass("CAMetalDrawable");
-    if (!cls) return;
+static char g_ms_drawable_hook_key;
+
+static void ms_install_drawable_instance_present_policy(id drawable) {
+    if (!drawable) return;
+    Class cls = object_getClass(drawable);
+    if (!cls || objc_getAssociatedObject((id)cls, &g_ms_drawable_hook_key)) return;
+
     Method at_time = class_getInstanceMethod(cls, sel_registerName("presentAtTime:"));
     Method after = class_getInstanceMethod(cls, sel_registerName("presentAfterMinimumDuration:"));
     if (at_time && !g_original_drawable_present_at_time)
         g_original_drawable_present_at_time = (DrawablePresentAtTimeImp)method_setImplementation(at_time, (IMP)drawable_present_at_time_hook);
     if (after && !g_original_drawable_present_after_duration)
         g_original_drawable_present_after_duration = (DrawablePresentAfterDurationImp)method_setImplementation(after, (IMP)drawable_present_after_duration_hook);
+    objc_setAssociatedObject((id)cls, &g_ms_drawable_hook_key, (id)1, 0);
+    runtime_note("[METAL][DRAWABLE] class=%s presentAtTime=%d presentAfterDuration=%d",
+                 class_getName(cls), at_time != NULL, after != NULL);
 }
 
 static void command_present_drawable_hook(id self, SEL cmd, id drawable) {
@@ -525,14 +501,6 @@ static void ms_install_command_queue_present_policy(id layer) {
     if (unret_desc && !g_original_command_buffer_unretained_descriptor)
         g_original_command_buffer_unretained_descriptor = (CommandQueueBufferDescriptorImp)method_setImplementation(unret_desc, (IMP)command_queue_buffer_unretained_descriptor_hook);
 
-    /* Instantly obtain a sample command buffer to swizzle AGXG15FamilyCommandBuffer right now */
-    id sample_buf = NULL;
-    if (unret) sample_buf = ((id (*)(id, SEL))objc_msgSend)(queue, sel_registerName("commandBufferWithUnretainedReferences"));
-    if (!sample_buf && buffer) sample_buf = ((id (*)(id, SEL))objc_msgSend)(queue, sel_registerName("commandBuffer"));
-    if (sample_buf) {
-        ms_install_command_buffer_present_policy(sample_buf);
-    }
-
     runtime_note("[METAL][QUEUE] class=%s commandBuffer=%d descriptor=%d unretained=%d status=%s", class_getName(cls),
         buffer != NULL, descriptor != NULL, unret != NULL, (g_original_command_buffer || g_original_command_buffer_unretained) ? "READY" : "BLOCKED");
     ((void (*)(id, SEL))objc_msgSend)(queue, sel_registerName("release"));
@@ -583,7 +551,11 @@ static void metal_layer_set_display_sync_hook(id self, SEL cmd, bool enabled) {
 
 static id metal_layer_next_drawable_hook(id self, SEL cmd) {
     ms_ensure_layer_vsync_uncapped(self);
-    return g_original_next_drawable ? g_original_next_drawable(self, cmd) : NULL;
+    id drawable = g_original_next_drawable ? g_original_next_drawable(self, cmd) : NULL;
+    if (drawable) {
+        ms_install_drawable_instance_present_policy(drawable);
+    }
+    return drawable;
 }
 
 typedef id (*MetalLayerInitImp)(id, SEL);
@@ -604,7 +576,7 @@ static inline id get_ca_gravity_resize(void) {
 }
 
 static void metal_layer_set_drawable_size_hook(id self, SEL cmd, MSSize size) {
-    if (g_launch_authorized && g_stretch_percent > 0 && g_stretch_percent != 100 && size.width > 0 && size.height > 0) {
+    if (g_stretch_percent > 0 && g_stretch_percent != 100 && size.width > 0 && size.height > 0) {
         if (size.width > size.height) { // In-game landscape only
             double factor = (double)g_stretch_percent / 100.0;
             size.width = (double)((long long)(size.width * factor + 0.5));
@@ -626,7 +598,7 @@ static void metal_layer_set_drawable_size_hook(id self, SEL cmd, MSSize size) {
 }
 
 static void metal_layer_set_contents_gravity_hook(id self, SEL cmd, id gravity) {
-    if (g_launch_authorized && g_stretch_percent > 0 && g_stretch_percent != 100) {
+    if (g_stretch_percent > 0 && g_stretch_percent != 100) {
         gravity = get_ca_gravity_resize();
     }
     if (g_original_set_contents_gravity) {
@@ -638,7 +610,7 @@ static void ms_apply_stretch_to_layer_tree(id layer, Class metalClass) {
     if (!layer || !metalClass) return;
     if (((bool (*)(id, SEL, id))objc_msgSend)(layer, sel_registerName("isKindOfClass:"), (id)metalClass)) {
         ms_apply_metal_layer_policies(layer);
-        if (g_launch_authorized && g_stretch_percent > 0 && g_stretch_percent != 100) {
+        if (g_stretch_percent > 0 && g_stretch_percent != 100) {
             MSSize size = ((MSSize (*)(id, SEL))objc_msgSend)(layer, sel_registerName("drawableSize"));
             if (size.width > size.height && size.height > 0) {
                 double factor = (double)g_stretch_percent / 100.0;
@@ -699,12 +671,18 @@ static bool install_metal_layer_stretch_policy(void) {
         g_original_metal_layer_init = (MetalLayerInitImp)method_setImplementation(init_m, (IMP)metal_layer_init_hook);
     }
 
-    ms_install_drawable_present_policy();
+    Method size_m = class_getInstanceMethod(cls, sel_registerName("setDrawableSize:"));
+    if (size_m && !g_original_set_drawable_size) {
+        g_original_set_drawable_size = (SetDrawableSizeImp)method_setImplementation(size_m, (IMP)metal_layer_set_drawable_size_hook);
+    }
 
-    /* Stretch resolution hooks remain dormant per user phase schedule: FPS uncap only */
+    Method grav_m = class_getInstanceMethod(cls, sel_registerName("setContentsGravity:"));
+    if (grav_m && !g_original_set_contents_gravity) {
+        g_original_set_contents_gravity = (SetContentsGravityImp)method_setImplementation(grav_m, (IMP)metal_layer_set_contents_gravity_hook);
+    }
 
-    g_metal_layer_stretch_installed = (sync_m != NULL || next_m != NULL || init_m != NULL);
-    runtime_note("[CAPABILITY][STRETCH] backend=cametallayer-drawable-resize status=STANDBY_FPS_UNCAP_ONLY hookInstalled=%d metal_vsync_uncap=ACTIVE",
+    g_metal_layer_stretch_installed = (sync_m != NULL || next_m != NULL || init_m != NULL || size_m != NULL);
+    runtime_note("[CAPABILITY][STRETCH] backend=cametallayer-drawable-resize status=ACTIVE hookInstalled=%d metal_vsync_uncap=ACTIVE",
                  g_metal_layer_stretch_installed);
     return true;
 }
