@@ -649,13 +649,18 @@ static void scriptMessageHandler(id self, SEL _cmd, id userContentController, id
     }
 
     if (strcmp(name_str, "launchRoblox") == 0) {
+        id bridge_payload = serialize_bridge_payload(body);
         char bridge_v2_request[96] = {0};
         char bridge_v2_ticket[96] = {0};
-        bool bridge_v2_ready = request_bridge_v2_ticket(
-            body, channel_target,
-            bridge_v2_request, sizeof(bridge_v2_request),
-            bridge_v2_ticket, sizeof(bridge_v2_ticket));
-        id bridge_payload = serialize_bridge_payload(body);
+        bool bridge_v2_ready = false;
+        unsigned long payload_len = bridge_payload
+            ? ((unsigned long (*)(id, SEL))objc_msgSend)(bridge_payload, sel_registerName("length")) : 0;
+        if (!bridge_payload || payload_len > 2048) {
+            bridge_v2_ready = request_bridge_v2_ticket(
+                body, channel_target,
+                bridge_v2_request, sizeof(bridge_v2_request),
+                bridge_v2_ticket, sizeof(bridge_v2_ticket));
+        }
         open_roblox_app_channel(
             channel_target,
             bridge_payload,
@@ -1118,7 +1123,58 @@ def configure_ios_runtime_html(html: str) -> str:
         "font card insertion",
     )
 
-    js_slider_func = '''function onInGameFontSizeSlider(stepVal) {
+    replace_required(
+        '<span class="app-version-badge">v1.2</span>',
+        '<span class="app-version-badge">v1.3</span>',
+        "version badge 1.3",
+    )
+    replace_required(
+        '''        <div class="card">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+                <div style="font-size:16px;font-weight:800;color:var(--text-main)" data-i18n="title_stretch_screen">Stretch Screen</div>''',
+        '''        <div class="card" id="card-stretch-screen">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+                <div style="font-size:16px;font-weight:800;color:var(--text-main)" data-i18n="title_stretch_screen">Stretch Screen</div>''',
+        "card stretch screen id",
+    )
+
+    gui_blur_row = '''        <div class="setting-row">
+            <div class="setting-info">
+                <div class="setting-label" data-i18n="disable_gui_blur_title">Remove menu background blur</div>
+                <div class="setting-desc" data-i18n="disable_gui_blur_desc">Removes the blurred background behind Roblox menus for a clearer and slightly lighter interface.</div>
+            </div>
+            <label class="switch">
+                <input type="checkbox" id="sw-ffs-disable-gui-blur" checked onchange="updateFlagState()">
+                <span class="slider"></span>
+            </label>
+        </div>'''
+    gui_blur_with_faster_speed = gui_blur_row + '''
+        <div class="setting-row">
+            <div class="setting-info">
+                <div class="setting-label">
+                    <span data-i18n="ffs_faster_speed_title">Mô phỏng vật lý 60Hz (Tăng tốc độ di chuyển)</span>
+                    <svg class="crown-svg-icon" viewBox="0 0 24 24"><path d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5zm14 3c0 .6-.4 1-1 1H6c-.6 0-1-.4-1-1v-1h14v1z"/></svg>
+                </div>
+                <div class="setting-desc" data-i18n="ffs_faster_speed_desc">Chuyển vật lý nhân vật về 60Hz giúp giảm ma sát và lực cản để di chuyển nhanh hơn. Lưu ý: Nên tắt Shift Lock để có hiệu quả tốt nhất.</div>
+            </div>
+            <label class="switch">
+                <input type="checkbox" id="sw-ffs-faster-speed" onchange="toggleFasterSpeedVIP(this)">
+                <span class="slider"></span>
+            </label>
+        </div>'''
+    replace_required(gui_blur_row, gui_blur_with_faster_speed, "faster speed toggle in interface section")
+
+    js_slider_func = '''function getI18nText(key) {
+    const lang = localStorage.getItem("masterstrap_lang") || "en";
+    const dict = (typeof TRANSLATIONS !== "undefined" && TRANSLATIONS[lang]) ? TRANSLATIONS[lang] : (typeof TRANSLATIONS !== "undefined" ? (TRANSLATIONS["en"] || TRANSLATIONS["vi"]) : null);
+    if (dict && dict[key]) return dict[key];
+    const fallbacks = {
+        "msg_feature_requires_plus_max": "This feature requires a Plus or Max plan."
+    };
+    return fallbacks[key] || key;
+}
+
+function onInGameFontSizeSlider(stepVal) {
     const step = parseInt(stepVal, 10) || 3;
     const fontSizeMap = { 1: "50%", 2: "75%", 3: "100%", 4: "125%", 5: "150%" };
     const fontSizeStepMap = { 1: -2, 2: -1, 3: 0, 4: 1, 5: 2 };
@@ -1145,11 +1201,60 @@ def configure_ios_runtime_html(html: str) -> str:
     updateFlagState();
 }
 
+function onFpsInputChange(el) {
+    if (!el) return;
+    const isFree = (typeof MasterstrapAds !== "undefined" && MasterstrapAds.isFree) ? MasterstrapAds.isFree() : (!["PLUS", "MAX"].includes((localStorage.getItem("masterstrap_license_plan") || "FREE").toUpperCase()));
+    let val = parseInt(el.value, 10);
+    if (isFree && (isNaN(val) || val > 60)) {
+        el.value = 60;
+        if (typeof showToast === "function") showToast(getI18nText("msg_feature_requires_plus_max"));
+    }
+    if (typeof updateFlagState === "function") updateFlagState();
+}
+
 '''
     replace_required(
         'function onStretchScreenSlider(val) {',
         js_slider_func + 'function onStretchScreenSlider(val) {',
         "slider function",
+    )
+
+    replace_required(
+        '''function onStretchScreenSlider(val) {
+    const badge = document.getElementById("stretch-badge");
+    if (badge) badge.innerText = val + "%";
+    
+    const slider = document.getElementById("slider-stretch-screen");
+    if (slider) {
+        const percent = ((val - 10) / (200 - 10)) * 100;
+        slider.style.background = `linear-gradient(to right, #00A5FF 0%, #00A5FF ${percent}%, #2A3447 ${percent}%, #2A3447 100%)`;
+    }
+    localStorage.setItem("masterstrap_stretch_screen", val);
+    updateFlagState();
+}''',
+        '''function onStretchScreenSlider(val) {
+    const isFree = (typeof MasterstrapAds !== "undefined" && MasterstrapAds.isFree) ? MasterstrapAds.isFree() : (!["PLUS", "MAX"].includes((localStorage.getItem("masterstrap_license_plan") || "FREE").toUpperCase()));
+    const slider = document.getElementById("slider-stretch-screen");
+    if (isFree) {
+        val = 100;
+        if (slider) {
+            slider.value = 100;
+            slider.disabled = true;
+            slider.style.opacity = "0.5";
+            slider.style.pointerEvents = "none";
+        }
+    }
+    const badge = document.getElementById("stretch-badge");
+    if (badge) badge.innerText = val + "%";
+    
+    if (slider) {
+        const percent = ((val - 10) / (200 - 10)) * 100;
+        slider.style.background = `linear-gradient(to right, #00A5FF 0%, #00A5FF ${percent}%, #2A3447 ${percent}%, #2A3447 100%)`;
+    }
+    localStorage.setItem("masterstrap_stretch_screen", val);
+    updateFlagState();
+}''',
+        "stretch slider vip hard-lock",
     )
 
     replace_required(
@@ -1242,7 +1347,7 @@ def configure_ios_runtime_html(html: str) -> str:
                     <option value="240">240</option>
                     <option value="9999" selected>9999</option>
                 </select>'''
-    fps_textbox_new = '''                <input type="number" id="sel-target-fps" min="30" max="9999" step="1" value="9999" placeholder="9999" oninput="updateFlagState()" onchange="updateFlagState()" style="background:var(--input-bg);border:1.5px solid var(--input-stroke);color:var(--input-text);padding:8px 12px;border-radius:8px;font-size:14px;font-weight:700;outline:none;width:100px;text-align:right;">'''
+    fps_textbox_new = '''                <input type="number" id="sel-target-fps" min="30" max="9999" step="1" value="9999" placeholder="9999" oninput="onFpsInputChange(this)" onchange="onFpsInputChange(this)" style="background:var(--input-bg);border:1.5px solid var(--input-stroke);color:var(--input-text);padding:8px 12px;border-radius:8px;font-size:14px;font-weight:700;outline:none;width:100px;text-align:right;">'''
     replace_required(fps_combobox_old, fps_textbox_new, "fps target textbox")
     html = html.replace('localStorage.getItem("masterstrap_lang") || "vi"', 'localStorage.getItem("masterstrap_lang") || "en"')
     html = html.replace('<html lang="vi"', '<html lang="en"')
@@ -1263,7 +1368,12 @@ def configure_ios_runtime_html(html: str) -> str:
     }''',
         '''    // Keep FPS flags in ClientAppSettings so Roblox can consume names that are
     // absent from the native dump; native hooks still own verified entries.
-    const targetFps = parseInt(document.getElementById("sel-target-fps").value) || 9999;
+    const isFreePlanFps = (typeof MasterstrapAds !== "undefined" && MasterstrapAds.isFree) ? MasterstrapAds.isFree() : (!["PLUS", "MAX"].includes((localStorage.getItem("masterstrap_license_plan") || "FREE").toUpperCase()));
+    let targetFps = parseInt(document.getElementById("sel-target-fps").value) || 9999;
+    if (isFreePlanFps && targetFps > 60) {
+        targetFps = 60;
+        document.getElementById("sel-target-fps").value = 60;
+    }
     activeFlags["DFIntTaskSchedulerTargetFps"] = String(targetFps);
     if (targetFps > 60) {
         activeFlags["FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate"] = "false";
@@ -1279,6 +1389,66 @@ def configure_ios_runtime_html(html: str) -> str:
         delete activeFlags["FFlagMetalVsyncPreferMaximumRefreshRate"];
     }''',
         "updateFlagState typed fps and uncap flags",
+    )
+
+    desync_old = '''    if (document.getElementById("sw-ffs-desync").checked) {
+        activeFlags["DFFlagClampIncomingReplicationLag"] = "true";
+        activeFlags["DFIntReplicationLagCompensation"] = "1";
+        activeFlags["DFIntClientPacketMaxDelayMs"] = "1";
+        activeFlags["DFIntNetworkLatencyTolerance"] = "1";
+        activeFlags["DFIntDataSenderRate"] = "38760";
+        activeFlags["DFIntS2PhysicsSenderRate"] = "38760";
+        activeFlags["DFIntDataSenderMaxBandwidthBps"] = "100000000";
+    } else {
+        delete activeFlags["DFFlagClampIncomingReplicationLag"];
+        delete activeFlags["DFIntReplicationLagCompensation"];
+        delete activeFlags["DFIntClientPacketMaxDelayMs"];
+        delete activeFlags["DFIntNetworkLatencyTolerance"];
+        delete activeFlags["DFIntDataSenderRate"];
+        delete activeFlags["DFIntS2PhysicsSenderRate"];
+        delete activeFlags["DFIntDataSenderMaxBandwidthBps"];
+    }'''
+    desync_and_faster_speed_new = '''    const isFreePlanFlags = (typeof MasterstrapAds !== "undefined" && MasterstrapAds.isFree) ? MasterstrapAds.isFree() : (!["PLUS", "MAX"].includes((localStorage.getItem("masterstrap_license_plan") || "FREE").toUpperCase()));
+
+    if (document.getElementById("sw-ffs-desync").checked && !isFreePlanFlags) {
+        activeFlags["DFFlagClampIncomingReplicationLag"] = "true";
+        activeFlags["DFIntReplicationLagCompensation"] = "1";
+        activeFlags["DFIntClientPacketMaxDelayMs"] = "1";
+        activeFlags["DFIntNetworkLatencyTolerance"] = "1";
+        activeFlags["DFIntDataSenderRate"] = "38760";
+        activeFlags["DFIntS2PhysicsSenderRate"] = "38760";
+        activeFlags["DFIntDataSenderMaxBandwidthBps"] = "100000000";
+    } else {
+        delete activeFlags["DFFlagClampIncomingReplicationLag"];
+        delete activeFlags["DFIntReplicationLagCompensation"];
+        delete activeFlags["DFIntClientPacketMaxDelayMs"];
+        delete activeFlags["DFIntNetworkLatencyTolerance"];
+        delete activeFlags["DFIntDataSenderRate"];
+        delete activeFlags["DFIntS2PhysicsSenderRate"];
+        delete activeFlags["DFIntDataSenderMaxBandwidthBps"];
+    }
+
+    if (document.getElementById("sw-ffs-faster-speed") && document.getElementById("sw-ffs-faster-speed").checked && !isFreePlanFlags) {
+        activeFlags["FFlagDebugSimForceAdaptiveTimeStepping"] = "true";
+        activeFlags["FFlagDebugSimAdaptiveEnable60HzHumanoids"] = "true";
+        activeFlags["DFIntTimestepArbiterBoundingBoxIntersectionThresholdThou1"] = "900";
+        activeFlags["DFIntTimestepArbiterBoundingBoxIntersectionThresholdThou2"] = "900";
+        activeFlags["DFIntSimTimestepMultiplierDebounceCount"] = "-1";
+    } else {
+        delete activeFlags["FFlagDebugSimForceAdaptiveTimeStepping"];
+        delete activeFlags["FFlagDebugSimAdaptiveEnable60HzHumanoids"];
+        delete activeFlags["DFIntTimestepArbiterBoundingBoxIntersectionThresholdThou1"];
+        delete activeFlags["DFIntTimestepArbiterBoundingBoxIntersectionThresholdThou2"];
+        delete activeFlags["DFIntSimTimestepMultiplierDebounceCount"];
+    }'''
+    replace_required(desync_old, desync_and_faster_speed_new, "desync and faster speed flags")
+
+    replace_required(
+        '''    const targetFps = parseInt(document.getElementById("sel-target-fps").value) || 240;''',
+        '''    let targetFps = parseInt(document.getElementById("sel-target-fps").value) || 240;
+    const isFreePlanXml = (typeof MasterstrapAds !== "undefined" && MasterstrapAds.isFree) ? MasterstrapAds.isFree() : (!["PLUS", "MAX"].includes((localStorage.getItem("masterstrap_license_plan") || "FREE").toUpperCase()));
+    if (isFreePlanXml && targetFps > 60) targetFps = 60;''',
+        "clamp xml targetFps",
     )
 
     replace_required(
@@ -1716,7 +1886,10 @@ function confirmClearAllFlags() {
             "ffs_no_vfx_title": "NO VFX",
             "ffs_no_vfx_desc": "Tắt các hiệu ứng chói sáng và làm mờ phức tạp giúp giảm lag, tăng độ mượt (FPS) tối đa cho máy yếu. Lưu ý: sẽ làm mất hiệu ứng ánh sáng nếu đang bật Gói Shader.",
             "fps_target_title": "FPS mục tiêu (Global)",
-            "fps_target_desc": "Nhập mục tiêu FPS tùy chọn cho lần khởi chạy tiếp theo (30–9999). Tốc độ khung hình thực tế phụ thuộc vào game, GPU và màn hình."
+            "fps_target_desc": "Nhập mục tiêu FPS tùy chọn cho lần khởi chạy tiếp theo (30–9999). Tốc độ khung hình thực tế phụ thuộc vào game, GPU và màn hình.",
+            "ffs_faster_speed_title": "Mô phỏng vật lý 60Hz (Tăng tốc độ di chuyển)",
+            "ffs_faster_speed_desc": "Chuyển vật lý nhân vật về 60Hz giúp giảm ma sát và lực cản để di chuyển nhanh hơn. Lưu ý: Nên tắt Shift Lock để có hiệu quả tốt nhất.",
+            "msg_feature_requires_plus_max": "Tính năng này yêu cầu gói Plus hoặc Max."
         },
         "en": {
             "title_font_group": "In-Game Font & Size",
@@ -1728,7 +1901,10 @@ function confirmClearAllFlags() {
             "ffs_no_vfx_title": "NO VFX",
             "ffs_no_vfx_desc": "Turns off glowing, blur, and heavy visual effects to boost FPS and reduce lag on weaker devices. Note: may disable Shader Package lighting.",
             "fps_target_title": "Target frame rate (Global)",
-            "fps_target_desc": "Enter custom target FPS for next launch (30–9999). Actual frame rate depends on game, GPU and display."
+            "fps_target_desc": "Enter custom target FPS for next launch (30–9999). Actual frame rate depends on game, GPU and display.",
+            "ffs_faster_speed_title": "Adaptive 60Hz Physics (Faster Walk Speed)",
+            "ffs_faster_speed_desc": "Forces physics to update at 60Hz to reduce friction and drag, allowing faster character movement. Note: Turn off Shift Lock for best effect.",
+            "msg_feature_requires_plus_max": "This feature requires a Plus or Max plan."
         },
         "es": {
             "title_font_group": "Fuente y tamaño en el juego",
@@ -1740,7 +1916,10 @@ function confirmClearAllFlags() {
             "ffs_no_vfx_title": "NO VFX (Sin Efectos)",
             "ffs_no_vfx_desc": "Desactiva brillos intensos, desenfoques y efectos pesados para reducir el lag y aumentar los FPS en dispositivos lentos. Nota: puede desactivar la iluminación del Shader Package.",
             "fps_target_title": "Tasa de cuadros objetivo (Global)",
-            "fps_target_desc": "Introduce el objetivo de FPS personalizado para el próximo inicio (30–9999). Los FPS reales dependen del juego y pantalla."
+            "fps_target_desc": "Introduce el objetivo de FPS personalizado para el próximo inicio (30–9999). Los FPS reales dependen del juego y pantalla.",
+            "ffs_faster_speed_title": "Física adaptativa a 60 Hz (Mayor velocidad al caminar)",
+            "ffs_faster_speed_desc": "Fuerza la física a 60 Hz para reducir la fricción y la resistencia, permitiendo un movimiento más rápido. Nota: Desactiva Shift Lock para un mejor efecto.",
+            "msg_feature_requires_plus_max": "Esta función requiere un plan Plus o Max."
         },
         "pt": {
             "title_font_group": "Fonte e Tamanho no Jogo",
@@ -1752,7 +1931,10 @@ function confirmClearAllFlags() {
             "ffs_no_vfx_title": "NO VFX (Sem Efeitos)",
             "ffs_no_vfx_desc": "Desativa brilhos excessivos, desfoques e efeitos visuais pesados para reduzir o lag e aumentar o FPS em aparelhos fracos. Nota: pode desativar a iluminação do Shader Package.",
             "fps_target_title": "Taxa de quadros objetivo (Global)",
-            "fps_target_desc": "Insira o limite de FPS personalizado para a próxima inicialização (30–9999). O FPS real depende do jogo, GPU e tela."
+            "fps_target_desc": "Insira o limite de FPS personalizado para a próxima inicialização (30–9999). O FPS real depende do jogo, GPU e tela.",
+            "ffs_faster_speed_title": "Física adaptativa de 60 Hz (Maior velocidade de caminhada)",
+            "ffs_faster_speed_desc": "Força a física para 60 Hz para reduzir o atrito e arrasto, permitindo mover-se mais rápido. Nota: Desative o Shift Lock para melhor efeito.",
+            "msg_feature_requires_plus_max": "Este recurso requer um plano Plus ou Max."
         },
         "ru": {
             "title_font_group": "Шрифт и размер текста в игре",
@@ -1764,7 +1946,10 @@ function confirmClearAllFlags() {
             "ffs_no_vfx_title": "NO VFX (Без лишних эффектов)",
             "ffs_no_vfx_desc": "Отключает яркое свечение, размытие и тяжелые спецэффекты для устранения лагов и максимального повышения FPS на слабых устройствах. Примечание: может отключить освещение Shader Package.",
             "fps_target_title": "Целевая частота кадров (Global)",
-            "fps_target_desc": "Введите желаемый целевой FPS для следующего запуска (30–9999). Фактический FPS зависит от игры и дисплея."
+            "fps_target_desc": "Введите желаемый целевой FPS для следующего запуска (30–9999). Фактический FPS зависит от игры и дисплея.",
+            "ffs_faster_speed_title": "Адаптивная физика 60 Гц (Ускорение ходьбы)",
+            "ffs_faster_speed_desc": "Переключает симуляцию физики на 60 Гц для снижения трения и сопротивления, ускоряя движение. Примечание: отключите Shift Lock для лучшего эффекта.",
+            "msg_feature_requires_plus_max": "Для этой функции требуется тариф Plus или Max."
         },
         "ja": {
             "title_font_group": "ゲーム内フォント＆サイズ",
@@ -1776,7 +1961,10 @@ function confirmClearAllFlags() {
             "ffs_no_vfx_title": "NO VFX (視覚効果オフ)",
             "ffs_no_vfx_desc": "眩しい光やぼかし、負荷の高い視覚効果をオフにしてラグを減らし、低スペック端末のFPSを最大化します。注意: Shader Packageの照明効果が無効になる場合があります。",
             "fps_target_title": "目標フレームレート (Global)",
-            "fps_target_desc": "次回起動時に要求するカスタム FPS を入力します (30–9999)。実際のフレームレートはゲームと画面性能に依存します。"
+            "fps_target_desc": "次回起動時に要求するカスタム FPS を入力します (30–9999)。実際のフレームレートはゲームと画面性能に依存します。",
+            "ffs_faster_speed_title": "アダプティブ 60Hz 物理演算（移動速度アップ）",
+            "ffs_faster_speed_desc": "物理演算を 60Hz に固定して摩擦と空気抵抗を減らし、移動速度を向上させます。注: 最大限の効果を得るには Shift Lock をオフにしてください。",
+            "msg_feature_requires_plus_max": "この機能を利用するにはPlusまたはMaxプランが必要です。"
         },
         "ko": {
             "title_font_group": "인게임 폰트 및 크기",
@@ -1788,7 +1976,10 @@ function confirmClearAllFlags() {
             "ffs_no_vfx_title": "NO VFX (불필요한 효과 끄기)",
             "ffs_no_vfx_desc": "눈부심, 블러 및 무거운 시각 효과를 꺼서 렉을 줄이고 저사양 기기의 프레임(FPS)을 극대화합니다. 참고: Shader Package 조명 효과가 사라질 수 있습니다.",
             "fps_target_title": "목표 프레임 속도 (Global)",
-            "fps_target_desc": "다음 실행 시 적용할 맞춤 FPS를 입력하세요 (30–9999). 실제 FPS는 게임, GPU 및 화면에 따라 달라집니다."
+            "fps_target_desc": "다음 실행 시 적용할 맞춤 FPS를 입력하세요 (30–9999). 실제 FPS는 게임, GPU 및 화면에 따라 달라집니다.",
+            "ffs_faster_speed_title": "적응형 60Hz 물리 시뮬레이션 (이동 속도 증가)",
+            "ffs_faster_speed_desc": "물리 연산을 60Hz로 고정하여 마찰력과 항력을 줄여 더 빠르게 이동합니다. 참고: 최상의 효과를 위해 Shift Lock을 끄세요.",
+            "msg_feature_requires_plus_max": "이 기능을 사용하려면 Plus 또는 Max 요금제가 필요합니다."
         },
         "zh": {
             "title_font_group": "游戏内字体与大小",
@@ -1800,7 +1991,10 @@ function confirmClearAllFlags() {
             "ffs_no_vfx_title": "NO VFX (关闭多余特效)",
             "ffs_no_vfx_desc": "关闭刺眼光晕、模糊及重度视觉特效，大幅降低卡顿并提升低端设备帧率 (FPS)。注意：开启后将自动禁用 Shader Package 光影效果。",
             "fps_target_title": "目标帧率 (Global)",
-            "fps_target_desc": "输入下次启动时请求的自定义目标 FPS (30–9999)。实际帧率取决于游戏、GPU 和屏幕。"
+            "fps_target_desc": "输入下次启动时请求的自定义目标 FPS (30–9999)。实际帧率取决于游戏、GPU 和屏幕。",
+            "ffs_faster_speed_title": "自适应 60Hz 物理模拟（提升移动速度）",
+            "ffs_faster_speed_desc": "强制物理引擎以 60Hz 运行以降低摩擦力与阻力，提升角色移动速度。注意：请关闭 Shift Lock 以获得最佳效果。",
+            "msg_feature_requires_plus_max": "此功能需要 Plus 或 Max 方案。"
         }
     }
     for lang, kvs in translations.items():
@@ -1834,7 +2028,7 @@ window.MasterstrapAds = (() => {
     const pending = new Map();
     const inFlightByFormat = new Map();
     const grants = { preset: new Set() };
-    const interstitialCooldownMs = 60 * 1000;
+    const interstitialCooldownMs = 30 * 1000;
     const interstitialLastShownKey = "masterstrap_ads_last_interstitial_ms";
     let sequence = 0;
     const plan = () => (localStorage.getItem("masterstrap_license_plan") || "FREE").toUpperCase();
@@ -1849,7 +2043,7 @@ window.MasterstrapAds = (() => {
     function request(format, placement, failOpen) {
         if (format === "interstitial") {
             const lastShown = Number(localStorage.getItem(interstitialLastShownKey) || "0");
-            if (Date.now() - lastShown < interstitialCooldownMs) {
+            if (placement !== "roblox_launch_fallback" && Date.now() - lastShown < interstitialCooldownMs) {
                 log("skip format=interstitial placement=" + placement + " reason=cooldown");
                 return Promise.resolve(true);
             }
@@ -1955,56 +2149,146 @@ window.MasterstrapAds = (() => {
     return { request, nativeResult, onAdDisplayed, banner, isFree, needsFpsReward, grants };
 })();
 
+// VIP Hard-Lock Function
+function updateVipLocks() {
+    const isFree = window.MasterstrapAds ? window.MasterstrapAds.isFree() : (!["PLUS", "MAX"].includes((localStorage.getItem("masterstrap_license_plan") || "FREE").toUpperCase()));
+
+    // 1. Stretch Resolution Hard-Lock
+    const slider = document.getElementById("slider-stretch-screen");
+    const badge = document.getElementById("stretch-badge");
+    if (isFree) {
+        if (slider) {
+            slider.value = 100;
+            slider.disabled = true;
+            slider.style.opacity = "0.5";
+            slider.style.pointerEvents = "none";
+            const percent = ((100 - 10) / (200 - 10)) * 100;
+            slider.style.background = `linear-gradient(to right, #00A5FF 0%, #00A5FF ${percent}%, #2A3447 ${percent}%, #2A3447 100%)`;
+        }
+        if (badge) badge.innerText = "100%";
+        localStorage.setItem("masterstrap_stretch_screen", "100");
+    } else {
+        if (slider) {
+            slider.disabled = false;
+            slider.style.opacity = "1";
+            slider.style.pointerEvents = "auto";
+            const val = parseInt(slider.value) || 100;
+            const percent = ((val - 10) / (200 - 10)) * 100;
+            slider.style.background = `linear-gradient(to right, #00A5FF 0%, #00A5FF ${percent}%, #2A3447 ${percent}%, #2A3447 100%)`;
+        }
+    }
+
+    // Bind stretch card click to warn free users
+    const stretchCard = document.getElementById("card-stretch-screen");
+    if (stretchCard && !stretchCard.dataset.vipBound) {
+        stretchCard.dataset.vipBound = "true";
+        stretchCard.addEventListener("click", () => {
+            const isFreeNow = window.MasterstrapAds ? window.MasterstrapAds.isFree() : (!["PLUS", "MAX"].includes((localStorage.getItem("masterstrap_license_plan") || "FREE").toUpperCase()));
+            if (isFreeNow) {
+                if (typeof showToast === "function") showToast(getI18nText("msg_feature_requires_plus_max"));
+            }
+        });
+    }
+
+    // 2. Target FPS Hard-Lock (max 60 for Free)
+    const fpsInput = document.getElementById("sel-target-fps");
+    if (fpsInput && isFree) {
+        let fpsVal = parseInt(fpsInput.value, 10);
+        if (isNaN(fpsVal) || fpsVal > 60) {
+            fpsInput.value = "60";
+            localStorage.setItem("masterstrap_fps_cap", "60");
+        }
+    }
+
+    // 3. VIP Toggles Hard-Lock (sw-ffs-desync, sw-ffs-faster-speed, sw-gm-master)
+    if (isFree) {
+        const swDesync = document.getElementById("sw-ffs-desync");
+        if (swDesync && swDesync.checked) {
+            swDesync.checked = false;
+            localStorage.setItem("masterstrap_toggle_sw-ffs-desync", "false");
+        }
+        const swSpeed = document.getElementById("sw-ffs-faster-speed");
+        if (swSpeed && swSpeed.checked) {
+            swSpeed.checked = false;
+            localStorage.setItem("masterstrap_toggle_sw-ffs-faster-speed", "false");
+        }
+        const swMaster = document.getElementById("sw-gm-master");
+        if (swMaster && swMaster.checked) {
+            swMaster.checked = false;
+            localStorage.setItem("masterstrap_turbo_master", "false");
+            localStorage.setItem("masterstrap_toggle_sw-gm-master", "false");
+            if (typeof onToggleTurboMaster === "function") {
+                onToggleTurboMaster(false, true);
+            }
+        }
+    }
+
+    if (typeof updateFlagState === "function") updateFlagState();
+}
+
+// Hook updateLicenseUI to refresh VIP locks
+const origUpdateLicenseUI = typeof updateLicenseUI === "function" ? updateLicenseUI : null;
+if (origUpdateLicenseUI) {
+    updateLicenseUI = function(isActive, plan, expiry) {
+        origUpdateLicenseUI(isActive, plan, expiry);
+        if (typeof updateVipLocks === "function") updateVipLocks();
+    };
+}
+
 const msOpenFastFlagEditor = openFastFlagEditorSubpage;
 openFastFlagEditorSubpage = function() {
     if (!MasterstrapAds.isFree()) return msOpenFastFlagEditor();
     MasterstrapAds.request("interstitial", "fastflag_editor", true).then(() => msOpenFastFlagEditor());
 };
 
-const msToggleDesyncVIP = toggleDesyncVIP;
+const msToggleDesyncVIP = typeof toggleDesyncVIP === "function" ? toggleDesyncVIP : null;
 toggleDesyncVIP = function(checkbox) {
     if (!checkbox) return;
-    if (!checkbox.checked) {
-        return msToggleDesyncVIP(checkbox);
+    if (MasterstrapAds.isFree()) {
+        checkbox.checked = false;
+        localStorage.setItem("masterstrap_toggle_sw-ffs-desync", "false");
+        updateFlagState();
+        syncConfigToNative();
+        showToast(getI18nText("msg_feature_requires_plus_max"));
+        return;
     }
-    if (!MasterstrapAds.isFree()) {
-        return msToggleDesyncVIP(checkbox);
+    if (msToggleDesyncVIP) msToggleDesyncVIP(checkbox);
+    else {
+        updateFlagState();
+        syncConfigToNative();
     }
-    checkbox.checked = false;
-    updateFlagState();
-    MasterstrapAds.request("rewarded", "desync", false).then(ok => {
-        if (ok) {
-            checkbox.checked = true;
-            msToggleDesyncVIP(checkbox);
-        } else {
-            checkbox.checked = false;
-            updateFlagState();
-            showToast("Rewarded ad required to enable Desync.");
-        }
-    });
 };
 
-const msOnToggleTurboMaster = onToggleTurboMaster;
+window.toggleFasterSpeedVIP = function(checkbox) {
+    if (!checkbox) return;
+    if (MasterstrapAds.isFree()) {
+        checkbox.checked = false;
+        localStorage.setItem("masterstrap_toggle_sw-ffs-faster-speed", "false");
+        updateFlagState();
+        syncConfigToNative();
+        showToast(getI18nText("msg_feature_requires_plus_max"));
+        return;
+    }
+    updateFlagState();
+    syncConfigToNative();
+};
+
+const msOnToggleTurboMaster = typeof onToggleTurboMaster === "function" ? onToggleTurboMaster : null;
 onToggleTurboMaster = function(isChecked, isRestoring) {
     if (isRestoring || !isChecked) {
-        return msOnToggleTurboMaster(isChecked);
+        if (msOnToggleTurboMaster) return msOnToggleTurboMaster(isChecked);
+        return;
     }
-    if (!MasterstrapAds.isFree()) {
-        return msOnToggleTurboMaster(true);
+    if (MasterstrapAds.isFree()) {
+        const sw = document.getElementById("sw-gm-master");
+        if (sw) sw.checked = false;
+        localStorage.setItem("masterstrap_turbo_master", "false");
+        localStorage.setItem("masterstrap_toggle_sw-gm-master", "false");
+        if (msOnToggleTurboMaster) msOnToggleTurboMaster(false);
+        showToast(getI18nText("msg_feature_requires_plus_max"));
+        return;
     }
-    const sw = document.getElementById("sw-gm-master");
-    if (sw) sw.checked = false;
-    msOnToggleTurboMaster(false);
-    MasterstrapAds.request("rewarded", "game_mode_master", false).then(ok => {
-        if (ok) {
-            if (sw) sw.checked = true;
-            msOnToggleTurboMaster(true);
-        } else {
-            if (sw) sw.checked = false;
-            msOnToggleTurboMaster(false);
-            showToast("Rewarded ad required to enable Turbo Boost.");
-        }
-    });
+    if (msOnToggleTurboMaster) msOnToggleTurboMaster(true);
 };
 
 const msApplyGamePreset = applyGamePreset;
@@ -2035,14 +2319,44 @@ applyGamePresetDirect = function(presetId) {
     });
 };
 
+// Launch Waterfall: Rewarded -> Interstitial fallback
 const msSaveAndLaunch = saveAndLaunch;
 saveAndLaunch = function() {
     if (!MasterstrapAds.isFree()) return msSaveAndLaunch();
+    showToast("Loading ad...");
     MasterstrapAds.request("rewarded", "roblox_launch", false).then(ok => {
-        if (!ok) return showToast("Watch the complete rewarded ad to launch Roblox.");
-        msSaveAndLaunch();
+        if (ok) {
+            msSaveAndLaunch();
+        } else {
+            MasterstrapAds.request("interstitial", "roblox_launch_fallback", true).then(() => {
+                msSaveAndLaunch();
+            });
+        }
     });
 };
+
+// Cold Start Interstitial Ad (2.5s after open for Free users)
+setTimeout(() => {
+    if (window.MasterstrapAds && MasterstrapAds.isFree()) {
+        MasterstrapAds.request("interstitial", "app_open", true);
+    }
+}, 2500);
+
+// App Resume Interstitial Ad (2.5s after resume with 30s cooldown for Free users)
+let lastResumeAdTime = Date.now();
+document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+        const now = Date.now();
+        if (now - lastResumeAdTime >= 30000) {
+            lastResumeAdTime = now;
+            setTimeout(() => {
+                if (window.MasterstrapAds && MasterstrapAds.isFree()) {
+                    MasterstrapAds.request("interstitial", "app_resume", true);
+                }
+            }, 2500);
+        }
+    }
+});
 
 const msOpenFullscreenSettings = openFullscreenSettings;
 openFullscreenSettings = function() {
@@ -2064,13 +2378,22 @@ function syncConfigToNative() {
     syncTimer = setTimeout(() => {
         if (!window.webkit?.messageHandlers?.saveConfig) return;
         if (typeof updateFlagState === "function") updateFlagState();
+        const isFree = window.MasterstrapAds ? window.MasterstrapAds.isFree() : (!["PLUS", "MAX"].includes((localStorage.getItem("masterstrap_license_plan") || "FREE").toUpperCase()));
+        let stretchVal = parseInt(document.getElementById("slider-stretch-screen")?.value) || 100;
+        let targetFpsVal = parseInt(document.getElementById("sel-target-fps")?.value) || 9999;
+        let masterMode = document.getElementById("sw-gm-master")?.checked ?? false;
+        if (isFree) {
+            stretchVal = 100;
+            if (targetFpsVal > 60) targetFpsVal = 60;
+            masterMode = false;
+        }
         const clientJson = JSON.stringify(prepareFlagsForRoblox(activeFlags || {}), null, 2);
         const turboProfile = JSON.stringify({
             safe_ram_cleanup: document.getElementById("sw-gm-safe-ram")?.checked ?? true,
             safe_network_opt: document.getElementById("sw-gm-safe-net")?.checked ?? true,
             safe_power_opt: document.getElementById("sw-gm-safe-power")?.checked ?? true,
             safe_thermal_guard: document.getElementById("sw-gm-safe-thermal")?.checked ?? true,
-            game_mode_master: document.getElementById("sw-gm-master")?.checked ?? false,
+            game_mode_master: masterMode,
             system_perf_boost: document.getElementById("sw-gm-system-perf")?.checked ?? true,
             cpu_priority: document.getElementById("sw-gm-cpu-priority")?.checked ?? true,
             smart_ram_cleanup: document.getElementById("sw-gm-smart-ram")?.checked ?? true,
@@ -2083,9 +2406,9 @@ function syncConfigToNative() {
             turbo_sustained_performance: document.getElementById("sw-gm-turbo-sustained")?.checked ?? false,
             display_shader_package: document.getElementById("display-shader-pkg")?.value || "none",
             display_shader_wet_floor: document.getElementById("sw-display-wet-floor")?.checked ?? false,
-            display_stretch_screen: parseInt(document.getElementById("slider-stretch-screen")?.value) || 100,
+            display_stretch_screen: stretchVal,
             display_renderer_mode: document.getElementById("sel-renderer")?.value || "auto",
-            targetFps: parseInt(document.getElementById("sel-target-fps")?.value) || 9999
+            targetFps: targetFpsVal
         }, null, 2);
 
         const shaderName = document.getElementById("display-shader-pkg")?.value || "none";
@@ -2204,17 +2527,19 @@ window.SettingsPersistence = (() => {
     }
 
     function restoreAllUI() {
-        const isFree = window.MasterstrapAds ? window.MasterstrapAds.isFree() : ((localStorage.getItem("masterstrap_license_plan") || "FREE").toUpperCase() === "FREE");
+        const isFree = window.MasterstrapAds ? window.MasterstrapAds.isFree() : (!["PLUS", "MAX"].includes((localStorage.getItem("masterstrap_license_plan") || "FREE").toUpperCase()));
         
         // 1. Restore all checkboxes (matches Android SettingsPersistence.loadToggle)
         document.querySelectorAll('input[type="checkbox"][id]').forEach(cb => {
-            if (cb.id === "sw-gm-master") {
+            if (cb.id === "sw-gm-master" || cb.id === "sw-ffs-desync" || cb.id === "sw-ffs-faster-speed") {
                 if (isFree) {
                     cb.checked = false;
-                    localStorage.setItem("masterstrap_turbo_master", "false");
-                    localStorage.setItem("masterstrap_toggle_sw-gm-master", "false");
-                    if (typeof onToggleTurboMaster === "function") {
-                        onToggleTurboMaster(false, true);
+                    localStorage.setItem("masterstrap_toggle_" + cb.id, "false");
+                    if (cb.id === "sw-gm-master") {
+                        localStorage.setItem("masterstrap_turbo_master", "false");
+                        if (typeof onToggleTurboMaster === "function") {
+                            onToggleTurboMaster(false, true);
+                        }
                     }
                     return;
                 }
@@ -2235,9 +2560,13 @@ window.SettingsPersistence = (() => {
 
         // 3. Restore Target FPS (matches Android SettingsPersistence.loadFps)
         const savedFps = localStorage.getItem("masterstrap_fps_cap");
-        const fpsSelect = document.getElementById("sel-target-fps");
-        if (savedFps && fpsSelect) {
-            fpsSelect.value = savedFps;
+        const fpsInput = document.getElementById("sel-target-fps");
+        if (savedFps && fpsInput) {
+            let fpsNum = parseInt(savedFps, 10) || 60;
+            if (isFree && fpsNum > 60) fpsNum = 60;
+            fpsInput.value = String(fpsNum);
+        } else if (fpsInput && isFree) {
+            fpsInput.value = "60";
         }
 
         // 4. Restore Renderer Mode
@@ -2266,6 +2595,7 @@ window.SettingsPersistence = (() => {
         } else {
             customFlags = {};
         }
+        updateVipLocks();
         updateFlagState();
         renderFlagTable();
     }
@@ -2296,9 +2626,21 @@ window.SettingsPersistence = (() => {
 document.addEventListener("change", (e) => {
     const target = e.target;
     if (!target || !target.id) return;
+    const isFree = window.MasterstrapAds ? window.MasterstrapAds.isFree() : (!["PLUS", "MAX"].includes((localStorage.getItem("masterstrap_license_plan") || "FREE").toUpperCase()));
     if (target.id === "sel-target-fps") {
+        let val = parseInt(target.value, 10);
+        if (isFree && (isNaN(val) || val > 60)) {
+            target.value = 60;
+            showToast(getI18nText("msg_feature_requires_plus_max"));
+        }
         SettingsPersistence.saveFps(target.value);
     } else if (target.type === "checkbox") {
+        if (isFree && (target.id === "sw-gm-master" || target.id === "sw-ffs-desync" || target.id === "sw-ffs-faster-speed")) {
+            target.checked = false;
+            SettingsPersistence.saveToggle(target.id, false);
+            showToast(getI18nText("msg_feature_requires_plus_max"));
+            return;
+        }
         SettingsPersistence.saveToggle(target.id, target.checked);
     } else if (target.tagName === "SELECT") {
         SettingsPersistence.saveDropdown(target.id, target.value);
@@ -2311,9 +2653,24 @@ document.addEventListener("change", (e) => {
 document.addEventListener("input", (e) => {
     const target = e.target;
     if (!target || !target.id) return;
-    if (target.type === "range") {
+    const isFree = window.MasterstrapAds ? window.MasterstrapAds.isFree() : (!["PLUS", "MAX"].includes((localStorage.getItem("masterstrap_license_plan") || "FREE").toUpperCase()));
+    if (target.id === "slider-stretch-screen") {
+        if (isFree) {
+            target.value = 100;
+            const badge = document.getElementById("stretch-badge");
+            if (badge) badge.innerText = "100%";
+            showToast(getI18nText("msg_feature_requires_plus_max"));
+            return;
+        }
+        syncConfigToNative();
+    } else if (target.type === "range") {
         syncConfigToNative();
     } else if (target.id === "sel-target-fps") {
+        let val = parseInt(target.value, 10);
+        if (isFree && (isNaN(val) || val > 60)) {
+            target.value = 60;
+            showToast(getI18nText("msg_feature_requires_plus_max"));
+        }
         SettingsPersistence.saveFps(target.value);
     }
 });
@@ -2365,6 +2722,7 @@ if (origInitAppSettings) {
     initAppSettings = function() {
         origInitAppSettings();
         SettingsPersistence.restoreAllUI();
+        if (typeof updateVipLocks === "function") updateVipLocks();
         if (typeof updateFlagState === "function") updateFlagState();
         if (typeof updateTurboProfileState === "function") updateTurboProfileState();
     };
