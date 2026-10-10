@@ -39,7 +39,9 @@ jobs:
           pip install Pillow
 
       - name: Verify launch and license request budget
-        run: python -B tools/check_ios_bridge_budget.py
+        run: |
+          python -B tools/check_ios_bridge_budget.py
+          python -B tools/check_ios_bridge_import.py
 
       - name: Cache LevelPlay & UnityAds SDKs
         id: cache-sdks

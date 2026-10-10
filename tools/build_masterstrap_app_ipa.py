@@ -301,8 +301,8 @@ static id serialize_bridge_payload(id body) {
         return NULL;
     }
 
-    app_log("Bridge payload serialized (protocol=1, json_bytes=%lu)",
-            (unsigned long)byte_count);
+    app_log("Bridge payload serialized (protocol=%d, json_bytes=%lu)",
+            g_bridge_inline_protocol, (unsigned long)byte_count);
     return escaped;
 }
 

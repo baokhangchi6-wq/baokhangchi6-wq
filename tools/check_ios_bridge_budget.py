@@ -8,12 +8,14 @@ import tempfile
 from pathlib import Path
 
 from build_masterstrap_app_ipa import HTML_TEMPLATE_RAW, configure_ios_runtime_html
-from build_integrated_roblox_ipa import patch_robloxlib_fps_clamps
+from build_integrated_roblox_ipa import patch_robloxlib_fps_clamps, generate_native_hook_source
 
 with contextlib.redirect_stdout(io.StringIO()):
     html = configure_ios_runtime_html(HTML_TEMPLATE_RAW)
     unknown = bytearray(0x93B550)
     assert patch_robloxlib_fps_clamps(unknown) == bytes(len(unknown)), 'Unknown binary was patched'
+    source = generate_native_hook_source([], [], 0, [], {})
+    assert 'strcmp(version, "3") == 0) protocol_version = 3;' in source
 
 launch = html.split('const msSaveAndLaunch = saveAndLaunch;', 1)[1].split('// Cold Start', 1)[0]
 check = html.split('let msLicenseCheckInFlight = false;', 1)[1].split('\nfunction ', 1)[0]

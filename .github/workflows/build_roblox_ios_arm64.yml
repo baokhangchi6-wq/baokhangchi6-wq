@@ -63,6 +63,7 @@ jobs:
       - name: Verify launch budget and dumper regressions
         run: |
           python -B tools/check_ios_bridge_budget.py
+          python -B tools/check_ios_bridge_import.py
           PYTHONPATH=roblox python -B -m unittest discover -s roblox/tests -t roblox
 
       # ── STEP 1: Version Gate (threshold = 0, IMMEDIATE) ──────────────────

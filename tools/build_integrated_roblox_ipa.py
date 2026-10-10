@@ -1367,6 +1367,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "            const char* version = bridge_utf8(value);",
         "            if (strcmp(version, \"1\") == 0) protocol_version = 1;",
         "            else if (strcmp(version, \"2\") == 0) protocol_version = 2;",
+        "            else if (strcmp(version, \"3\") == 0) protocol_version = 3;",
         "        } else if (strcmp(name, \"payload\") == 0) {",
         "            payload = value;",
         "        } else if (strcmp(name, \"ticket\") == 0) {",

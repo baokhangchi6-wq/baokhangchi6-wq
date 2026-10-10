@@ -17,6 +17,18 @@
 - Real local workerd and production regression checks passed; local workerd also retained a 410 KB Unicode envelope.
 - Production version: `5f508894-2ed0-42a4-a21e-fdc9376ea7e3`.
 - Commands: `python -B tools/check_ios_bridge_budget.py`; `PYTHONPATH=roblox python -B -m unittest discover -s roblox/tests -t roblox`.
+- macOS gate: `python -B tools/check_ios_bridge_import.py` compiles the generated native importer and runs real Foundation URL parsing, zlib decode, all five file writes and receipt checks with HTTP blocked. It covers v3/v1, duplicate callbacks, invalid compression, unsupported protocol and decompression above 512 KiB. The previous missing `v=3` parse branch fails this test.
+
+## Optimization rules
+
+- Success means every supplied profile imported intact, not only fewer SQL calls or `openURL=1`.
+- Save/toggle/idle stays local. Do not add bridge polling or licence CHECK to a slider, timer or launch.
+- Bound and compress the whole envelope. Keep flag JSON, FPS/stretch profile, XML, font and shader documents; never drop a profile to fit a URL.
+- Use a local URL only within the tested 2,048-character encoded payload limit; larger payloads use one publish and one atomic consume. Do not silently launch with incomplete data after transfer fails.
+- Coalesce clicks/callbacks for one intent. Retry must not mint endless new tickets or reuse a consumed ticket.
+- New cloud tickets use Durable Objects; do not reintroduce per-request D1 rate counters, cleanup or diagnostics writes. Measure DO/Worker costs separately.
+- Licence authorization still comes from the existing server; do not reduce SQL by granting a new key from local cache or by losing device/expiry/disabled checks.
+- Test protocol, full file content and import receipt, plus the request/DB budget, before shipping both app versions together.
 
 ## Budget interpretation
 
