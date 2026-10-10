@@ -311,7 +311,8 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
     if all_flags_table is None:
         all_flags_table = {}
 
-    sorted_all_flags = sorted(all_flags_table.items(), key=lambda x: x[0])
+    sorted_all_flags = sorted((name, rva) for name, rva in all_flags_table.items()
+        if name.startswith(('FFlag', 'DFFlag', 'SFFlag', 'FInt', 'DFInt', 'SFInt')))
 
     lines = [
         "typedef unsigned long uintptr_t;",
@@ -338,6 +339,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "extern const char* _dyld_get_image_name(uint32_t image_index);",
         "extern const void* _dyld_get_image_header(uint32_t image_index);",
         "extern int mprotect(void *addr, size_t len, int prot);",
+        "extern int getpagesize(void);",
         "extern int usleep(unsigned int usec);",
         "extern int getpid(void);",
         "extern long time(long *timer);",
@@ -354,6 +356,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "extern int fclose(void *stream);",
         "extern int fflush(void *stream);",
         "extern int unlink(const char *path);",
+        "extern int rename(const char *old_path, const char *new_path);",
         "extern void* malloc(size_t size);",
         "extern void free(void *ptr);",
         "extern long long atoll(const char *str);",
@@ -436,7 +439,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
     ])
 
     for name, rva in sorted_all_flags:
-        kind = 0 if ('Flag' in name or (name.startswith('F') and not name.startswith('FInt') and not name.startswith('DFInt') and not name.startswith('FString') and not name.startswith('DFString'))) else 1
+        kind = 0 if name.startswith(('FFlag', 'DFFlag', 'SFFlag')) else 1
         lines.append(f'    {{"{name}", 0x{rva:X}, {kind}}},')
 
     lines.extend([
@@ -484,14 +487,16 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "};",
         "",
         "static bool SetFastFlag(uintptr_t base, const FFlagPatchEntry* entry) {",
+        "    if (!base || !entry || entry->kind < 0 || entry->kind > 1) return false;",
+        "    if (entry->kind == 1 && (entry->value < -2147483648LL || entry->value > 2147483647LL)) return false;",
         "    uintptr_t target = base + entry->rva;",
-        "    uintptr_t page_size = 16384;",
+        "    uintptr_t page_size = (uintptr_t)getpagesize();",
+        "    if (!page_size || (page_size & (page_size - 1))) return false;",
         "    uintptr_t page_start = target & ~(page_size - 1);",
-        "    size_t page_len = page_size * 2;",
+        "    size_t width = entry->kind == 0 ? 1 : 4;",
+        "    size_t page_len = (((target + width - 1) & ~(page_size - 1)) - page_start) + page_size;",
         "    if (mprotect((void*)page_start, page_len, PROT_READ | PROT_WRITE) != 0) {",
-        "        page_size = 4096;",
-        "        page_start = target & ~(page_size - 1);",
-        "        mprotect((void*)page_start, page_size * 2, PROT_READ | PROT_WRITE);",
+        "        return false; /* Never write after a failed protection change. */",
         "    }",
         "",
         "    if (entry->kind == 0) {",
@@ -865,7 +870,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    fseek(file, 0, 2);",
         "    long size = ftell(file);",
         "    fseek(file, 0, 0);",
-        "    if (size <= 0 || size >= 65536) { fclose(file); return NULL; }",
+        "    if (size <= 0 || size > 524288) { fclose(file); return NULL; }",
         "    char* content = (char*)malloc((size_t)size + 1);",
         "    if (!content) { fclose(file); return NULL; }",
         "    size_t read_bytes = fread(content, 1, (size_t)size, file);",
@@ -1135,15 +1140,16 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "}",
         "",
         *(ROOT / "tools" / "ios_frame_policy.h").read_text(encoding="utf-8").splitlines(),
+        *(ROOT / "tools" / "ios_bridge_codec.h").read_text(encoding="utf-8").splitlines(),
         *(ROOT / "tools" / "ios_display_policy.c").read_text(encoding="utf-8").splitlines(),
         "",
         "static void log_runtime_consumer_contract(void) {",
         "    runtime_note(\"[REQUEST][FONT] family=%s sizeStep=%d\", g_font_family, g_font_size_step);",
-        "    runtime_note(\"[CAPABILITY][FONT] backend=%s status=ACTIVE reason=direct-asset-replacement\", kFontRuntimeBackend);",
+        "    runtime_note(\"[CAPABILITY][FONT] backend=%s status=UNAVAILABLE reason=font-backend-disabled-in-current-isolation-build\", kFontRuntimeBackend);",
         "    runtime_note(\"[REQUEST][SHADER] package=%s wetFloor=%d\", g_shader_package, g_shader_wet_floor);",
         "    runtime_note(\"[CAPABILITY][SHADER] backend=%s status=BLOCKED reason=address-probe-only-luau-lifecycle-unverified abiPlausible=%d/%d\", kShaderRuntimeBackend, g_abi_probe_plausible, g_abi_probe_total);",
         "    runtime_note(\"[REQUEST][STRETCH] percent=%d\", g_stretch_percent);",
-        "    runtime_note(\"[CAPABILITY][STRETCH] backend=%s status=ACTIVE hookInstalled=%d metal_vsync_uncap=ACTIVE\", kStretchRuntimeBackend, g_metal_layer_stretch_installed);",
+        "    runtime_note(\"[CAPABILITY][STRETCH] backend=%s status=STANDBY_FPS_ONLY hookInstalled=%d resolutionHooks=0\", kStretchRuntimeBackend, g_metal_layer_stretch_installed);",
         "    runtime_note(\"[CAPABILITY][RENDERER] requested=%s effective=Metal status=NATIVE_PLATFORM_ONLY\", g_renderer_mode);",
         "}",
         "",
@@ -1244,9 +1250,10 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static id bridge_consume_v2(const char* ticket, const char* request, const char* expected_channel) {",
         "    id NSDictionary = objc_getClass(\"NSDictionary\");",
         "    if (!NSDictionary || !bridge_token_is_valid(ticket, 43, 95)) return NULL;",
-        "    id consume_body = ((id (*)(id, SEL, id, id))objc_msgSend)(",
-        "        NSDictionary, sel_registerName(\"dictionaryWithObject:forKey:\"),",
-        "        bridge_nsstr(ticket), bridge_nsstr(\"ticket\"));",
+        "    id consume_body = ((id (*)(id, SEL))objc_msgSend)(objc_getClass(\"NSMutableDictionary\"), sel_registerName(\"dictionary\"));",
+        "    ((void (*)(id, SEL, id, id))objc_msgSend)(consume_body, sel_registerName(\"setObject:forKey:\"), bridge_nsstr(ticket), bridge_nsstr(\"ticket\"));",
+        "    ((void (*)(id, SEL, id, id))objc_msgSend)(consume_body, sel_registerName(\"setObject:forKey:\"), bridge_nsstr(request), bridge_nsstr(\"requestId\"));",
+        "    ((void (*)(id, SEL, id, id))objc_msgSend)(consume_body, sel_registerName(\"setObject:forKey:\"), bridge_nsstr(expected_channel), bridge_nsstr(\"channel\"));",
         "    bridge_log(false, \"Bridge API consume started: request=%s protocol=2\", request);",
         "    id result = bridge_json_post(",
         "        \"https://bridge.masterstrap.org/v2/launch-configs/consume\", consume_body, 200);",
@@ -1274,6 +1281,10 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        return NULL;",
         "    }",
         "    bridge_log(false, \"Bridge API consume complete: request=%s channel=%s\", request, expected_channel);",
+        "    const char* payload_hash = bridge_utf8(((id (*)(id, SEL, id))objc_msgSend)(result, sel_registerName(\"objectForKeyedSubscript:\"), bridge_nsstr(\"payloadSha256\")));",
+        "    if (strncmp(ticket, \"do_\", 3) == 0 && !ms_bridge_hash_matches(payload, payload_hash)) {",
+        "        bridge_log(true, \"Bridge checksum rejected: request=%s\", request); return NULL;",
+        "    }",
         "    return payload;",
         "}",
         "",
@@ -1283,15 +1294,21 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    if (!home) return false;",
         "    char path[768];",
         "    snprintf(path, sizeof(path), \"%s/Documents/%s\", home, file_name);",
-        "    void* file = fopen(path, \"w\");",
+        "    char temporary[800];",
+        "    snprintf(temporary, sizeof(temporary), \"%s.tmp\", path);",
+        "    void* file = fopen(temporary, \"w\");",
         "    if (!file) return false;",
-        "    fputs(content, file);",
-        "    fflush(file);",
-        "    fclose(file);",
-        "    return true;",
+        "    bool ok = fputs(content, file) >= 0;",
+        "    if (fflush(file) != 0) ok = false;",
+        "    if (fclose(file) != 0) ok = false;",
+        "    if (ok && rename(temporary, path) != 0) ok = false;",
+        "    if (!ok) unlink(temporary);",
+        "    return ok;",
         "}",
         "",
         "static char g_last_bridge_request[96] = {0};",
+        "static int g_bridge_import_busy = 0;",
+        "static void bridge_release_import_guard(int* ignored) { (void)ignored; __sync_lock_release(&g_bridge_import_busy); }",
         "",
         "static bool bridge_request_is_valid(const char* request) {",
         "    if (!request) return false;",
@@ -1360,7 +1377,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    }",
         "",
         "    const char* request_text = bridge_utf8(request_value);",
-        "    if ((protocol_version != 1 && protocol_version != 2) || !bridge_request_is_valid(request_text)) {",
+        "    if ((protocol_version != 1 && protocol_version != 2 && protocol_version != 3) || !bridge_request_is_valid(request_text)) {",
         "        bridge_log(true, \"Rejected URL: protocol or request missing/invalid\");",
         "        return false;",
         "    }",
@@ -1372,6 +1389,8 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        return true;",
         "    }",
         "    id body = NULL;",
+        "    if (__sync_lock_test_and_set(&g_bridge_import_busy, 1)) { bridge_log(false, \"Import already in flight: request=%s\", request); return false; }",
+        "    int import_guard __attribute__((cleanup(bridge_release_import_guard))) = 0;",
         "    id error = NULL;",
         "    if (protocol_version == 2) {",
         "        const char* ticket = bridge_utf8(ticket_value);",
@@ -1408,7 +1427,12 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "            bridge_log(true, \"Rejected URL: request=%s decoded payload size=%lu out of range\", request, decoded_length);",
         "            return false;",
         "        }",
-        "        bridge_log(false, \"Payload decoded: request=%s decodedBytes=%lu\", request, decoded_length);",
+        "        if (protocol_version == 3) {",
+        "            data = ms_bridge_codec(data, false);",
+        "            if (!data) { bridge_log(true, \"Rejected compressed payload: request=%s invalid or exceeds 512 KiB\", request); return false; }",
+        "            decoded_length = ((unsigned long (*)(id, SEL))objc_msgSend)(data, sel_registerName(\"length\"));",
+        "        }",
+        "        bridge_log(false, \"Payload decoded: request=%s decodedBytes=%lu protocol=%d\", request, decoded_length, protocol_version);",
         "        id NSJSONSerialization = objc_getClass(\"NSJSONSerialization\");",
         "        body = NSJSONSerialization",
         "            ? ((id (*)(id, SEL, id, unsigned long, id*))objc_msgSend)(",
@@ -1449,7 +1473,10 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        \"MasterstrapShaderProfile.json\", bridge_utf8(shader_value));",
         "    bool wrote_font = bridge_write_document(",
         "        \"MasterstrapFontProfile.json\", bridge_utf8(font_value));",
-        "    bool imported = wrote_client || wrote_turbo || wrote_global || wrote_shader || wrote_font;",
+        "    bool imported = (wrote_client || wrote_turbo || wrote_global || wrote_shader || wrote_font)",
+        "        && (!bridge_utf8(client_value)[0] || wrote_client) && (!bridge_utf8(turbo_value)[0] || wrote_turbo)",
+        "        && (!bridge_utf8(global_value)[0] || wrote_global) && (!bridge_utf8(shader_value)[0] || wrote_shader)",
+        "        && (!bridge_utf8(font_value)[0] || wrote_font);",
         "    char authorization[256];",
         "    snprintf(authorization, sizeof(authorization), \"{\\\"schema\\\":1,\\\"request\\\":\\\"%s\\\",\\\"issuedAtUnix\\\":%ld,\\\"singleUse\\\":true}\", request, time(NULL));",
         "    bool wrote_authorization = imported && bridge_write_document(\"MasterstrapLaunchAuthorization.json\", authorization);",
@@ -1694,7 +1721,9 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    int success_count = 0;",
         "    bool launch_authorized = false;",
         "    if (base != 0) {",
+        "        runtime_note(\"[BOOT] stage=authorization_begin base=0x%lx\", (unsigned long)base);",
         "        launch_authorized = local_launch_authorization_valid(log_file);",
+        "        runtime_note(\"[BOOT] stage=authorization_end authorized=%d\", launch_authorized);",
         "        g_launch_authorized = launch_authorized;",
         "        if (!launch_authorized) {",
         "            purge_local_launch_configuration(\"direct_or_stale_launch_blocked\", true);",
@@ -1801,7 +1830,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "                g_shader_package, g_shader_wet_floor, launch_authorized, g_profile_loaded,",
         "                !launch_authorized ? \"NO_AUTH\" : !g_profile_loaded ? \"NO_PROFILE\" : !g_shader_wet_floor ? \"WET_FLOOR_DISABLED\" : \"none\");",
         "        // FEATURE_07: Font Override",
-        "        fprintf(log_file, \"[FEATURE_07_FONT] status=ACTIVE family=%s sizeStep=%d backend=%s gate=EmbeddedAssets(1) blockedReason=none\\n\",",
+        "        fprintf(log_file, \"[FEATURE_07_FONT] status=UNAVAILABLE family=%s sizeStep=%d backend=%s gate=EmbeddedAssets(0) blockedReason=ISOLATION_BUILD\\n\",",
         "                g_font_family, g_font_size_step, kFontRuntimeBackend);",
         "        // FEATURE_08: Stretch / Aspect-Ratio",
         "        fprintf(log_file, \"[FEATURE_08_STRETCH] status=STANDBY stretchPct=%d backend=%s gate=NativePassthrough(1) blockedReason=none\\n\",",
@@ -1922,6 +1951,7 @@ def compile_dylib(c_source: str, out_dylib: Path) -> Path:
     c_file = work_dir / "masterstrap_ios.c"
     obj_file = work_dir / "masterstrap_ios.o"
     c_file.write_text(c_source, encoding="utf-8")
+    native_options = ["-O0", "-g"] if os.environ.get("MASTERSTRAP_BUILD_TYPE") == "Debug" else ["-O3"]
 
     if sys.platform == "darwin":
         isysroot = []
@@ -1929,16 +1959,19 @@ def compile_dylib(c_source: str, out_dylib: Path) -> Path:
             sdk_proc = subprocess.run(["xcrun", "--sdk", "iphoneos", "--show-sdk-path"], capture_output=True, text=True)
             if sdk_proc.returncode == 0 and sdk_proc.stdout.strip():
                 isysroot = ["-isysroot", sdk_proc.stdout.strip()]
-        except Exception:
-            pass
+        except Exception as error:
+            raise RuntimeError("Apple iphoneos SDK lookup failed") from error
+        if not isysroot:
+            raise RuntimeError("Apple iphoneos SDK is required")
 
         compile_cmd = [
             "clang",
             "-target", "arm64-apple-ios14.0",
             "-dynamiclib",
-            "-O3",
+            *native_options,
             "-undefined", "dynamic_lookup",
             "-install_name", "@rpath/libmasterstrap.dylib",
+            "-lz",
             *isysroot,
             str(c_file),
             "-o", str(out_dylib)
@@ -1954,7 +1987,7 @@ def compile_dylib(c_source: str, out_dylib: Path) -> Path:
     compile_cmd = [
         clang_bin,
         "-target", "arm64-apple-ios14.0",
-        "-O3",
+        *native_options,
         "-c", str(c_file),
         "-o", str(obj_file)
     ]
@@ -1969,6 +2002,7 @@ def compile_dylib(c_source: str, out_dylib: Path) -> Path:
         "-dylib",
         "-undefined", "dynamic_lookup",
         "-platform_version", "ios", "14.0.0", "14.0.0",
+        "-adhoc_codesign",
         "-install_name", "@rpath/libmasterstrap.dylib",
         str(obj_file),
         "-o", str(out_dylib)
@@ -2148,7 +2182,7 @@ def patch_robloxlib_fps_clamps(data: bytearray) -> bytearray:
     applied = 0
     for name, pattern, offset, replacement, fallback_site in patches:
         matches = list(pattern.finditer(data))
-        if matches:
+        if len(matches) == 1:
             site = matches[0].start() + offset
             rep = replacement
             if name == "DeviceMtl presentDrawable:atTime: delay clamp bypass":
@@ -2163,12 +2197,8 @@ def patch_robloxlib_fps_clamps(data: bytearray) -> bytearray:
             data[site:site + len(rep)] = rep
             applied += 1
             print(f"[PATCH_ROBLOXLIB_DYNAMIC] {name} matched & un-clamped @ 0x{site:X} (signature)")
-        elif len(data) > fallback_site + len(replacement):
-            data[fallback_site:fallback_site + len(replacement)] = replacement
-            applied += 1
-            print(f"[PATCH_ROBLOXLIB_STATIC] {name} un-clamped @ 0x{fallback_site:X} (fallback)")
         else:
-            print(f"[PATCH_ROBLOXLIB] Warning: {name} signature not found and out of bounds")
+            print(f"[PATCH_ROBLOXLIB] {name} skipped: expected unique signature, found {len(matches)}")
 
     print(f"[PATCH_ROBLOXLIB] Applied {applied}/{len(patches)} version-agnostic FPS uncap clamps")
     return data
@@ -2306,7 +2336,9 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
 
                     for item in zin.infolist():
                         name = item.filename
-                        if not embed_flags and name in embedded_settings_entries:
+                        if name in seen_entries or name == "Payload/Roblox.app/Frameworks/libmasterstrap.dylib":
+                            continue
+                        if name in embedded_settings_entries:
                             print(f"Removed embedded settings entry -> {name}")
                             continue
 
@@ -2398,6 +2430,22 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                                 zout.writestr(jp, json_bytes)
 
             print(f"\nSUCCESS -> {out_ipa} ({out_ipa.stat().st_size / (1024*1024):.1f} MB)")
+            import hashlib
+            with zipfile.ZipFile(out_ipa) as built:
+                names = built.namelist()
+                if len(names) != len(set(names)):
+                    raise RuntimeError("Packaged IPA contains duplicate ZIP paths")
+            identity = {
+                "commit": os.environ.get("GITHUB_SHA", "local"),
+                "runId": os.environ.get("GITHUB_RUN_ID", "local"),
+                "platform": sys.platform, "version": roblox_version,
+                "buildType": os.environ.get("MASTERSTRAP_BUILD_TYPE", "Release"),
+                "engineUuid": expected_uuid,
+                "dylibSha256": hashlib.sha256(dylib_bytes).hexdigest(),
+                "ipaSha256": hashlib.sha256(out_ipa.read_bytes()).hexdigest(),
+                "bridge": {"inlineProtocol": 3, "cloudProtocol": 2, "completeProfiles": 5},
+            }
+            (out_dir / "bridge_build_identity.json").write_text(json.dumps(identity, indent=2), encoding="utf-8")
 
             # Emit version to GitHub Actions output if in CI environment
             import os as _os

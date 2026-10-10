@@ -5,6 +5,8 @@ on:
     branches: [ master, main ]
     paths:
       - 'tools/build_masterstrap_app_ipa.py'
+      - 'tools/ios_bridge_codec.h'
+      - 'tools/check_ios_bridge_budget.py'
       - 'tools/ios_levelplay_bridge.m'
       - 'tools/embed_swift_runtime_in_ipa.sh'
       - 'Masterstrap/**'
@@ -17,6 +19,9 @@ permissions:
 jobs:
   fast-build-ipa:
     runs-on: macos-26
+    timeout-minutes: 35
+    env:
+      MASTERSTRAP_BUILD_TYPE: Debug
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -32,6 +37,9 @@ jobs:
       - name: Install Minimal Dependencies
         run: |
           pip install Pillow
+
+      - name: Verify launch and license request budget
+        run: python -B tools/check_ios_bridge_budget.py
 
       - name: Cache LevelPlay & UnityAds SDKs
         id: cache-sdks
@@ -92,18 +100,10 @@ jobs:
           test -s output/Masterstrap.ipa
           ls -lh output/Masterstrap.ipa
 
-      - name: Publish Masterstrap.ipa to GitHub Release
-        uses: softprops/action-gh-release@v2
+      - name: Upload Masterstrap IPA for iPhone testing
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: fast-release-ios-${{ github.run_number }}
-          name: Masterstrap iOS Fast Build (${{ github.run_number }})
-          body: |
-            ## Masterstrap iOS Fast Build (Build ${{ github.run_number }})
-            - Fast standalone build of Masterstrap iOS IPA.
-            - Includes official LevelPlay SDK & Unity Ads mediation.
-            - Includes the Swift Concurrency back-deployment runtime and Unity Ads resources.
-            - Ready to sideload via TrollStore, AltStore, Sideloadly, or Scarlet.
-          files: |
-            output/Masterstrap.ipa
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: Masterstrap-App-${{ github.sha }}-run-${{ github.run_number }}
+          path: output/Masterstrap.ipa
+          if-no-files-found: error
+          retention-days: 7

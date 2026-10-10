@@ -41,6 +41,8 @@ jobs:
   build:
     runs-on: macos-26
     timeout-minutes: 90
+    env:
+      MASTERSTRAP_BUILD_TYPE: Debug
 
     steps:
       - name: Checkout iOS lane
@@ -57,6 +59,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pyyaml capstone Pillow requests
+
+      - name: Verify launch budget and dumper regressions
+        run: |
+          python -B tools/check_ios_bridge_budget.py
+          PYTHONPATH=roblox python -B -m unittest discover -s roblox/tests -t roblox
 
       # ── STEP 1: Version Gate (threshold = 0, IMMEDIATE) ──────────────────
       - name: Check Roblox iOS App Store version (threshold=0)
@@ -98,7 +105,7 @@ jobs:
 
           python tools/fetch_roblox_ios_ipa.py \
             $URL_ARG \
-            --output roblox_input/roblox.ipa || true
+            --output roblox_input/roblox.ipa
 
       # ── STEP 3: Auto-dump offsets from IPA ───────────────────────────────
       - name: Auto Dump iOS Offsets & FFlags from IPA
@@ -113,7 +120,7 @@ jobs:
               "${{ steps.prepare_ipa.outputs.ipa_path }}" \
               --patterns patterns.ios.json \
               -o output \
-              --verbose || true
+              --verbose
             echo "Dumper complete. Checking output..."
             ls -la output/ || true
           else
@@ -188,12 +195,14 @@ jobs:
         if: steps.build_ipa.outputs.has_ipa == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: Masterstrap-Build091-${{ steps.build_ipa.outputs.ipa_version }}-run-${{ github.run_number }}
+          name: Masterstrap-Roblox-${{ steps.build_ipa.outputs.ipa_version }}-${{ github.sha }}-run-${{ github.run_number }}
           path: |
             output/Masterstrap-*.ipa
             output/flag_inject_report.log
             output/Offsets.hpp
             output/FFlags.hpp
+            output/manifest.json
+            output/bridge_build_identity.json
           if-no-files-found: error
           retention-days: 7
 

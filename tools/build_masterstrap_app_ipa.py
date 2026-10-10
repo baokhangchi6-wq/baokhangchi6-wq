@@ -123,6 +123,8 @@ typedef id (*IdInitWithFrameAndConfigFunc)(id, SEL, struct CGRect, id);
 
 static void* g_log_file = NULL;
 static unsigned int g_bridge_sequence = 0;
+static int g_bridge_inline_protocol = 1;
+static bool g_launch_in_flight = false;
 static id g_root_view_controller = NULL;
 static id g_web_view = NULL;
 
@@ -235,6 +237,8 @@ static void write_file(const char* path, const char* content) {
     }
 }
 
+/* MASTERSTRAP_BRIDGE_CODEC */
+
 static id serialize_bridge_payload(id body) {
     if (!body) {
         app_log("Bridge payload rejected: empty message body");
@@ -249,20 +253,11 @@ static id serialize_bridge_payload(id body) {
         return NULL;
     }
 
-    id payload_to_encode = body;
-    if (body && NSDictionary && ((bool (*)(id, SEL, id))objc_msgSend)(body, sel_registerName("isKindOfClass:"), NSDictionary)) {
-        id mutable_body = ((id (*)(id, SEL))objc_msgSend)(body, sel_registerName("mutableCopy"));
-        if (mutable_body) {
-            ((void (*)(id, SEL, id))objc_msgSend)(mutable_body, sel_registerName("removeObjectForKey:"), nsstr("globalSettings"));
-            payload_to_encode = mutable_body;
-        }
-    }
-
     id error = NULL;
     id json_data = ((id (*)(id, SEL, id, NSUInteger, id*))objc_msgSend)(
         NSJSONSerialization,
         sel_registerName("dataWithJSONObject:options:error:"),
-        payload_to_encode,
+        body,
         0,
         &error);
     if (!json_data || error) {
@@ -278,6 +273,16 @@ static id serialize_bridge_payload(id body) {
         return NULL;
     }
 
+    g_bridge_inline_protocol = 1;
+    id compressed = ms_bridge_codec(json_data, true);
+    unsigned long compressed_size = compressed
+        ? ((unsigned long (*)(id, SEL))objc_msgSend)(compressed, sel_registerName("length")) : 0;
+    if (compressed_size > 0 && compressed_size < byte_count) {
+        json_data = compressed;
+        g_bridge_inline_protocol = 3;
+    }
+    app_log("[BRIDGE][ENCODE] protocol=%d jsonBytes=%lu transferBytes=%lu profiles=5", g_bridge_inline_protocol,
+            (unsigned long)byte_count, compressed_size && g_bridge_inline_protocol == 3 ? compressed_size : (unsigned long)byte_count);
     id encoded = ((id (*)(id, SEL, NSUInteger))objc_msgSend)(
         json_data,
         sel_registerName("base64EncodedStringWithOptions:"),
@@ -490,11 +495,19 @@ static void save_all_configurations(const char* client_json, const char* turbo_j
     }
 }
 
+static void finish_bridge_launch(bool opened) {
+    g_launch_in_flight = false;
+    if (g_web_view) ((void (*)(id, SEL, id, void*))objc_msgSend)(g_web_view,
+        sel_registerName("evaluateJavaScript:completionHandler:"),
+        nsstr(opened ? "window.msLaunchFinished && window.msLaunchFinished(true)"
+                     : "window.msLaunchFinished && window.msLaunchFinished(false)"), NULL);
+}
+
 static void open_roblox_app_channel(const char* channel, id bridge_payload,
                                     const char* bridge_v2_request,
                                     const char* bridge_v2_ticket) {
     id UIApplication = objc_getClass("UIApplication");
-    if (!UIApplication) return;
+    if (!UIApplication) { finish_bridge_launch(false); return; }
     id app = ((id (*)(id, SEL))objc_msgSend)(UIApplication, sel_registerName("sharedApplication"));
     id NSURL = objc_getClass("NSURL");
     id NSDictionary = objc_getClass("NSDictionary");
@@ -511,6 +524,10 @@ static void open_roblox_app_channel(const char* channel, id bridge_payload,
     }
 
     const char* appBridgeScheme = (channel && strcmp(channel, "vng") == 0) ? "roblox-vng" : "robloxmobile";
+    void* completion = (void*)^(unsigned char opened) {
+        app_log("[BRIDGE][OPEN] opened=%d", opened != 0);
+        finish_bridge_launch(opened != 0);
+    };
 
     app_log("Attempting launch: channel=%s, bundleId=%s, scheme=%s, bridgeV2=%d, bridgeV1=%d",
             channel ? channel : "global", bundleId, urlScheme,
@@ -527,7 +544,7 @@ static void open_roblox_app_channel(const char* channel, id bridge_payload,
         if (bridge_url) {
             ((void (*)(id, SEL, id, id, void*))objc_msgSend)(
                 app, sel_registerName("openURL:options:completionHandler:"),
-                bridge_url, empty_dict, NULL);
+                bridge_url, empty_dict, completion);
             app_log("Bridge v2 dispatch sent via %s (legacy scheme=%s): request=%s",
                     appBridgeScheme, bridgeScheme, bridge_v2_request);
             return;
@@ -539,7 +556,7 @@ static void open_roblox_app_channel(const char* channel, id bridge_payload,
         char bridge_prefix[256];
         g_bridge_sequence++;
         snprintf(request_id, sizeof(request_id), "%d-%ld-%u", getpid(), time(NULL), g_bridge_sequence);
-        snprintf(bridge_prefix, sizeof(bridge_prefix), "%s://apply?v=1&request=%s&payload=", appBridgeScheme, request_id);
+        snprintf(bridge_prefix, sizeof(bridge_prefix), "%s://apply?v=%d&request=%s&payload=", appBridgeScheme, g_bridge_inline_protocol, request_id);
         app_log("Bridge request prepared: request=%s, channel=%s, bundleId=%s, legacyScheme=%s",
                 request_id, channel ? channel : "global", bundleId, bridgeScheme);
         id bridge_url_string = ((id (*)(id, SEL, id))objc_msgSend)(
@@ -553,8 +570,8 @@ static void open_roblox_app_channel(const char* channel, id bridge_payload,
         if (bridge_url) {
             ((void (*)(id, SEL, id, id, void*))objc_msgSend)(
                 app, sel_registerName("openURL:options:completionHandler:"),
-                bridge_url, empty_dict, NULL);
-            app_log("Bridge v1 dispatch sent via %s: request=%s", appBridgeScheme, request_id);
+                bridge_url, empty_dict, completion);
+            app_log("Bridge local dispatch sent via %s: request=%s protocol=%d", appBridgeScheme, request_id, g_bridge_inline_protocol);
             return;
         }
     }
@@ -579,10 +596,12 @@ static void open_roblox_app_channel(const char* channel, id bridge_payload,
     if (!opened) {
         id url = ((id (*)(id, SEL, id))objc_msgSend)(NSURL, sel_registerName("URLWithString:"), nsstr(urlScheme));
         if (url) {
-            ((void (*)(id, SEL, id, id, void*))objc_msgSend)(app, sel_registerName("openURL:options:completionHandler:"), url, empty_dict, NULL);
+            ((void (*)(id, SEL, id, id, void*))objc_msgSend)(app, sel_registerName("openURL:options:completionHandler:"), url, empty_dict, completion);
             app_log("Triggered openURL with %s", urlScheme);
+            return;
         }
     }
+    finish_bridge_launch(opened);
 }
 
 static void scriptMessageHandler(id self, SEL _cmd, id userContentController, id message) {
@@ -649,6 +668,14 @@ static void scriptMessageHandler(id self, SEL _cmd, id userContentController, id
     }
 
     if (strcmp(name_str, "launchRoblox") == 0) {
+        if (g_launch_in_flight) { app_log("[BRIDGE][LAUNCH] duplicate ignored"); return; }
+        g_launch_in_flight = true;
+        id app = ((id (*)(id, SEL))objc_msgSend)(objc_getClass("UIApplication"), sel_registerName("sharedApplication"));
+        id target = ((id (*)(id, SEL, id))objc_msgSend)(objc_getClass("NSURL"), sel_registerName("URLWithString:"),
+            nsstr(strcmp(channel_target, "vng") == 0 ? "masterstrap-rbx-vng-bridge-v1://apply" : "masterstrap-rbx-bridge-v1://apply"));
+        if (!app || !target || !((unsigned char (*)(id, SEL, id))objc_msgSend)(app, sel_registerName("canOpenURL:"), target)) {
+            app_log("[BRIDGE][LAUNCH] aborted: patched Roblox scheme unavailable"); finish_bridge_launch(false); return;
+        }
         id bridge_payload = serialize_bridge_payload(body);
         char bridge_v2_request[96] = {0};
         char bridge_v2_ticket[96] = {0};
@@ -660,6 +687,9 @@ static void scriptMessageHandler(id self, SEL _cmd, id userContentController, id
                 body, channel_target,
                 bridge_v2_request, sizeof(bridge_v2_request),
                 bridge_v2_ticket, sizeof(bridge_v2_ticket));
+        }
+        if (!bridge_v2_ready && (!bridge_payload || payload_len > 2048)) {
+            app_log("[BRIDGE][LAUNCH] aborted: complete payload unavailable"); finish_bridge_launch(false); return;
         }
         open_roblox_app_channel(
             channel_target,
@@ -838,7 +868,7 @@ int main(int argc, char *argv[]) {
     if (g_log_file) fclose(g_log_file);
     return ret;
 }
-"""
+""".replace("/* MASTERSTRAP_BRIDGE_CODEC */", (ROOT / "tools" / "ios_bridge_codec.h").read_text(encoding="utf-8"))
 
 
 def compile_native_executable(
@@ -850,6 +880,7 @@ def compile_native_executable(
     c_file = work_dir / "main.m"
     obj_file = work_dir / "main.o"
     c_file.write_text(objc_source, encoding="utf-8")
+    native_options = ["-O0", "-g"] if os.environ.get("MASTERSTRAP_BUILD_TYPE") == "Debug" else ["-O3"]
 
     clang_bin, lld_bin = find_clang_lld()
 
@@ -862,7 +893,7 @@ def compile_native_executable(
         ).strip()
         compile_cmd = [
             "xcrun", "clang", "-target", "arm64-apple-ios14.0",
-            "-isysroot", sdk_path, "-O3", "-c", str(c_file), "-o", str(obj_file)
+            "-isysroot", sdk_path, "-fblocks", *native_options, "-c", str(c_file), "-o", str(obj_file)
         ]
         proc = subprocess.run(compile_cmd, capture_output=True, text=True)
         if proc.returncode != 0:
@@ -942,6 +973,7 @@ def compile_native_executable(
             "xcrun", "clang", "-target", "arm64-apple-ios14.0",
             "-isysroot", sdk_path, *objects, *framework_flags,
             "-Wl,-export_dynamic",
+            "-lz",
             "-Wl,-rpath,/usr/lib/swift",
             "-Wl,-rpath,@executable_path/Frameworks",
             "-o", str(out_bin),
@@ -2001,6 +2033,8 @@ function confirmClearAllFlags() {
         }
     }
     for lang, kvs in translations.items():
+        kvs["msg_license_retry"] = {'vi': 'Máy chủ giấy phép tạm thời không khả dụng. Giữ key đã lưu; thử lại sau.', 'en': 'License service temporarily unavailable. Saved key retained; retry later.', 'es': 'El servicio de licencias no está disponible temporalmente. La clave guardada se conserva; inténtalo más tarde.', 'pt': 'O serviço de licenças está temporariamente indisponível. A chave salva foi mantida; tente mais tarde.', 'ru': 'Сервис лицензий временно недоступен. Сохранённый ключ оставлен; повторите попытку позже.', 'ja': 'ライセンスサービスを一時的に利用できません。保存済みキーは保持されます。後で再試行してください。', 'ko': '라이선스 서비스를 일시적으로 사용할 수 없습니다. 저장된 키는 유지됩니다. 나중에 다시 시도하세요.', 'zh': '许可证服务暂时不可用。已保留保存的密钥；请稍后重试。'}[lang]
+        kvs["msg_launch_failed"] = {'vi': 'Không thể mở Roblox đã sửa hoặc chuyển đủ cấu hình. Kiểm tra cài đặt và mạng rồi thử lại.', 'en': 'Could not open patched Roblox or transfer the complete configuration. Check installation and network, then retry.', 'es': 'No se pudo abrir Roblox modificado o transferir toda la configuración. Revisa la instalación y la red e inténtalo de nuevo.', 'pt': 'Não foi possível abrir o Roblox modificado ou transferir toda a configuração. Verifique a instalação e a rede e tente novamente.', 'ru': 'Не удалось открыть изменённый Roblox или передать всю конфигурацию. Проверьте установку и сеть и повторите попытку.', 'ja': '変更済みRobloxを開くか、設定全体を転送できませんでした。インストールとネットワークを確認して再試行してください。', 'ko': '수정된 Roblox를 열거나 전체 설정을 전송할 수 없습니다. 설치 및 네트워크를 확인하고 다시 시도하세요.', 'zh': '无法打开修改版 Roblox 或传输完整配置。请检查安装和网络后重试。'}[lang]
         lang_marker = f'"{lang}": {{\n'
         entries = []
         for k, v in kvs.items():
@@ -2024,6 +2058,17 @@ function confirmClearAllFlags() {
     // Trigger Full-Screen Rocket Space Launch Animation''',
         "profile request log",
     )
+    replace_required('async function activateLicenseKey() {',
+        'let msLicenseCheckInFlight = false;\nasync function activateLicenseKey() {\n    if (msLicenseCheckInFlight) return;',
+        "license single-flight guard")
+    replace_required('    if (activateBtn) activateBtn.disabled = true;',
+        '    msLicenseCheckInFlight = true;\n    if (activateBtn) activateBtn.disabled = true;', "license begin")
+    replace_required('    } finally {\n        if (activateBtn) activateBtn.disabled = false;',
+        '    } finally {\n        msLicenseCheckInFlight = false;\n        if (activateBtn) activateBtn.disabled = false;', "license finish")
+    replace_required('        if (res.ok && data && data.isValid) {',
+        '        if (res.status === 429 || res.status >= 500 || !data) {\n'
+        '            showToast(getI18nText("msg_license_retry"));\n            return;\n        }\n'
+        '        if (res.ok && data && data.isValid) {', "license transient failure")
     ad_runtime = r'''
 // Native LevelPlay parity contract. Rewarded actions fail closed; the optional
 // editor interstitial fails open, matching the Android policy.
@@ -2324,18 +2369,27 @@ applyGamePresetDirect = function(presetId) {
 
 // Launch Waterfall: Rewarded -> Interstitial fallback
 const msSaveAndLaunch = saveAndLaunch;
+let msLaunchInFlight = false;
+window.msLaunchFinished = function(opened) {
+    msLaunchInFlight = false;
+    if (!opened) showToast(getI18nText("msg_launch_failed"));
+};
 saveAndLaunch = function() {
-    if (!MasterstrapAds.isFree()) return msSaveAndLaunch();
+    if (msLaunchInFlight) return;
+    msLaunchInFlight = true;
+    if (!MasterstrapAds.isFree()) {
+        try { return msSaveAndLaunch(); } catch (error) { window.msLaunchFinished(false); throw error; }
+    }
     showToast("Loading ad...");
     MasterstrapAds.request("rewarded", "roblox_launch", false).then(ok => {
         if (ok) {
             msSaveAndLaunch();
         } else {
-            MasterstrapAds.request("interstitial", "roblox_launch_fallback", true).then(() => {
+            return MasterstrapAds.request("interstitial", "roblox_launch_fallback", true).then(() => {
                 msSaveAndLaunch();
             });
         }
-    });
+    }).catch(() => window.msLaunchFinished(false));
 };
 
 // Cold Start Interstitial Ad (2.5s after open for Free users)
