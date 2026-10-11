@@ -12,6 +12,9 @@ static_assert(sizeof(std::chrono::time_point<std::chrono::system_clock, std::chr
 static Wait original_wait;
 static TimedWait original_timed_wait;
 static std::once_flag prepare_once;
+#ifdef MASTERSTRAP_PACING_TEST
+extern "C" void ms_pacing_test_set_wait(Wait function) { original_wait = function; }
+#endif
 extern "C" unsigned ms_pacing_generation();
 extern "C" void ms_pacing_record(int, uintptr_t, uint64_t, unsigned);
 

@@ -15,6 +15,7 @@ def main():
 #include <system_error>
 #include <cstdint>
 extern "C" int ms_pacing_prepare();
+extern "C" void ms_pacing_test_set_wait(void (*)(std::condition_variable*, std::unique_lock<std::mutex>&));
 extern "C" void ms_condition_wait(std::condition_variable*, std::unique_lock<std::mutex>&);
 extern "C" void ms_condition_timed_wait(std::condition_variable*, std::unique_lock<std::mutex>&,
     std::chrono::time_point<std::chrono::system_clock,std::chrono::nanoseconds>);
@@ -22,6 +23,10 @@ static unsigned counts[2];
 extern "C" unsigned ms_pacing_generation() { return 1; }
 extern "C" void ms_pacing_record(int kind, uintptr_t caller, uint64_t elapsed, unsigned generation) {
     assert(caller && generation == 1 && kind >= 0 && kind <= 1); (void)elapsed; counts[kind]++;
+}
+static void throwing_original(std::condition_variable*, std::unique_lock<std::mutex>& lock) {
+    assert(lock.owns_lock());
+    throw std::system_error(42, std::generic_category());
 }
 int main() {
     assert(ms_pacing_prepare() == 3); assert(ms_pacing_prepare() == 3);
@@ -36,17 +41,16 @@ int main() {
     do { ms_condition_timed_wait(&condition, lock, deadline); } while (std::chrono::system_clock::now() < deadline);
     assert(lock.owns_lock() && counts[1] >= 1);
     assert(std::chrono::system_clock::now() >= deadline);
-    lock.unlock();
-    int expected = 0, observed = 0;
-    try { condition.wait(lock); } catch (const std::system_error& error) { expected = error.code().value(); }
+    ms_pacing_test_set_wait(throwing_original);
+    int observed = 0;
     try { ms_condition_wait(&condition, lock); } catch (const std::system_error& error) { observed = error.code().value(); }
-    assert(expected != 0 && observed == expected);
+    assert(observed == 42 && lock.owns_lock());
 }
 '''
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         (root / 'check.cpp').write_text(harness, encoding='utf-8')
-        subprocess.run(['xcrun', 'clang++', '-std=c++17', str(root / 'check.cpp'), str(Path(__file__).parent / 'ios_pacing_probe.cpp'), '-o', str(root / 'check')], check=True)
+        subprocess.run(['xcrun', 'clang++', '-std=c++17', '-DMASTERSTRAP_PACING_TEST', str(root / 'check.cpp'), str(Path(__file__).parent / 'ios_pacing_probe.cpp'), '-o', str(root / 'check')], check=True)
         subprocess.run([str(root / 'check')], check=True)
     print('PASS pacing probe: real libc++ wait/timeout, mutex ownership, original error propagation and repeat preparation')
 
