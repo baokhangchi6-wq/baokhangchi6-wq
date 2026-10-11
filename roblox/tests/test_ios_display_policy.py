@@ -61,7 +61,7 @@ class DisplayPolicyTests(unittest.TestCase):
         self.assertIn("kEngineIdentityPinned = true", source)
         self.assertIn("41,55,36,201,237,179,49,45,168,99,46,90,114,117,248,93", source)
         worker = source.split("static void* worker_thread", 1)[1]
-        self.assertLess(worker.index("engine_identity_matches(base)"), worker.index("load_dynamic_config_files(base"))
+        self.assertLess(worker.index("engine_identity_matches(base)"), worker.index("complete_runtime_boot(base"))
         self.assertIn("kEngineIdentityPinned = false", self.source)
 
     def test_ipa_profile_failure_is_not_replaced_with_remote_map(self):

@@ -26,7 +26,7 @@ static int g_display_link_rewrite_count;
 static int g_ms_applying;
 static id g_ms_links, g_ms_observer;
 static bool g_ms_idle_owned, g_ms_idle_original;
-typedef struct { bool loaded, refresh, keep_display, boost; int target; } MSDisplayPolicy;
+typedef struct { bool loaded, refresh, keep_display, boost; int target; unsigned session_generation; } MSDisplayPolicy;
 static MSDisplayPolicy g_ms_policy;
 static unsigned g_ms_generation;
 static char g_ms_link_request_key;
@@ -254,6 +254,7 @@ static void ms_refresh_links(const char* source) {
 }
 static void ms_environment_main(void* ignored) {
     (void)ignored;
+    SESSION_LOCK;
     if (!g_ms_policy.loaded) return;
     g_display_link_rewrite_count = 0;
     runtime_note("[LIFECYCLE][DISPLAY] lowPower=%d thermal=%d screenMax=%d", ms_low_power(), ms_thermal(), ios_maximum_frames_per_second());
@@ -681,7 +682,9 @@ static bool install_metal_layer_stretch_policy(void) {
 }
 
 static void ms_apply_process_main(void* context) {
+    SESSION_LOCK;
     MSDisplayPolicy* snapshot = context;
+    if (snapshot->session_generation != g_session_apply_count) { free(snapshot); return; }
     g_ms_policy = *snapshot;
     free(snapshot);
     ++g_ms_generation;
@@ -709,6 +712,6 @@ static void ms_apply_process_main(void* context) {
 static void apply_ios_process_policies(void) {
     MSDisplayPolicy* snapshot = malloc(sizeof(*snapshot));
     if (!snapshot) { runtime_note("[APPLY][BOOST] status=FAILED reason=allocation"); return; }
-    *snapshot = (MSDisplayPolicy){g_profile_loaded, g_refresh_requested, g_keep_display_active, g_game_mode_enabled, g_target_fps};
+    *snapshot = (MSDisplayPolicy){g_profile_loaded, g_refresh_requested, g_keep_display_active, g_game_mode_enabled, g_target_fps, g_session_apply_count};
     dispatch_async_f(&_dispatch_main_q, snapshot, ms_apply_process_main);
 }

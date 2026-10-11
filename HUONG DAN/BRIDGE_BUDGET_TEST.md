@@ -21,6 +21,11 @@
 
 ## Optimization rules
 
+- Runtime keeps a retained immutable launch envelope behind a native lock. Engine base discovery is separate from boot completion; one shared apply gate handles cold/warm imports and worker completion.
+- A valid snapshot remains the configuration source after its files are consumed. Baseline cannot replace snapshot flags; persistence skips baseline slots owned by the user, and the FPS profile owns its scheduler target.
+- Authorization files are removed after apply. Receipts record request/applied request, `BRIDGE_SNAPSHOT`, and the apply count; a leftover authorization file alone does not authorize a fresh process.
+- The macOS test executes boot before import, after import and on a concurrent thread. It checks full profile contents, actual bool/int memory values, warm update, duplicate request, stale authorization and zero HTTP calls.
+
 - Success means every supplied profile imported intact, not only fewer SQL calls or `openURL=1`.
 - Save/toggle/idle stays local. Do not add bridge polling or licence CHECK to a slider, timer or launch.
 - Bound and compress the whole envelope. Keep flag JSON, FPS/stretch profile, XML, font and shader documents; never drop a profile to fit a URL.
