@@ -35,6 +35,20 @@ static void display_callback_hook(id self, SEL selector, id link, IMP original) 
     ms_probe_record(4, 0); /* Display callback count, not an engine FPS claim. */
     ((void (*)(id, SEL, id))original)(self, selector, link);
 }
+static void display_callback_no_arg_hook(id self, SEL selector, IMP original) {
+    ms_probe_record(4, 0);
+    ((void (*)(id, SEL))original)(self, selector);
+}
+static void ms_install_display_callback(id target, SEL selector) {
+    extern const char* sel_getName(SEL);
+    if (!target || !selector) return;
+    Class cls = object_getClass(target);
+    Method method = class_getInstanceMethod(cls, selector);
+    const char* name = sel_getName(selector);
+    if (ms_method_abi_matches(method, "v@:@")) ms_hook_instance_method(cls, name, (IMP)display_callback_hook, "v@:@");
+    else if (ms_method_abi_matches(method, "v@:")) ms_hook_instance_method(cls, name, (IMP)display_callback_no_arg_hook, "v@:");
+    else ms_hook_instance_method(cls, name, (IMP)display_callback_hook, "v@:@"); /* records rejection */
+}
 static char g_ms_link_request_key;
 typedef struct { long fps; MSFrameRateRange range; int has_range, managed; } MSLinkRequest;
 static void write_runtime_capability_receipt(void);
@@ -211,8 +225,7 @@ static void display_link_set_range_hook(id self, SEL cmd, MSFrameRateRange reque
 }
 static id display_link_create_hook(id self, SEL cmd, id target, SEL selector) {
     id link = g_original_display_link_create ? g_original_display_link_create(self, cmd, target, selector) : NULL;
-    extern const char* sel_getName(SEL);
-    if (target && selector) ms_hook_instance_method(object_getClass(target), sel_getName(selector), (IMP)display_callback_hook, "v@:@");
+    ms_install_display_callback(target, selector);
     ms_track_link(link);
     apply_display_link_policy(link, "displayLinkWithTarget");
     return link;
@@ -367,7 +380,7 @@ static unsigned g_probe_generation;
 static double g_probe_started, g_probe_wait_sum, g_probe_wait_max;
 static unsigned long g_probe_drawables, g_probe_scheduled, g_probe_presented, g_probe_commits, g_probe_callbacks, g_probe_completed, g_probe_gpu_valid, g_probe_wait_completed, g_probe_wait_scheduled;
 static double g_probe_gpu_sum, g_probe_completion_wait, g_probe_scheduling_wait;
-typedef struct { double elapsed, draws, scheduled, presented, average, maximum, commits, callbacks, completed, gpu, completion_wait, scheduling_wait; int target, hardware, power; unsigned generation; char request[96]; } MSFrameSample;
+typedef struct { double elapsed, draws, scheduled, presented, average, maximum, commits, callbacks, completed, gpu, completion_wait, scheduling_wait; int target, hardware, power; unsigned generation; char request[96]; unsigned long gpu_samples; } MSFrameSample;
 static double ms_probe_time(void) {
     id info = ms_process_info();
     return info ? ((double (*)(id, SEL))objc_msgSend)(info, sel_registerName("systemUptime")) : 0;
@@ -407,12 +420,12 @@ static void ms_probe_write_main(void* context) {
     if (sample.generation != g_ms_policy.session_generation) return;
     runtime_note("[FPS][MEASURED] windowSeconds=%.2f target=%d drawableCallsPerSecond=%.1f scheduledPerSecond=%.1f presentedPerSecond=%.1f nextDrawableWaitAverageMs=%.3f nextDrawableWaitMaximumMs=%.3f hardwareMaximum=%d lowPowerActual=%d",
         sample.elapsed, sample.target, sample.draws, sample.scheduled, sample.presented, sample.average, sample.maximum, sample.hardware, sample.power);
-    runtime_note("[FPS][PIPELINE] request=%s pid=%d displayCallbacksPerSecond=%.1f commitsPerSecond=%.1f completedPerSecond=%.1f gpuAverageMs=%.3f waitUntilCompletedAverageMs=%.3f waitUntilScheduledAverageMs=%.3f scope=OBSERVED_METAL engineFps=UNMEASURED",
-        sample.request, getpid(), sample.callbacks, sample.commits, sample.completed, sample.gpu, sample.completion_wait, sample.scheduling_wait);
+    runtime_note("[FPS][PIPELINE] request=%s pid=%d displayCallbacksPerSecond=%.1f commitsPerSecond=%.1f completedPerSecond=%.1f gpuAverageMs=%.3f gpuTimingSamples=%lu waitUntilCompletedAverageMs=%.3f waitUntilScheduledAverageMs=%.3f scope=OBSERVED_METAL engineFps=UNMEASURED",
+        sample.request, getpid(), sample.callbacks, sample.commits, sample.completed, sample.gpu, sample.gpu_samples, sample.completion_wait, sample.scheduling_wait);
     char content[2048];
-    snprintf(content, sizeof(content), "{\"schema\":2,\"generatedAtUnix\":%ld,\"request\":\"%s\",\"pid\":%d,\"windowSeconds\":%.3f,\"targetFps\":%d,\"drawableCallsPerSecond\":%.3f,\"scheduledPerSecond\":%.3f,\"presentedPerSecond\":%.3f,\"nextDrawableWaitAverageMs\":%.3f,\"nextDrawableWaitMaximumMs\":%.3f,\"hardwareMaximumFps\":%d,\"lowPowerActual\":%s,\"displayCallbacksPerSecond\":%.3f,\"commitsPerSecond\":%.3f,\"completedPerSecond\":%.3f,\"gpuAverageMs\":%.3f,\"waitUntilCompletedAverageMs\":%.3f,\"waitUntilScheduledAverageMs\":%.3f,\"engineFps\":null,\"scope\":\"observed-metal-and-display-callbacks\"}\n",
+    snprintf(content, sizeof(content), "{\"schema\":2,\"generatedAtUnix\":%ld,\"request\":\"%s\",\"pid\":%d,\"windowSeconds\":%.3f,\"targetFps\":%d,\"drawableCallsPerSecond\":%.3f,\"scheduledPerSecond\":%.3f,\"presentedPerSecond\":%.3f,\"nextDrawableWaitAverageMs\":%.3f,\"nextDrawableWaitMaximumMs\":%.3f,\"hardwareMaximumFps\":%d,\"lowPowerActual\":%s,\"displayCallbacksPerSecond\":%.3f,\"commitsPerSecond\":%.3f,\"completedPerSecond\":%.3f,\"gpuAverageMs\":%.3f,\"gpuTimingSamples\":%lu,\"waitUntilCompletedAverageMs\":%.3f,\"waitUntilScheduledAverageMs\":%.3f,\"engineFps\":null,\"scope\":\"observed-metal-and-display-callbacks\"}\n",
         time(NULL), sample.request, getpid(), sample.elapsed, sample.target, sample.draws, sample.scheduled, sample.presented, sample.average, sample.maximum, sample.hardware, sample.power ? "true" : "false",
-        sample.callbacks, sample.commits, sample.completed, sample.gpu, sample.completion_wait, sample.scheduling_wait);
+        sample.callbacks, sample.commits, sample.completed, sample.gpu, sample.gpu_samples, sample.completion_wait, sample.scheduling_wait);
     bridge_write_document("MasterstrapFrameReceipt.json", content);
 }
 static void ms_probe_record(int event, double wait) {
@@ -442,7 +455,7 @@ static void ms_probe_record(int event, double wait) {
         g_probe_gpu_valid ? g_probe_gpu_sum * 1000 / g_probe_gpu_valid : 0,
         g_probe_wait_completed ? g_probe_completion_wait * 1000 / g_probe_wait_completed : 0,
         g_probe_wait_scheduled ? g_probe_scheduling_wait * 1000 / g_probe_wait_scheduled : 0,
-        g_probe_target, g_probe_hardware, g_probe_power, g_probe_generation, {0}};
+        g_probe_target, g_probe_hardware, g_probe_power, g_probe_generation, {0}, g_probe_gpu_valid};
         snprintf(sample->request, sizeof(sample->request), "%s", g_probe_request);
     }
     g_probe_commits = g_probe_callbacks = g_probe_completed = g_probe_gpu_valid = g_probe_wait_completed = g_probe_wait_scheduled = 0;
@@ -554,7 +567,6 @@ static void ms_install_metal_protocol_hooks(void) {
     void* buffer = objc_getProtocol("MTLCommandBuffer");
     void* queue = objc_getProtocol("MTLCommandQueue");
     void* drawable = objc_getProtocol("MTLDrawable");
-    if (!buffer || !queue || !drawable) return;
     int count = objc_getClassList(NULL, 0);
     if (count <= 0 || count > 65536) return;
     Class* classes = malloc((size_t)count * sizeof(Class));
@@ -562,11 +574,58 @@ static void ms_install_metal_protocol_hooks(void) {
     int found = objc_getClassList(classes, count);
     if (found > count) found = count;
     for (int i = 0; i < found; i++) {
-        if (class_conformsToProtocol(classes[i], buffer)) ms_install_command_buffer_class(classes[i]);
-        if (class_conformsToProtocol(classes[i], queue)) ms_install_command_queue_class(classes[i]);
-        if (class_conformsToProtocol(classes[i], drawable)) ms_install_drawable_class(classes[i]);
+        if (buffer && class_conformsToProtocol(classes[i], buffer)) ms_install_command_buffer_class(classes[i]);
+        if (queue && class_conformsToProtocol(classes[i], queue)) ms_install_command_queue_class(classes[i]);
+        if (drawable && class_conformsToProtocol(classes[i], drawable)) ms_install_drawable_class(classes[i]);
     }
     free(classes);
+    runtime_note("[METAL][DISCOVERY] source=PROTOCOL_SNAPSHOT bufferProtocol=%d queueProtocol=%d drawableProtocol=%d classes=%d", buffer != NULL, queue != NULL, drawable != NULL, found);
+}
+
+static id device_queue_hook(id self, SEL cmd, IMP original) {
+    id queue = ((id (*)(id, SEL))original)(self, cmd);
+    if (queue) ms_install_command_queue_class(object_getClass(queue));
+    return queue;
+}
+static id device_queue_count_hook(id self, SEL cmd, unsigned long count, IMP original) {
+    id queue = ((id (*)(id, SEL, unsigned long))original)(self, cmd, count);
+    if (queue) ms_install_command_queue_class(object_getClass(queue));
+    return queue;
+}
+static id device_queue_descriptor_hook(id self, SEL cmd, id descriptor, IMP original) {
+    id queue = ((id (*)(id, SEL, id))original)(self, cmd, descriptor);
+    if (queue) ms_install_command_queue_class(object_getClass(queue));
+    return queue;
+}
+static char g_ms_device_discovered_key;
+static os_unfair_lock g_ms_discovery_lock = OS_UNFAIR_LOCK_INIT;
+static void ms_observe_metal_device(id device) {
+    if (!device) return;
+    os_unfair_lock_lock(&g_ms_discovery_lock);
+    bool first = objc_getAssociatedObject(device, &g_ms_device_discovered_key) == NULL;
+    if (first) objc_setAssociatedObject(device, &g_ms_device_discovered_key, (id)1, 0);
+    os_unfair_lock_unlock(&g_ms_discovery_lock);
+    if (!first) return;
+    extern void* objc_autoreleasePoolPush(void);
+    extern void objc_autoreleasePoolPop(void*);
+    void* pool = objc_autoreleasePoolPush();
+    Class cls = object_getClass(device);
+    bool factory = ms_hook_instance_method(cls, "newCommandQueue", (IMP)device_queue_hook, "@@:");
+    ms_hook_instance_method(cls, "newCommandQueueWithMaxCommandBufferCount:", (IMP)device_queue_count_hook, "@@:Q");
+    ms_hook_instance_method(cls, "newCommandQueueWithDescriptor:", (IMP)device_queue_descriptor_hook, "@@:@");
+    id queue = factory ? ((id (*)(id, SEL))objc_msgSend)(device, sel_registerName("newCommandQueue")) : NULL;
+    if (queue) {
+        ms_install_command_queue_class(object_getClass(queue));
+        SEL create = sel_registerName("commandBuffer");
+        if (ms_method_abi_matches(class_getInstanceMethod(object_getClass(queue), create), "@@:")) {
+            id buffer = ((id (*)(id, SEL))objc_msgSend)(queue, create);
+            if (buffer) ms_install_command_buffer_class(object_getClass(buffer));
+        }
+        ((void (*)(id, SEL))objc_msgSend)(queue, sel_registerName("release"));
+    }
+    ms_install_metal_protocol_hooks(); /* once per observed device, after lazy driver loading */
+    runtime_note("[METAL][DISCOVERY] source=OBSERVED_LAYER_DEVICE class=%s factory=%d queueObserved=%d presentHookInstalled=%d probeCommit=0", class_getName(cls), factory, queue != NULL, g_ms_metal_present_hook_installed);
+    objc_autoreleasePoolPop(pool);
 }
 
 static void ms_apply_metal_layer_policies(id layer) {
@@ -595,6 +654,9 @@ static void ms_apply_metal_layer_policies(id layer) {
 
 static inline void ms_ensure_layer_vsync_uncapped(id layer) {
     if (!layer || !fps_runtime_requested()) return;
+    SEL device = sel_registerName("device");
+    if (((unsigned char (*)(id, SEL, SEL))objc_msgSend)(layer, sel_registerName("respondsToSelector:"), device))
+        ms_observe_metal_device(((id (*)(id, SEL))objc_msgSend)(layer, device));
     if (objc_getAssociatedObject(layer, &g_ms_layer_uncapped_key)) return;
 
     ms_apply_metal_layer_policies(layer);

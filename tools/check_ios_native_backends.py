@@ -20,6 +20,15 @@ static void test_void_hook(id self, SEL cmd, IMP original) {
 }
 int test_hook_class(void* cls, const char* name) { return ms_hook_instance_method(cls, name, (IMP)test_void_hook, "v@:"); }
 unsigned test_hook_count(void) { return test_hook_calls; }
+void test_observe_device(void* device) {
+    g_probe_enabled = true;
+    g_probe_started = ms_probe_time();
+    ms_observe_metal_device(device);
+}
+int test_pipeline(unsigned commits, unsigned completed, unsigned presents) {
+    return g_probe_commits == commits && g_probe_completed == completed && g_probe_scheduled == presents;
+}
+unsigned test_method_count(void) { return g_ms_method_hook_count; }
 int test_range_target(int target) {
     g_launch_authorized = g_profile_loaded = true;
     g_target_fps = target;
@@ -48,6 +57,9 @@ int test_font_rebind(void* page) { return font_rebind_slot((uintptr_t)page, 8, (
 #include <mach/mach_vm.h>
 extern int test_hook_class(void*, const char*);
 extern unsigned test_hook_count(void);
+extern void test_observe_device(void*);
+extern int test_pipeline(unsigned, unsigned, unsigned);
+extern unsigned test_method_count(void);
 extern int test_range_target(int);
 extern void test_font_paths(const char*, const char*);
 extern void* test_font_read(const char*, const char*);
@@ -68,6 +80,38 @@ static unsigned rootCalls, childCalls;
 @interface MSBackendOverride : MSBackendRoot @end
 @implementation MSBackendOverride
 - (void)step { childCalls++; [super step]; }
+@end
+static unsigned commits, directPresents, delayedPresents;
+@interface MSLateBuffer : NSObject { void (^completion)(id); }
+- (void)commit;
+- (void)presentDrawable:(id)drawable;
+- (void)presentDrawable:(id)drawable atTime:(double)time;
+- (void)addCompletedHandler:(void (^)(id))handler;
+- (double)GPUStartTime;
+- (double)GPUEndTime;
+@end
+@implementation MSLateBuffer
+- (void)commit { commits++; if (completion) completion(self); }
+- (void)presentDrawable:(id)drawable { (void)drawable; directPresents++; }
+- (void)presentDrawable:(id)drawable atTime:(double)time { (void)drawable; (void)time; delayedPresents++; }
+- (void)addCompletedHandler:(void (^)(id))handler { [completion release]; completion = [handler copy]; }
+- (double)GPUStartTime { return 1.0; }
+- (double)GPUEndTime { return 1.003; }
+- (void)dealloc { [completion release]; [super dealloc]; }
+@end
+@interface MSLateQueue : NSObject
+- (id)commandBuffer;
+@end
+@implementation MSLateQueue
+- (id)commandBuffer { return [[MSLateBuffer new] autorelease]; }
+@end
+@interface MSLateDevice : NSObject
+- (id)newCommandQueue;
+- (id)newCommandQueueWithMaxCommandBufferCount:(unsigned long)count;
+@end
+@implementation MSLateDevice
+- (id)newCommandQueue { return [MSLateQueue new]; }
+- (id)newCommandQueueWithMaxCommandBufferCount:(unsigned long)count { (void)count; return [MSLateQueue new]; }
 @end
 static NSString* makeFile(NSString* root, NSString* name, NSString* value) {
     NSString* path = [root stringByAppendingPathComponent:name];
@@ -92,6 +136,17 @@ int main(void) { @autoreleasepool {
     [override step]; assert(rootCalls == 3 && childCalls == 1 && test_hook_count() == 3);
     assert(!test_hook_class([MSBackendRoot class], "wrong")); assert([root wrong] == 42);
     assert(test_range_target(60)); assert(test_range_target(2000));
+    MSLateDevice* device = [MSLateDevice new]; // no Metal protocols; concrete late discovery must work
+    test_observe_device(device);
+    assert(commits == 0 && test_pipeline(0, 0, 0)); // bootstrap cannot submit GPU work
+    unsigned methodCount = test_method_count();
+    test_observe_device(device); assert(test_method_count() == methodCount);
+    MSLateQueue* queue = [device newCommandQueueWithMaxCommandBufferCount:3];
+    MSLateBuffer* buffer = [queue commandBuffer];
+    [buffer presentDrawable:root atTime:99];
+    assert(directPresents == 1 && delayedPresents == 0 && test_pipeline(0, 0, 1));
+    [buffer commit]; assert(commits == 1 && test_pipeline(1, 1, 1));
+    [queue release]; [device release];
     NSString* directory = [NSString stringWithUTF8String:getenv("HOME")];
     NSString* fonts = [directory stringByAppendingPathComponent:@"content/fonts/families"];
     assert([[NSFileManager defaultManager] createDirectoryAtPath:fonts withIntermediateDirectories:YES attributes:nil error:NULL]);

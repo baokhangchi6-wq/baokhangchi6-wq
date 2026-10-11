@@ -8,6 +8,7 @@ typedef struct { Class cls; SEL selector; IMP original, hook; } MSMethodHook;
 static MSMethodHook g_ms_method_hooks[256];
 /* ponytail: 256 class/selector pairs; increase only after coverage reports exhaustion. */
 static unsigned g_ms_method_hook_count;
+static unsigned g_ms_method_rejections;
 static os_unfair_lock g_ms_method_hook_lock = OS_UNFAIR_LOCK_INIT;
 
 static bool ms_method_abi_matches(Method method, const char* signature) {
@@ -33,7 +34,12 @@ static bool ms_hook_instance_method(Class cls, const char* name, IMP handler, co
         }
     Method method = class_getInstanceMethod(cls, selector);
     if (!ms_method_abi_matches(method, signature) || g_ms_method_hook_count == 256) {
-        os_unfair_lock_unlock(&g_ms_method_hook_lock); return false;
+        unsigned note = g_ms_method_rejections++;
+        const char* reason = !method ? "SELECTOR_MISSING" : g_ms_method_hook_count == 256 ? "CAPACITY" : "ABI_MISMATCH";
+        const char* encoding = method ? method_getTypeEncoding(method) : "none";
+        os_unfair_lock_unlock(&g_ms_method_hook_lock);
+        if (note < 64) runtime_note("[HOOK][REJECT] class=%s selector=%s expected=%s actual=%s reason=%s", class_getName(cls), name, signature, encoding, reason);
+        return false;
     }
     IMP original = method_getImplementation(method);
     if (!original) { os_unfair_lock_unlock(&g_ms_method_hook_lock); return false; }
@@ -47,6 +53,8 @@ static bool ms_hook_instance_method(Class cls, const char* name, IMP handler, co
         replacement = imp_implementationWithBlock((id)^(id self) { return ((id (*)(id, SEL, IMP))handler)(self, selector, original); });
     else if (strcmp(signature, "@@:@") == 0)
         replacement = imp_implementationWithBlock((id)^(id self, id arg) { return ((id (*)(id, SEL, id, IMP))handler)(self, selector, arg, original); });
+    else if (strcmp(signature, "@@:Q") == 0)
+        replacement = imp_implementationWithBlock((id)^(id self, unsigned long arg) { return ((id (*)(id, SEL, unsigned long, IMP))handler)(self, selector, arg, original); });
     else if (strcmp(signature, "v@:") == 0)
         replacement = imp_implementationWithBlock((id)^(id self) { ((void (*)(id, SEL, IMP))handler)(self, selector, original); });
     else if (strcmp(signature, "v@:@") == 0)
