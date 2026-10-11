@@ -8,14 +8,28 @@ extern int mach_port_deallocate(unsigned int, unsigned int);
 static os_unfair_lock g_font_assets_lock = OS_UNFAIR_LOCK_INIT;
 static char g_font_assets_root[1024], g_font_target_path[1024];
 static unsigned g_font_imports_installed, g_font_remap_count;
+static void font_write_receipt_main(void* unused) {
+    (void)unused;
+    SESSION_LOCK;
+    os_unfair_lock_lock(&g_font_assets_lock);
+    bool configured = g_font_target_path[0] != 0;
+    os_unfair_lock_unlock(&g_font_assets_lock);
+    unsigned remaps = __atomic_load_n(&g_font_remap_count, __ATOMIC_RELAXED);
+    char content[768];
+    snprintf(content, sizeof(content), "{\"schema\":1,\"generatedAtUnix\":%ld,\"request\":\"%s\",\"configured\":%s,\"importsInstalled\":%u,\"remapCount\":%u,\"familyStatus\":\"%s\",\"sizeStep\":%d,\"sizeStatus\":\"%s\",\"visualVerified\":false}\n",
+        time(NULL), g_applied_request, configured ? "true" : "false", g_font_imports_installed, remaps,
+        remaps ? "OBSERVED_ASSET_REMAP" : configured ? "REQUIRES_DEVICE_READBACK" : "PASSTHROUGH",
+        g_font_size_step, g_font_size_step ? "UNSUPPORTED_KEEP_ORIGINAL" : "UNCHANGED");
+    bridge_write_document("MasterstrapFontReceipt.json", content);
+}
 
 static bool font_redirect_path(const char* path, char* output, size_t capacity) {
-    if (!path || !output || capacity < 1024) return false;
+    if (!path || !output || capacity < 1024 || !strstr(path, "/fonts/families/")) return false;
     bool redirect = false;
     os_unfair_lock_lock(&g_font_assets_lock);
     size_t root_length = strlen(g_font_assets_root);
     char canonical[1024];
-    if (g_font_target_path[0] && root_length && strstr(path, "/fonts/families/") && realpath(path, canonical) &&
+    if (g_font_target_path[0] && root_length && realpath(path, canonical) &&
         strncmp(canonical, g_font_assets_root, root_length) == 0) {
         const char* name = canonical + root_length;
         bool stock = false;
@@ -32,7 +46,10 @@ static bool font_redirect_path(const char* path, char* output, size_t capacity) 
 }
 static void font_note_remap(void) {
     unsigned count = __atomic_add_fetch(&g_font_remap_count, 1, __ATOMIC_RELAXED);
-    if (count <= 16) runtime_note("[FONT][ASSET] remapped=1 sample=%u scope=ROBLOXLIB_STOCK_FAMILY", count);
+    if (count <= 16) {
+        runtime_note("[FONT][ASSET] remapped=1 sample=%u scope=ROBLOXLIB_STOCK_FAMILY", count);
+        dispatch_async_f(&_dispatch_main_q, NULL, font_write_receipt_main);
+    }
 }
 static void* font_fopen_hook(const char* path, const char* mode) {
     char target[1024];
@@ -83,6 +100,7 @@ static void apply_font_asset_profile(uintptr_t base) {
             if (strcmp(g_font_family, kFontCatalog[i].name) == 0) target = kFontCatalog[i].asset;
     os_unfair_lock_lock(&g_font_assets_lock);
     g_font_target_path[0] = 0;
+    __atomic_store_n(&g_font_remap_count, 0, __ATOMIC_RELAXED);
     if (target && base && kEngineIdentityPinned && engine_identity_matches(base)) {
         const char* engine = NULL;
         for (uint32_t i = 0; i < _dyld_image_count(); i++)
@@ -110,6 +128,7 @@ static void apply_font_asset_profile(uintptr_t base) {
     }
     bool ready = g_font_target_path[0] != 0;
     os_unfair_lock_unlock(&g_font_assets_lock);
+    dispatch_async_f(&_dispatch_main_q, NULL, font_write_receipt_main);
     runtime_note("[CAPABILITY][FONT] backend=engine-import-stock-family-v1 status=%s family=%s sizeStep=%d sizeBackend=%s imports=%u runtimeEffect=REQUIRES_DEVICE_READBACK",
         ready ? "READY" : target ? "UNAVAILABLE" : "DEFAULT_PASSTHROUGH", g_font_family, g_font_size_step,
         g_font_size_step ? "UNSUPPORTED_KEEP_ORIGINAL" : "UNCHANGED", g_font_imports_installed);

@@ -36,7 +36,7 @@ class DisplayPolicyTests(unittest.TestCase):
         for marker in ("NSProcessInfoPowerStateDidChangeNotification",
                        "NSProcessInfoThermalStateDidChangeNotification",
                        "UIApplicationDidBecomeActiveNotification", "g_ms_idle_original",
-                       "RESTORED_NATIVE_REQUEST", "ms_capture_link_request(self)"):
+                       "RESTORED_NATIVE_REQUEST", "state.range = requested", "state.fps = requested"):
             self.assertIn(marker, self.source)
 
     def test_logs_do_not_claim_presented_fps_or_complete_boost(self):

@@ -105,9 +105,7 @@ static inline MSFrameRateRange sanitize_frame_rate_range(MSFrameRateRange range)
     return range;
 }
 static MSFrameRateRange ms_target_range(void) {
-    int screen_max = ios_maximum_frames_per_second();
-    if (screen_max <= 0) screen_max = 10000;
-    float max_limit = (float)screen_max;
+    float max_limit = (float)fps_runtime_target();
     return sanitize_frame_rate_range((MSFrameRateRange){max_limit, max_limit, max_limit});
 }
 static bool ms_get_link_request(id link, MSLinkRequest* request) {
@@ -180,6 +178,11 @@ static void apply_display_link_policy(id link, const char* source) {
     g_ms_applying = 0;
 }
 static void display_link_set_fps_hook(id self, SEL cmd, long requested) {
+    if (pthread_main_np() && !g_ms_applying) {
+        ms_track_link(self);
+        MSLinkRequest state;
+        if (ms_get_link_request(self, &state)) { state.fps = requested; ms_store_link_request(self, &state); }
+    }
     if (fps_runtime_requested()) {
         requested = fps_runtime_target();
     }
@@ -188,10 +191,14 @@ static void display_link_set_fps_hook(id self, SEL cmd, long requested) {
         return;
     }
     ms_track_link(self);
-    ms_capture_link_request(self);
     apply_display_link_policy(self, "fps-setter");
 }
 static void display_link_set_range_hook(id self, SEL cmd, MSFrameRateRange requested) {
+    if (pthread_main_np() && !g_ms_applying) {
+        ms_track_link(self);
+        MSLinkRequest state;
+        if (ms_get_link_request(self, &state)) { state.range = requested; state.has_range = 1; ms_store_link_request(self, &state); }
+    }
     if (fps_runtime_requested()) {
         requested = ms_target_range();
     }
@@ -200,7 +207,6 @@ static void display_link_set_range_hook(id self, SEL cmd, MSFrameRateRange reque
         return;
     }
     ms_track_link(self);
-    ms_capture_link_request(self);
     apply_display_link_policy(self, "range-setter");
 }
 static id display_link_create_hook(id self, SEL cmd, id target, SEL selector) {
@@ -356,10 +362,12 @@ static char g_ms_layer_uncapped_key;
 static os_unfair_lock g_frame_probe_lock = OS_UNFAIR_LOCK_INIT;
 static int g_probe_hardware, g_probe_power, g_probe_target;
 static bool g_probe_enabled;
+static char g_probe_request[96];
+static unsigned g_probe_generation;
 static double g_probe_started, g_probe_wait_sum, g_probe_wait_max;
 static unsigned long g_probe_drawables, g_probe_scheduled, g_probe_presented, g_probe_commits, g_probe_callbacks, g_probe_completed, g_probe_gpu_valid, g_probe_wait_completed, g_probe_wait_scheduled;
 static double g_probe_gpu_sum, g_probe_completion_wait, g_probe_scheduling_wait;
-typedef struct { double elapsed, draws, scheduled, presented, average, maximum, commits, callbacks, completed, gpu, completion_wait, scheduling_wait; int target, hardware, power; } MSFrameSample;
+typedef struct { double elapsed, draws, scheduled, presented, average, maximum, commits, callbacks, completed, gpu, completion_wait, scheduling_wait; int target, hardware, power; unsigned generation; char request[96]; } MSFrameSample;
 static double ms_probe_time(void) {
     id info = ms_process_info();
     return info ? ((double (*)(id, SEL))objc_msgSend)(info, sel_registerName("systemUptime")) : 0;
@@ -384,6 +392,8 @@ static void ms_update_probe_environment(void) {
     g_probe_power = power;
     g_probe_target = g_ms_policy.target;
     g_probe_enabled = g_ms_policy.loaded;
+    g_probe_generation = g_ms_policy.session_generation;
+    snprintf(g_probe_request, sizeof(g_probe_request), "%s", g_applied_request);
     g_probe_started = 0;
     g_probe_drawables = g_probe_scheduled = g_probe_presented = 0;
     g_probe_commits = g_probe_callbacks = g_probe_completed = g_probe_gpu_valid = g_probe_wait_completed = g_probe_wait_scheduled = 0;
@@ -394,13 +404,14 @@ static void ms_update_probe_environment(void) {
 static void ms_probe_write_main(void* context) {
     MSFrameSample sample = *(MSFrameSample*)context;
     free(context);
+    if (sample.generation != g_ms_policy.session_generation) return;
     runtime_note("[FPS][MEASURED] windowSeconds=%.2f target=%d drawableCallsPerSecond=%.1f scheduledPerSecond=%.1f presentedPerSecond=%.1f nextDrawableWaitAverageMs=%.3f nextDrawableWaitMaximumMs=%.3f hardwareMaximum=%d lowPowerActual=%d",
         sample.elapsed, sample.target, sample.draws, sample.scheduled, sample.presented, sample.average, sample.maximum, sample.hardware, sample.power);
-    runtime_note("[FPS][PIPELINE] displayCallbacksPerSecond=%.1f commitsPerSecond=%.1f completedPerSecond=%.1f gpuAverageMs=%.3f waitUntilCompletedAverageMs=%.3f waitUntilScheduledAverageMs=%.3f scope=OBSERVED_METAL engineFps=UNMEASURED",
-        sample.callbacks, sample.commits, sample.completed, sample.gpu, sample.completion_wait, sample.scheduling_wait);
+    runtime_note("[FPS][PIPELINE] request=%s pid=%d displayCallbacksPerSecond=%.1f commitsPerSecond=%.1f completedPerSecond=%.1f gpuAverageMs=%.3f waitUntilCompletedAverageMs=%.3f waitUntilScheduledAverageMs=%.3f scope=OBSERVED_METAL engineFps=UNMEASURED",
+        sample.request, getpid(), sample.callbacks, sample.commits, sample.completed, sample.gpu, sample.completion_wait, sample.scheduling_wait);
     char content[2048];
-    snprintf(content, sizeof(content), "{\"schema\":2,\"generatedAtUnix\":%ld,\"windowSeconds\":%.3f,\"targetFps\":%d,\"drawableCallsPerSecond\":%.3f,\"scheduledPerSecond\":%.3f,\"presentedPerSecond\":%.3f,\"nextDrawableWaitAverageMs\":%.3f,\"nextDrawableWaitMaximumMs\":%.3f,\"hardwareMaximumFps\":%d,\"lowPowerActual\":%s,\"displayCallbacksPerSecond\":%.3f,\"commitsPerSecond\":%.3f,\"completedPerSecond\":%.3f,\"gpuAverageMs\":%.3f,\"waitUntilCompletedAverageMs\":%.3f,\"waitUntilScheduledAverageMs\":%.3f,\"engineFps\":null,\"scope\":\"observed-metal-and-display-callbacks\"}\n",
-        time(NULL), sample.elapsed, sample.target, sample.draws, sample.scheduled, sample.presented, sample.average, sample.maximum, sample.hardware, sample.power ? "true" : "false",
+    snprintf(content, sizeof(content), "{\"schema\":2,\"generatedAtUnix\":%ld,\"request\":\"%s\",\"pid\":%d,\"windowSeconds\":%.3f,\"targetFps\":%d,\"drawableCallsPerSecond\":%.3f,\"scheduledPerSecond\":%.3f,\"presentedPerSecond\":%.3f,\"nextDrawableWaitAverageMs\":%.3f,\"nextDrawableWaitMaximumMs\":%.3f,\"hardwareMaximumFps\":%d,\"lowPowerActual\":%s,\"displayCallbacksPerSecond\":%.3f,\"commitsPerSecond\":%.3f,\"completedPerSecond\":%.3f,\"gpuAverageMs\":%.3f,\"waitUntilCompletedAverageMs\":%.3f,\"waitUntilScheduledAverageMs\":%.3f,\"engineFps\":null,\"scope\":\"observed-metal-and-display-callbacks\"}\n",
+        time(NULL), sample.request, getpid(), sample.elapsed, sample.target, sample.draws, sample.scheduled, sample.presented, sample.average, sample.maximum, sample.hardware, sample.power ? "true" : "false",
         sample.callbacks, sample.commits, sample.completed, sample.gpu, sample.completion_wait, sample.scheduling_wait);
     bridge_write_document("MasterstrapFrameReceipt.json", content);
 }
@@ -425,12 +436,15 @@ static void ms_probe_record(int event, double wait) {
     double maximum = g_probe_wait_max * 1000.0;
     g_probe_started = now; g_probe_drawables = g_probe_scheduled = g_probe_presented = 0;
     MSFrameSample* sample = malloc(sizeof(MSFrameSample));
-    if (sample) *sample = (MSFrameSample){elapsed, draws, scheduled, presented, average, maximum,
+    if (sample) {
+        *sample = (MSFrameSample){elapsed, draws, scheduled, presented, average, maximum,
         g_probe_commits / elapsed, g_probe_callbacks / elapsed, g_probe_completed / elapsed,
         g_probe_gpu_valid ? g_probe_gpu_sum * 1000 / g_probe_gpu_valid : 0,
         g_probe_wait_completed ? g_probe_completion_wait * 1000 / g_probe_wait_completed : 0,
         g_probe_wait_scheduled ? g_probe_scheduling_wait * 1000 / g_probe_wait_scheduled : 0,
-        g_probe_target, g_probe_hardware, g_probe_power};
+        g_probe_target, g_probe_hardware, g_probe_power, g_probe_generation, {0}};
+        snprintf(sample->request, sizeof(sample->request), "%s", g_probe_request);
+    }
     g_probe_commits = g_probe_callbacks = g_probe_completed = g_probe_gpu_valid = g_probe_wait_completed = g_probe_wait_scheduled = 0;
     g_probe_gpu_sum = g_probe_completion_wait = g_probe_scheduling_wait = 0;
     g_probe_wait_sum = g_probe_wait_max = 0;

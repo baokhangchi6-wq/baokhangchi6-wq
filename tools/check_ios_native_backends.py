@@ -20,6 +20,13 @@ static void test_void_hook(id self, SEL cmd, IMP original) {
 }
 int test_hook_class(void* cls, const char* name) { return ms_hook_instance_method(cls, name, (IMP)test_void_hook, "v@:"); }
 unsigned test_hook_count(void) { return test_hook_calls; }
+int test_range_target(int target) {
+    g_launch_authorized = g_profile_loaded = true;
+    g_target_fps = target;
+    g_ms_policy = (MSDisplayPolicy){true, true, false, false, target, 1};
+    MSFrameRateRange range = ms_target_range();
+    return range.preferred == target && range.minimum == target && range.maximum == target;
+}
 void test_font_paths(const char* root, const char* target) {
     char canonical[1024];
     if (!realpath(root, canonical)) return;
@@ -41,6 +48,7 @@ int test_font_rebind(void* page) { return font_rebind_slot((uintptr_t)page, 8, (
 #include <mach/mach_vm.h>
 extern int test_hook_class(void*, const char*);
 extern unsigned test_hook_count(void);
+extern int test_range_target(int);
 extern void test_font_paths(const char*, const char*);
 extern void* test_font_read(const char*, const char*);
 extern int test_font_open(const char*, int);
@@ -83,6 +91,7 @@ int main(void) { @autoreleasepool {
     assert(test_hook_class([MSBackendOverride class], "step")); // no self-capture
     [override step]; assert(rootCalls == 3 && childCalls == 1 && test_hook_count() == 3);
     assert(!test_hook_class([MSBackendRoot class], "wrong")); assert([root wrong] == 42);
+    assert(test_range_target(60)); assert(test_range_target(2000));
     NSString* directory = [NSString stringWithUTF8String:getenv("HOME")];
     NSString* fonts = [directory stringByAppendingPathComponent:@"content/fonts/families"];
     assert([[NSFileManager defaultManager] createDirectoryAtPath:fonts withIntermediateDirectories:YES attributes:nil error:NULL]);
