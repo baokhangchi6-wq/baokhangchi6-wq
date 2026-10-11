@@ -31,6 +31,11 @@ static MSDisplayPolicy g_ms_policy;
 static unsigned g_ms_generation;
 static void ms_update_probe_environment(void);
 static void ms_probe_record(int event, double wait);
+static double ms_probe_time(void);
+extern void ms_track_drawable_lifetime(void*);
+extern int ms_drawable_sample(void*, double*, unsigned*);
+extern void ms_mark_drawable_present(void*);
+static void ms_refresh_observed_layers(void);
 static void display_callback_hook(id self, SEL selector, id link, IMP original) {
     ms_probe_record(4, 0); /* Display callback count, not an engine FPS claim. */
     ((void (*)(id, SEL, id))original)(self, selector, link);
@@ -290,6 +295,7 @@ static void ms_environment_main(void* ignored) {
     g_display_link_rewrite_count = 0;
     runtime_note("[LIFECYCLE][DISPLAY] lowPower=%d thermal=%d screenMax=%d", ms_low_power(), ms_thermal(), ios_maximum_frames_per_second());
     ms_refresh_links("environment-change");
+    ms_refresh_observed_layers();
 }
 static void ms_environment_changed(id self, SEL cmd, id notification) {
     (void)self; (void)cmd; (void)notification;
@@ -372,6 +378,19 @@ static SetContentsGravityImp g_original_set_contents_gravity = NULL;
 
 static int g_metal_layer_stretch_installed = 0;
 static char g_ms_layer_uncapped_key;
+static char g_ms_layer_weak_key;
+static os_unfair_lock g_ms_layers_lock = OS_UNFAIR_LOCK_INIT;
+static id g_ms_observed_layers;
+static void ms_track_metal_layer(id layer) {
+    if (!layer) return;
+    os_unfair_lock_lock(&g_ms_layers_lock);
+    if (!g_ms_observed_layers) {
+        id table = ((id (*)(id, SEL))objc_msgSend)(objc_getClass("NSHashTable"), sel_registerName("weakObjectsHashTable"));
+        g_ms_observed_layers = ((id (*)(id, SEL))objc_msgSend)(table, sel_registerName("retain"));
+    }
+    ((void (*)(id, SEL, id))objc_msgSend)(g_ms_observed_layers, sel_registerName("addObject:"), layer);
+    os_unfair_lock_unlock(&g_ms_layers_lock);
+}
 static int ms_bool_property(id object, const char* primary, const char* alternate) {
     if (!object) return -1;
     const char* names[] = {primary, alternate};
@@ -397,6 +416,40 @@ static unsigned g_probe_generation;
 static double g_probe_started, g_probe_wait_sum, g_probe_wait_max;
 static unsigned long g_probe_drawables, g_probe_scheduled, g_probe_presented, g_probe_commits, g_probe_callbacks, g_probe_completed, g_probe_gpu_valid, g_probe_wait_completed, g_probe_wait_scheduled;
 static double g_probe_gpu_sum, g_probe_completion_wait, g_probe_scheduling_wait;
+typedef struct { unsigned long count; double sum, maximum; } MSDrawableMetric;
+static MSDrawableMetric g_drawable_metrics[4];
+unsigned ms_drawable_generation(void) {
+    os_unfair_lock_lock(&g_frame_probe_lock);
+    unsigned generation = g_probe_enabled ? g_probe_generation : 0;
+    os_unfair_lock_unlock(&g_frame_probe_lock);
+    return generation;
+}
+double ms_drawable_clock(void) { return ms_probe_time(); }
+void ms_drawable_lifetime_event(int event, double seconds, unsigned generation) {
+    if (event < 0 || event > 3 || seconds < 0 || seconds > 86400 || !generation) return;
+    os_unfair_lock_lock(&g_frame_probe_lock);
+    if (generation == g_probe_generation && g_probe_enabled) {
+        MSDrawableMetric* metric = &g_drawable_metrics[event];
+        metric->count++; metric->sum += seconds; if (seconds > metric->maximum) metric->maximum = seconds;
+    }
+    os_unfair_lock_unlock(&g_frame_probe_lock);
+}
+static void ms_write_drawable_receipt(void) {
+    SESSION_LOCK;
+    MSDrawableMetric metrics[4];
+    os_unfair_lock_lock(&g_frame_probe_lock);
+    for (int i = 0; i < 4; i++) metrics[i] = g_drawable_metrics[i];
+    os_unfair_lock_unlock(&g_frame_probe_lock);
+    char content[2048]; int length = snprintf(content, sizeof(content), "{\"schema\":1,\"generatedAtUnix\":%ld,\"request\":\"%s\",\"pid\":%d,\"metrics\":[", time(NULL), g_applied_request, getpid());
+    const char* names[] = {"acquireToPresentRequest", "wrapperLifetime", "reacquireInterval", "acquireToPresentedTime"};
+    for (int i = 0; i < 4; i++) {
+        MSDrawableMetric metric = metrics[i];
+        length += snprintf(content + length, sizeof(content) - (size_t)length, "%s{\"name\":\"%s\",\"samples\":%lu,\"averageMs\":%.3f,\"maximumMs\":%.3f}",
+            i ? "," : "", names[i], metric.count, metric.count ? metric.sum * 1000 / metric.count : 0, metric.maximum * 1000);
+    }
+    snprintf(content + length, sizeof(content) - (size_t)length, "],\"ownershipChanged\":false,\"engineFps\":null}\n");
+    bridge_write_document("MasterstrapDrawableReceipt.json", content);
+}
 typedef struct { double elapsed, draws, scheduled, presented, average, maximum, commits, callbacks, completed, gpu, completion_wait, scheduling_wait; int target, hardware, power; unsigned generation; char request[96]; unsigned long gpu_samples; } MSFrameSample;
 static double ms_probe_time(void) {
     id info = ms_process_info();
@@ -422,6 +475,8 @@ static void ms_update_probe_environment(void) {
     g_probe_power = power;
     g_probe_target = g_ms_policy.target;
     g_probe_enabled = g_ms_policy.loaded;
+    if (g_probe_generation != g_ms_policy.session_generation)
+        for (int i = 0; i < 4; i++) g_drawable_metrics[i] = (MSDrawableMetric){0};
     g_probe_generation = g_ms_policy.session_generation;
     snprintf(g_probe_request, sizeof(g_probe_request), "%s", g_applied_request);
     g_probe_started = 0;
@@ -445,6 +500,7 @@ static void ms_probe_write_main(void* context) {
         sample.callbacks, sample.commits, sample.completed, sample.gpu, sample.gpu_samples, sample.completion_wait, sample.scheduling_wait);
     bridge_write_document("MasterstrapFrameReceipt.json", content);
     ms_pacing_write_receipt();
+    ms_write_drawable_receipt();
 }
 static void ms_probe_record(int event, double wait) {
     double now = ms_probe_time();
@@ -485,10 +541,16 @@ static void ms_probe_record(int event, double wait) {
 static void ms_probe_attach_presented(id drawable) {
     SEL add = sel_registerName("addPresentedHandler:");
     if (!((unsigned char (*)(id, SEL, SEL))objc_msgSend)(drawable, sel_registerName("respondsToSelector:"), add)) return;
+    double acquired = 0; unsigned generation = 0;
+    ms_drawable_sample(drawable, &acquired, &generation);
     ((void (*)(id, SEL, void*))objc_msgSend)(drawable, add, (void*)^(id presented) {
         SEL stamp = sel_registerName("presentedTime");
         if (((unsigned char (*)(id, SEL, SEL))objc_msgSend)(presented, sel_registerName("respondsToSelector:"), stamp)
-            && ((double (*)(id, SEL))objc_msgSend)(presented, stamp) > 0) ms_probe_record(2, 0);
+            && ((double (*)(id, SEL))objc_msgSend)(presented, stamp) > 0) {
+            ms_probe_record(2, 0);
+            if (acquired > 0) ms_drawable_lifetime_event(3,
+                ((double (*)(id, SEL))objc_msgSend)(presented, stamp) - acquired, generation);
+        }
     });
 }
 
@@ -501,7 +563,7 @@ static void ms_probe_present_request(id drawable) {
     bool first = objc_getAssociatedObject(drawable, &g_ms_present_request_key) == NULL;
     if (first) objc_setAssociatedObject(drawable, &g_ms_present_request_key, (id)1, 0);
     os_unfair_lock_unlock(&g_frame_probe_lock);
-    if (first) ms_probe_record(1, 0);
+    if (first) { ms_mark_drawable_present(drawable); ms_probe_record(1, 0); }
 }
 static void drawable_present_hook(id self, SEL cmd, IMP original) {
     ms_probe_present_request(self);
@@ -683,6 +745,10 @@ static void ms_apply_metal_layer_policies(id layer) {
 
 static inline void ms_ensure_layer_vsync_uncapped(id layer) {
     if (!layer || !fps_runtime_requested()) return;
+    if (!objc_getAssociatedObject(layer, &g_ms_layer_weak_key)) {
+        ms_track_metal_layer(layer);
+        objc_setAssociatedObject(layer, &g_ms_layer_weak_key, (id)1, 0);
+    }
     SEL device = sel_registerName("device");
     if (((unsigned char (*)(id, SEL, SEL))objc_msgSend)(layer, sel_registerName("respondsToSelector:"), device))
         ms_observe_metal_device(((id (*)(id, SEL))objc_msgSend)(layer, device));
@@ -691,6 +757,17 @@ static inline void ms_ensure_layer_vsync_uncapped(id layer) {
     ms_apply_metal_layer_policies(layer);
     objc_setAssociatedObject(layer, &g_ms_layer_uncapped_key, (id)1, 0); /* OBJC_ASSOCIATION_ASSIGN */
     runtime_note("[METAL][VSYNC] layer=%p policy=REQUESTED frameEffect=UNVERIFIED", layer);
+}
+static void ms_refresh_observed_layers(void) {
+    os_unfair_lock_lock(&g_ms_layers_lock);
+    id layers = g_ms_observed_layers ? ((id (*)(id, SEL))objc_msgSend)(g_ms_observed_layers, sel_registerName("allObjects")) : NULL;
+    layers = layers ? ((id (*)(id, SEL))objc_msgSend)(layers, sel_registerName("retain")) : NULL;
+    os_unfair_lock_unlock(&g_ms_layers_lock);
+    unsigned long count = layers ? ((unsigned long (*)(id, SEL))objc_msgSend)(layers, sel_registerName("count")) : 0;
+    for (unsigned long i = 0; i < count; i++)
+        ms_apply_metal_layer_policies(((id (*)(id, SEL, unsigned long))objc_msgSend)(layers, sel_registerName("objectAtIndex:"), i));
+    if (layers) ((void (*)(id, SEL))objc_msgSend)(layers, sel_registerName("release"));
+    runtime_note("[METAL][LIFECYCLE] source=POWER_THERMAL_FOREGROUND trackedLayers=%lu action=POLICY_REAPPLY_AND_READBACK", count);
 }
 
 static void metal_layer_set_display_sync_hook(id self, SEL cmd, bool enabled) {
@@ -708,6 +785,7 @@ static id metal_layer_next_drawable_hook(id self, SEL cmd) {
     id drawable = g_original_next_drawable ? g_original_next_drawable(self, cmd) : NULL;
     ms_probe_record(0, ms_probe_time() - start);
     if (drawable) {
+        ms_track_drawable_lifetime(drawable);
         objc_setAssociatedObject(drawable, &g_ms_present_request_key, NULL, 0);
         ms_probe_attach_presented(drawable);
         ms_install_drawable_class(object_getClass(drawable));

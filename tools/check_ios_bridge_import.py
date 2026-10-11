@@ -185,8 +185,10 @@ int main(int argc, const char* argv[]) {
                         '-o', str(root / 'native.o')], check=True)
         subprocess.run(['xcrun', 'clang++', '-std=c++17', '-O0', '-c', str(Path(__file__).parent / 'ios_pacing_probe.cpp'),
                         '-o', str(root / 'pacing.o')], check=True)
+        subprocess.run(['xcrun', 'clang', '-fobjc-arc', '-O0', '-c', str(Path(__file__).parent / 'ios_drawable_lifetime.m'),
+                        '-o', str(root / 'drawable.o')], check=True)
         subprocess.run(['xcrun', 'clang', str(root / 'check.m'), str(root / 'native.o'),
-                        str(root / 'pacing.o'), '-framework', 'Foundation', '-lz', '-lc++', '-o', str(root / 'check')], check=True)
+                        str(root / 'pacing.o'), str(root / 'drawable.o'), '-framework', 'Foundation', '-lz', '-lc++', '-o', str(root / 'check')], check=True)
         for mode in ['before', 'after', 'race', 'direct']:
             home = root / mode
             home.mkdir()

@@ -52,6 +52,12 @@ int test_layer_properties(void* layer) {
         ms_count_property(layer, "maximumDrawableCount") == 3 && ms_bool_property(layer, "presentsWithTransaction", NULL) == 0;
 }
 int test_missing_layer_property(void* object) { return ms_bool_property(object, "displaySyncEnabled", "isDisplaySyncEnabled"); }
+void test_drawable_track(void* drawable) {
+    g_probe_enabled = true; g_probe_generation = 1;
+    ms_track_drawable_lifetime(drawable);
+}
+unsigned long test_drawable_metric(int index) { return g_drawable_metrics[index].count; }
+void test_refresh_layers(void* layer) { ms_track_metal_layer(layer); ms_refresh_observed_layers(); }
 '''
     harness = r'''
 #import <Foundation/Foundation.h>
@@ -74,6 +80,9 @@ extern int test_font_rebind(void*);
 extern void* test_font_slot(void);
 extern int test_layer_properties(void*);
 extern int test_missing_layer_property(void*);
+extern void test_drawable_track(void*);
+extern unsigned long test_drawable_metric(int);
+extern void test_refresh_layers(void*);
 static unsigned rootCalls, childCalls;
 @interface MSBackendRoot : NSObject
 - (void)step;
@@ -128,6 +137,11 @@ static unsigned commits, directPresents, delayedPresents;
 @property NSUInteger maximumDrawableCount;
 @end
 @implementation MSLayerProperties @end
+static unsigned drawableDestroyed;
+@interface MSObservedDrawable : NSObject @end
+@implementation MSObservedDrawable
+- (void)dealloc { drawableDestroyed++; [super dealloc]; }
+@end
 static NSString* makeFile(NSString* root, NSString* name, NSString* value) {
     NSString* path = [root stringByAppendingPathComponent:name];
     assert([value writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:NULL]);
@@ -152,7 +166,8 @@ int main(void) { @autoreleasepool {
     assert(!test_hook_class([MSBackendRoot class], "wrong")); assert([root wrong] == 42);
     assert(test_range_target(60)); assert(test_range_target(2000));
     MSLayerProperties* layer = [MSLayerProperties new]; layer.displaySyncEnabled = YES; layer.presentsWithTransaction = YES;
-    assert(test_layer_properties(layer)); assert(test_missing_layer_property(root) == -1); [layer release];
+    assert(test_layer_properties(layer)); assert(test_missing_layer_property(root) == -1);
+    layer.displaySyncEnabled = YES; test_refresh_layers(layer); assert(layer.displaySyncEnabled == NO); [layer release];
     MSLateDevice* device = [MSLateDevice new]; // no Metal protocols; concrete late discovery must work
     test_observe_device(device);
     assert(commits == 0 && test_pipeline(0, 0, 0)); // bootstrap cannot submit GPU work
@@ -164,6 +179,13 @@ int main(void) { @autoreleasepool {
     assert(directPresents == 1 && delayedPresents == 0 && test_pipeline(0, 0, 1));
     [buffer commit]; assert(commits == 1 && test_pipeline(1, 1, 1));
     [queue release]; [device release];
+    @autoreleasepool {
+        MSObservedDrawable* drawable = [MSObservedDrawable new];
+        test_drawable_track(drawable); test_drawable_track(drawable);
+        assert(test_drawable_metric(2) == 1 && drawableDestroyed == 0);
+        [drawable release]; assert(drawableDestroyed == 1); // tracker must not retain the drawable
+        assert(test_drawable_metric(1) == 1);
+    }
     NSString* directory = [NSString stringWithUTF8String:getenv("HOME")];
     NSString* fonts = [directory stringByAppendingPathComponent:@"content/fonts/families"];
     assert([[NSFileManager defaultManager] createDirectoryAtPath:fonts withIntermediateDirectories:YES attributes:nil error:NULL]);
@@ -204,7 +226,9 @@ int main(void) { @autoreleasepool {
         subprocess.run(['xcrun', 'clang', '-O0', '-fblocks', '-c', str(root / 'native.c'), '-o', str(root / 'native.o')], check=True)
         subprocess.run(['xcrun', 'clang++', '-std=c++17', '-O0', '-c', str(Path(__file__).parent / 'ios_pacing_probe.cpp'),
                         '-o', str(root / 'pacing.o')], check=True)
-        subprocess.run(['xcrun', 'clang', str(root / 'check.m'), str(root / 'native.o'), str(root / 'pacing.o'), '-framework', 'Foundation', '-lz', '-lc++', '-o', str(root / 'check')], check=True)
+        subprocess.run(['xcrun', 'clang', '-fobjc-arc', '-O0', '-c', str(Path(__file__).parent / 'ios_drawable_lifetime.m'),
+                        '-o', str(root / 'drawable.o')], check=True)
+        subprocess.run(['xcrun', 'clang', str(root / 'check.m'), str(root / 'native.o'), str(root / 'pacing.o'), str(root / 'drawable.o'), '-framework', 'Foundation', '-lz', '-lc++', '-o', str(root / 'check')], check=True)
         subprocess.run([str(root / 'check')], env={**os.environ, 'HOME': directory}, check=True)
     print('PASS native backends: class-local/inherited/super hooks, ABI rejection, font scope/fallback, read-only import rebinding')
 

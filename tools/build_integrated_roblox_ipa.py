@@ -2026,6 +2026,9 @@ def compile_dylib(c_source: str, out_dylib: Path) -> Path:
         pacing_object = work_dir / "pacing.o"
         subprocess.run(["xcrun", "clang++", "-std=c++17", "-target", "arm64-apple-ios14.0", *native_options,
                         *isysroot, "-c", str(ROOT / "tools/ios_pacing_probe.cpp"), "-o", str(pacing_object)], check=True)
+        drawable_object = work_dir / "drawable.o"
+        subprocess.run(["xcrun", "clang", "-fobjc-arc", "-target", "arm64-apple-ios14.0", *native_options,
+                        *isysroot, "-c", str(ROOT / "tools/ios_drawable_lifetime.m"), "-o", str(drawable_object)], check=True)
         compile_cmd = [
             "clang",
             "-target", "arm64-apple-ios14.0",
@@ -2039,6 +2042,7 @@ def compile_dylib(c_source: str, out_dylib: Path) -> Path:
             *isysroot,
             str(c_file),
             str(pacing_object),
+            str(drawable_object),
             "-o", str(out_dylib)
         ]
         proc = subprocess.run(compile_cmd, capture_output=True, text=True)
