@@ -1,6 +1,8 @@
 {
   "version": "2.741.1062",
-  "updated_at": "2026-10-11T10:57:53.311209+00:00",
+  "updated_at": "2026-10-11T12:05:18.619321+00:00",
   "platform": "ios",
-  "channel": "global-appstore"
+  "channel": "global-appstore",
+  "build_type": "Debug",
+  "device_verified": false
 }
