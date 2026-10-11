@@ -303,7 +303,7 @@ def fetch_or_load_offsets_map(local_hpp: Path) -> dict:
     return table
 
 
-def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_count: int, offset_entries: list = None, all_flags_table: dict = None, expected_uuid: str = None, font_profile: dict = None, pacing_profile: dict = None) -> str:
+def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_count: int, offset_entries: list = None, all_flags_table: dict = None, expected_uuid: str = None, font_profile: dict = None, pacing_profile: dict = None, render_idle_profile: dict = None) -> str:
     import uuid
     uuid_bytes = uuid.UUID(expected_uuid).bytes if expected_uuid else bytes(16)
     if offset_entries is None:
@@ -312,6 +312,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         all_flags_table = {}
     font_profile = font_profile or {}
     pacing_profile = pacing_profile or {}
+    render_idle_profile = render_idle_profile or {}
 
     sorted_all_flags = sorted((name, rva) for name, rva in all_flags_table.items()
         if name.startswith(('FFlag', 'DFFlag', 'SFFlag', 'FInt', 'DFInt', 'SFInt')))
@@ -1215,6 +1216,10 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         *[f"    {{0x{caller['callRva']:x}, 0x{caller['startRva']:x}, 0x{caller['endRva']:x}}}," for caller in pacing_profile.get('callers', [])],
         "    {0, 0, 0}};",
         *(ROOT / "tools" / "ios_pacing_probe.c").read_text(encoding="utf-8").splitlines(),
+        f"static const bool kRenderIdleVerified = {'true' if render_idle_profile.get('verified') else 'false'};",
+        f"static const uintptr_t kRenderIdleFlagRva = 0x{render_idle_profile.get('flagRva', 0):x};",
+        f"static const uintptr_t kRenderIdleMinimumRva = 0x{render_idle_profile.get('minimumRva', 0):x};",
+        *(ROOT / "tools" / "ios_render_idle.c").read_text(encoding="utf-8").splitlines(),
         "",
         "static void log_runtime_consumer_contract(void) {",
         "    runtime_note(\"[REQUEST][FONT] family=%s sizeStep=%d\", g_font_family, g_font_size_step);",
@@ -1394,6 +1399,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        FFlagPatchEntry entry = {fps->name, fps->rva, 1, g_target_fps};",
         "        if (SetFastFlag(g_engine_base, &entry)) cache_dynamic_flag(fps, 1, g_target_fps);",
         "    }",
+        "    apply_render_idle_policy(g_engine_base);",
         "    restore_inactive_flags(g_engine_base);",
         "    snprintf(g_applied_request, sizeof(g_applied_request), \"%s\", g_session_request);",
         "    g_launch_authorized = true;",
@@ -2394,13 +2400,19 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
             dylib_path = tpath / "libmasterstrap.dylib"
             from ios_font_profile import build_font_profile
             from ios_pacing_profile import build_pacing_profile
+            from ios_render_idle_profile import build_render_idle_profile
             font_profile = build_font_profile(input_ipa, out_dir / "font_asset_profile.json")
             pacing_profile = build_pacing_profile(input_ipa, out_dir / "pacing_profile.json")
+            render_idle_profile = build_render_idle_profile(input_ipa, table, out_dir / "render_idle_profile.json")
             if font_profile['uuid'] != expected_uuid:
                 raise RuntimeError("Font profile UUID does not match verified engine")
             if pacing_profile['uuid'] != expected_uuid:
                 raise RuntimeError("Pacing profile UUID does not match verified engine")
-            c_src = generate_native_hook_source(verified_entries, miss_offsets, len(flags), offsets_entries, all_flags_table=table, expected_uuid=expected_uuid, font_profile=font_profile, pacing_profile=pacing_profile)
+            if render_idle_profile['uuid'] != expected_uuid:
+                raise RuntimeError("Render-idle profile UUID does not match verified engine")
+            if not render_idle_profile['verified'] and os.environ.get('MASTERSTRAP_BUILD_TYPE') != 'Debug':
+                raise RuntimeError('RenderJob minimum-idle role unresolved; Release gate rejected')
+            c_src = generate_native_hook_source(verified_entries, miss_offsets, len(flags), offsets_entries, all_flags_table=table, expected_uuid=expected_uuid, font_profile=font_profile, pacing_profile=pacing_profile, render_idle_profile=render_idle_profile)
             compile_dylib(c_src, dylib_path)
             dylib_bytes = dylib_path.read_bytes()
 

@@ -8,7 +8,10 @@ from build_integrated_roblox_ipa import generate_native_hook_source
 
 def main():
     if sys.platform != 'darwin': raise SystemExit('Native backend checks require macOS Foundation')
-    source = generate_native_hook_source([], [], 0, font_profile={
+    source = generate_native_hook_source([], [], 0,
+        all_flags_table={'FFlagMainThreadIdle': 0x100, 'FIntMainThreadMinIdleTimeUs': 0x104},
+        expected_uuid='12345678-1234-5678-1234-567812345678',
+        render_idle_profile={'verified': True, 'flagRva': 0x100, 'minimumRva': 0x104}, font_profile={
         'catalog': {'Minecraft': 'PressStart2P.json'},
         'stockFamilies': ['SourceSansPro.json', 'PressStart2P.json', 'NotoSansCJKFallback.json', 'RobloxEmoji.json']})
     source = source.replace('__attribute__((constructor)) static void masterstrap_ios_init', 'static void masterstrap_ios_init')
@@ -58,6 +61,31 @@ void test_drawable_track(void* drawable) {
 }
 unsigned long test_drawable_metric(int index) { return g_drawable_metrics[index].count; }
 void test_refresh_layers(void* layer) { ms_track_metal_layer(layer); ms_refresh_observed_layers(); }
+int test_render_idle(void* allocation) {
+    uintptr_t base = (uintptr_t)allocation;
+    uint32_t* header = allocation;
+    header[0] = MH_MAGIC_64; header[4] = 1; header[5] = 24; header[8] = 0x1b; header[9] = 24;
+    for (int i = 0; i < 16; i++) ((uint8_t*)allocation)[40 + i] = kExpectedEngineUuid[i];
+    volatile uint8_t* idle = (uint8_t*)(base + 0x100);
+    volatile int32_t* minimum = (int32_t*)(base + 0x104);
+    *idle = 1; *minimum = 16000;
+    g_profile_loaded = true; g_target_fps = 2000;
+    apply_render_idle_policy(base);
+    if (*idle != 0 || *minimum != 16000 || g_cached_dynamic_count != 1) return 0;
+    g_target_fps = 60; g_cached_dynamic_count = 0;
+    for (size_t i = 0; i < g_original_flag_count; i++) g_original_flags[i].active = false;
+    apply_render_idle_policy(base); restore_inactive_flags(base);
+    if (*idle != 1) return 0;
+    g_target_fps = 2000;
+    const MasterFlagEntry* flag = lookup_flag_with_fallback("FFlagMainThreadIdle");
+    FFlagPatchEntry explicit = {flag->name, flag->rva, 0, 1};
+    if (!SetFastFlag(base, &explicit)) return 0;
+    cache_dynamic_flag(flag, 0, 1); apply_render_idle_policy(base);
+    if (*idle != 1) return 0; // user flag outranks automatic FPS policy
+    g_cached_dynamic_count = 0; ((uint8_t*)allocation)[40] ^= 1;
+    apply_render_idle_policy(base);
+    return *idle == 1; // UUID mismatch cannot alter the native slot
+}
 '''
     harness = r'''
 #import <Foundation/Foundation.h>
@@ -82,6 +110,7 @@ extern int test_layer_properties(void*);
 extern int test_missing_layer_property(void*);
 extern void test_drawable_track(void*);
 extern unsigned long test_drawable_metric(int);
+extern int test_render_idle(void*);
 extern void test_refresh_layers(void*);
 static unsigned rootCalls, childCalls;
 @interface MSBackendRoot : NSObject
@@ -204,6 +233,7 @@ int main(void) { @autoreleasepool {
     long pageSize = getpagesize();
     void* page = mmap(NULL, pageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
     assert(page != MAP_FAILED); ((void**)page)[1] = (void*)fopen;
+    assert(test_render_idle(page));
     assert(mprotect(page, pageSize, PROT_READ) == 0);
     assert(test_font_rebind(page)); assert(((void**)page)[1] == test_font_slot());
     mach_vm_address_t regionAddress = (mach_vm_address_t)page;

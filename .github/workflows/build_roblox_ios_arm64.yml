@@ -209,6 +209,7 @@ jobs:
             output/fps_patch_profile.json
             output/font_asset_profile.json
             output/pacing_profile.json
+            output/render_idle_profile.json
           if-no-files-found: error
           retention-days: 7
 

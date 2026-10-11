@@ -42,6 +42,12 @@ CI phải phát hiện/chặn, không đoán địa chỉ để giữ workflow x
   observer C++ giữ nguyên lock/deadline/exception, không bỏ fence wait. Caller không
   nhận diện không được gán nhãn engine step. Layer phải ghi supported/readback,
   không tuyên bố VSync đã tắt chỉ từ yêu cầu setter.
+- RenderJob minimum-idle: mỗi build xác minh anchor `scheduleRender`, storage bool/int32,
+  chuỗi load/compare/branch và đúng import `sleep_for`. FPS >60 tắt riêng
+  `FFlagMainThreadIdle`; flag người dùng đặt rõ được ưu tiên. FPS ≤60 hoặc snapshot
+  không còn yêu cầu sẽ restore giá trị trước Masterstrap. Không đổi minimumIdleUs,
+  không bỏ fence/GPU wait. Runtime kiểm tra UUID; Release chặn role chưa xác minh,
+  Debug giữ policy tắt khi không resolve được. Profile không thay device gate.
 - Stretch: backend riêng sau FPS gate; lưu kích thước gốc mỗi layer, restore 100%,
   portrait/landscape, touch. Không nhân tỷ lệ lên kích thước đã stretch.
 - Font sizeStep: contract riêng; family assets remap không chứng minh đổi cỡ chữ.
