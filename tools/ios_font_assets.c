@@ -14,15 +14,15 @@ static bool font_redirect_path(const char* path, char* output, size_t capacity) 
     bool redirect = false;
     os_unfair_lock_lock(&g_font_assets_lock);
     size_t root_length = strlen(g_font_assets_root);
-    if (g_font_target_path[0] && root_length && strncmp(path, g_font_assets_root, root_length) == 0) {
-        const char* name = path + root_length;
+    char canonical[1024];
+    if (g_font_target_path[0] && root_length && strstr(path, "/fonts/families/") && realpath(path, canonical) &&
+        strncmp(canonical, g_font_assets_root, root_length) == 0) {
+        const char* name = canonical + root_length;
         bool stock = false;
         for (size_t i = 0; kStockFontFamilies[i]; i++)
             if (strcmp(name, kStockFontFamilies[i]) == 0) { stock = true; break; }
-        char canonical[1024];
         if (stock && strncmp(name, "Noto", 4) && strncmp(name, "RobloxEmoji", 11) &&
-            realpath(path, canonical) && strncmp(canonical, g_font_assets_root, root_length) == 0 &&
-            strcmp(canonical + root_length, name) == 0 && strcmp(canonical, g_font_target_path)) {
+            strcmp(canonical, g_font_target_path)) {
             snprintf(output, capacity, "%s", g_font_target_path);
             redirect = true;
         }

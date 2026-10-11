@@ -21,8 +21,10 @@ static void test_void_hook(id self, SEL cmd, IMP original) {
 int test_hook_class(void* cls, const char* name) { return ms_hook_instance_method(cls, name, (IMP)test_void_hook, "v@:"); }
 unsigned test_hook_count(void) { return test_hook_calls; }
 void test_font_paths(const char* root, const char* target) {
-    snprintf(g_font_assets_root, sizeof(g_font_assets_root), "%s/", root);
-    snprintf(g_font_target_path, sizeof(g_font_target_path), "%s/%s", root, target);
+    char canonical[1024];
+    if (!realpath(root, canonical)) return;
+    snprintf(g_font_assets_root, sizeof(g_font_assets_root), "%s/", canonical);
+    snprintf(g_font_target_path, sizeof(g_font_target_path), "%s/%s", canonical, target);
 }
 void* test_font_read(const char* path, const char* mode) { return font_fopen_hook(path, mode); }
 int test_font_open(const char* path, int flags) { return font_open_hook(path, flags); }
@@ -82,7 +84,7 @@ int main(void) { @autoreleasepool {
     [override step]; assert(rootCalls == 3 && childCalls == 1 && test_hook_count() == 3);
     assert(!test_hook_class([MSBackendRoot class], "wrong")); assert([root wrong] == 42);
     NSString* directory = [NSString stringWithUTF8String:getenv("HOME")];
-    NSString* fonts = [directory stringByAppendingPathComponent:@"families"];
+    NSString* fonts = [directory stringByAppendingPathComponent:@"content/fonts/families"];
     assert([[NSFileManager defaultManager] createDirectoryAtPath:fonts withIntermediateDirectories:YES attributes:nil error:NULL]);
     NSString* original = makeFile(fonts, @"SourceSansPro.json", @"original");
     NSString* selected = makeFile(fonts, @"PressStart2P.json", @"selected");
