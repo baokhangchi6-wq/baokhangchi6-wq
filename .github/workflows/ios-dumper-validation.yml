@@ -5,11 +5,13 @@ on:
   pull_request:
     paths:
       - "roblox/**"
+      - "tools/ios_render_idle_profile.py"
       - ".github/workflows/ios-dumper-validation.yml"
   push:
     branches: [ master, main ]
     paths:
       - "roblox/**"
+      - "tools/ios_render_idle_profile.py"
       - ".github/workflows/ios-dumper-validation.yml"
 
 permissions:
@@ -29,6 +31,9 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Install binary resolver test dependency
+        run: python -m pip install capstone
 
       - name: Compile package
         run: python -m compileall -q roblox_ios_dumper tests
