@@ -2509,8 +2509,8 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                             if not has_robloxlib:
                                 data = insert_load_dylib(data, "@executable_path/Frameworks/libmasterstrap.dylib")
                         elif name == "Payload/Roblox.app/Frameworks/RobloxLib.framework/RobloxLib":
-                            data = remove_load_dylib(data, ["libgloop", "gloop", "delta", "libmasterstrap"])
-                            data = patch_robloxlib_fps_clamps(bytearray(prepared_engine if prepared_engine is not None else data), out_dir / "fps_patch_profile.json")
+                            data = remove_load_dylib(bytes(prepared_engine) if prepared_engine is not None else data, ["libgloop", "gloop", "delta", "libmasterstrap"])
+                            data = patch_robloxlib_fps_clamps(bytearray(data), out_dir / "fps_patch_profile.json")
                             data = bytes(data)
                             data = insert_load_dylib(data, "@rpath/libmasterstrap.dylib")
                         elif name.endswith("Roblox.app/Info.plist"):
