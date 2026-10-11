@@ -27,7 +27,7 @@ void notify(void) { clobber(1); }
         subprocess.run(['xcrun','clang','-O0','-dynamiclib',str(root/'callbacks.c'),'-o',str(root/'callbacks.dylib')],check=True)
         callbacks=ctypes.CDLL(str(root/'callbacks.dylib'))
         (root/'fixture.c').write_text('float fixture_ui(unsigned x) { return (float)x; }\nunsigned fixture_job(unsigned x) { volatile unsigned y=x+3; return y; }\n',encoding='utf-8')
-        subprocess.run(['xcrun','clang','-O0','-dynamiclib',str(root/'fixture.c'),'-o',str(root/'original.dylib')],check=True)
+        subprocess.run(['xcrun','clang','-O0','-dynamiclib','-Wl,-headerpad,0x4000',str(root/'fixture.c'),'-o',str(root/'original.dylib')],check=True)
         source=(root/'original.dylib').read_bytes(); image=MachOImage(source,'arm64')
         if image.architecture != 'arm64': raise AssertionError('Fixture must run as arm64')
         decoder=Cs(CS_ARCH_ARM64,CS_MODE_LITTLE_ENDIAN)
