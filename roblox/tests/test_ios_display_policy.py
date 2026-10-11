@@ -128,6 +128,41 @@ class DisplayPolicyTests(unittest.TestCase):
             self.builder.patch_robloxlib_fps_clamps(data)
             self.assertEqual(bytes(data), first)
 
+    def test_font_reader_slots_follow_symbols_and_reject_out_of_bounds(self):
+        import struct
+        import sys
+        sys.path.insert(0, str(ROOT / 'tools'))
+        from ios_font_profile import resolve_font_imports
+        from roblox_ios_dumper.macho import MachOImage
+        from tests.fixtures import build_macho
+        data = bytearray(build_macho(with_function_starts=True))
+        cursor = 32
+        for _ in range(struct.unpack_from('<I', data, 16)[0]):
+            command, size = struct.unpack_from('<II', data, cursor)
+            if command == 0x19 and data[cursor + 8:cursor + 14] == b'__DATA':
+                struct.pack_into('<I', data, cursor + 72 + 48, 0x1000) # file offset
+                struct.pack_into('<Q', data, cursor + 72 + 40, 16) # section size
+                struct.pack_into('<I', data, cursor + 72 + 64, 7) # lazy symbol pointers
+            cursor += size
+        symoff, stroff, indoff = 0x1800, 0x1900, 0x1a00
+        strings = b'\0_fopen\0_open\0'
+        data[stroff:stroff + len(strings)] = strings
+        struct.pack_into('<IBBHQ', data, symoff, 1, 1, 0, 0, 0)
+        struct.pack_into('<IBBHQ', data, symoff + 16, 8, 1, 0, 0, 0)
+        struct.pack_into('<II', data, indoff, 0, 1)
+        extra = struct.pack('<6I', 2, 24, symoff, 2, stroff, len(strings))
+        dysym = [11, 80] + [0] * 18
+        dysym[14:16] = [indoff, 2]
+        extra += struct.pack('<20I', *dysym)
+        data[cursor:cursor + len(extra)] = extra
+        struct.pack_into('<I', data, 16, struct.unpack_from('<I', data, 16)[0] + 2)
+        struct.pack_into('<I', data, 20, struct.unpack_from('<I', data, 20)[0] + len(extra))
+        slots = resolve_font_imports(MachOImage(bytes(data)))
+        self.assertEqual([(s['symbol'], s['rva']) for s in slots], [('_fopen', 0x2000), ('_open', 0x2008)])
+        struct.pack_into('<I', data, indoff, 500)
+        with self.assertRaisesRegex(ValueError, 'index exceeds'):
+            resolve_font_imports(MachOImage(bytes(data)))
+
 
 if __name__ == "__main__":
     unittest.main()

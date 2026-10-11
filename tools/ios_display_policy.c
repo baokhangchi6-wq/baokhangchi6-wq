@@ -30,6 +30,11 @@ typedef struct { bool loaded, refresh, keep_display, boost; int target; unsigned
 static MSDisplayPolicy g_ms_policy;
 static unsigned g_ms_generation;
 static void ms_update_probe_environment(void);
+static void ms_probe_record(int event, double wait);
+static void display_callback_hook(id self, SEL selector, id link, IMP original) {
+    ms_probe_record(4, 0); /* Display callback count, not an engine FPS claim. */
+    ((void (*)(id, SEL, id))original)(self, selector, link);
+}
 static char g_ms_link_request_key;
 typedef struct { long fps; MSFrameRateRange range; int has_range, managed; } MSLinkRequest;
 static void write_runtime_capability_receipt(void);
@@ -200,6 +205,8 @@ static void display_link_set_range_hook(id self, SEL cmd, MSFrameRateRange reque
 }
 static id display_link_create_hook(id self, SEL cmd, id target, SEL selector) {
     id link = g_original_display_link_create ? g_original_display_link_create(self, cmd, target, selector) : NULL;
+    extern const char* sel_getName(SEL);
+    if (target && selector) ms_hook_instance_method(object_getClass(target), sel_getName(selector), (IMP)display_callback_hook, "v@:@");
     ms_track_link(link);
     apply_display_link_policy(link, "displayLinkWithTarget");
     return link;
@@ -350,8 +357,9 @@ static os_unfair_lock g_frame_probe_lock = OS_UNFAIR_LOCK_INIT;
 static int g_probe_hardware, g_probe_power, g_probe_target;
 static bool g_probe_enabled;
 static double g_probe_started, g_probe_wait_sum, g_probe_wait_max;
-static unsigned long g_probe_drawables, g_probe_scheduled, g_probe_presented;
-typedef struct { double elapsed, draws, scheduled, presented, average, maximum; int target, hardware, power; } MSFrameSample;
+static unsigned long g_probe_drawables, g_probe_scheduled, g_probe_presented, g_probe_commits, g_probe_callbacks, g_probe_completed, g_probe_gpu_valid, g_probe_wait_completed, g_probe_wait_scheduled;
+static double g_probe_gpu_sum, g_probe_completion_wait, g_probe_scheduling_wait;
+typedef struct { double elapsed, draws, scheduled, presented, average, maximum, commits, callbacks, completed, gpu, completion_wait, scheduling_wait; int target, hardware, power; } MSFrameSample;
 static double ms_probe_time(void) {
     id info = ms_process_info();
     return info ? ((double (*)(id, SEL))objc_msgSend)(info, sel_registerName("systemUptime")) : 0;
@@ -378,6 +386,8 @@ static void ms_update_probe_environment(void) {
     g_probe_enabled = g_ms_policy.loaded;
     g_probe_started = 0;
     g_probe_drawables = g_probe_scheduled = g_probe_presented = 0;
+    g_probe_commits = g_probe_callbacks = g_probe_completed = g_probe_gpu_valid = g_probe_wait_completed = g_probe_wait_scheduled = 0;
+    g_probe_gpu_sum = g_probe_completion_wait = g_probe_scheduling_wait = 0;
     g_probe_wait_sum = g_probe_wait_max = 0;
     os_unfair_lock_unlock(&g_frame_probe_lock);
 }
@@ -386,9 +396,12 @@ static void ms_probe_write_main(void* context) {
     free(context);
     runtime_note("[FPS][MEASURED] windowSeconds=%.2f target=%d drawableCallsPerSecond=%.1f scheduledPerSecond=%.1f presentedPerSecond=%.1f nextDrawableWaitAverageMs=%.3f nextDrawableWaitMaximumMs=%.3f hardwareMaximum=%d lowPowerActual=%d",
         sample.elapsed, sample.target, sample.draws, sample.scheduled, sample.presented, sample.average, sample.maximum, sample.hardware, sample.power);
-    char content[1024];
-    snprintf(content, sizeof(content), "{\"schema\":1,\"generatedAtUnix\":%ld,\"windowSeconds\":%.3f,\"targetFps\":%d,\"drawableCallsPerSecond\":%.3f,\"scheduledPerSecond\":%.3f,\"presentedPerSecond\":%.3f,\"nextDrawableWaitAverageMs\":%.3f,\"nextDrawableWaitMaximumMs\":%.3f,\"hardwareMaximumFps\":%d,\"lowPowerActual\":%s,\"scope\":\"observed-metal-drawables\"}\n",
-        time(NULL), sample.elapsed, sample.target, sample.draws, sample.scheduled, sample.presented, sample.average, sample.maximum, sample.hardware, sample.power ? "true" : "false");
+    runtime_note("[FPS][PIPELINE] displayCallbacksPerSecond=%.1f commitsPerSecond=%.1f completedPerSecond=%.1f gpuAverageMs=%.3f waitUntilCompletedAverageMs=%.3f waitUntilScheduledAverageMs=%.3f scope=OBSERVED_METAL engineFps=UNMEASURED",
+        sample.callbacks, sample.commits, sample.completed, sample.gpu, sample.completion_wait, sample.scheduling_wait);
+    char content[2048];
+    snprintf(content, sizeof(content), "{\"schema\":2,\"generatedAtUnix\":%ld,\"windowSeconds\":%.3f,\"targetFps\":%d,\"drawableCallsPerSecond\":%.3f,\"scheduledPerSecond\":%.3f,\"presentedPerSecond\":%.3f,\"nextDrawableWaitAverageMs\":%.3f,\"nextDrawableWaitMaximumMs\":%.3f,\"hardwareMaximumFps\":%d,\"lowPowerActual\":%s,\"displayCallbacksPerSecond\":%.3f,\"commitsPerSecond\":%.3f,\"completedPerSecond\":%.3f,\"gpuAverageMs\":%.3f,\"waitUntilCompletedAverageMs\":%.3f,\"waitUntilScheduledAverageMs\":%.3f,\"engineFps\":null,\"scope\":\"observed-metal-and-display-callbacks\"}\n",
+        time(NULL), sample.elapsed, sample.target, sample.draws, sample.scheduled, sample.presented, sample.average, sample.maximum, sample.hardware, sample.power ? "true" : "false",
+        sample.callbacks, sample.commits, sample.completed, sample.gpu, sample.completion_wait, sample.scheduling_wait);
     bridge_write_document("MasterstrapFrameReceipt.json", content);
 }
 static void ms_probe_record(int event, double wait) {
@@ -399,7 +412,12 @@ static void ms_probe_record(int event, double wait) {
     if (!g_probe_started) g_probe_started = now;
     if (event == 0) { g_probe_drawables++; g_probe_wait_sum += wait; if (wait > g_probe_wait_max) g_probe_wait_max = wait; }
     else if (event == 1) g_probe_scheduled++;
-    else g_probe_presented++;
+    else if (event == 2) g_probe_presented++;
+    else if (event == 3) g_probe_commits++;
+    else if (event == 4) g_probe_callbacks++;
+    else if (event == 5) { g_probe_completed++; if (wait > 0) { g_probe_gpu_sum += wait; g_probe_gpu_valid++; } }
+    else if (event == 6) { g_probe_wait_completed++; g_probe_completion_wait += wait; }
+    else if (event == 7) { g_probe_wait_scheduled++; g_probe_scheduling_wait += wait; }
     double elapsed = now - g_probe_started;
     if (elapsed < 3.0) { os_unfair_lock_unlock(&g_frame_probe_lock); return; }
     double draws = g_probe_drawables / elapsed, scheduled = g_probe_scheduled / elapsed, presented = g_probe_presented / elapsed;
@@ -407,7 +425,14 @@ static void ms_probe_record(int event, double wait) {
     double maximum = g_probe_wait_max * 1000.0;
     g_probe_started = now; g_probe_drawables = g_probe_scheduled = g_probe_presented = 0;
     MSFrameSample* sample = malloc(sizeof(MSFrameSample));
-    if (sample) *sample = (MSFrameSample){elapsed, draws, scheduled, presented, average, maximum, g_probe_target, g_probe_hardware, g_probe_power};
+    if (sample) *sample = (MSFrameSample){elapsed, draws, scheduled, presented, average, maximum,
+        g_probe_commits / elapsed, g_probe_callbacks / elapsed, g_probe_completed / elapsed,
+        g_probe_gpu_valid ? g_probe_gpu_sum * 1000 / g_probe_gpu_valid : 0,
+        g_probe_wait_completed ? g_probe_completion_wait * 1000 / g_probe_wait_completed : 0,
+        g_probe_wait_scheduled ? g_probe_scheduling_wait * 1000 / g_probe_wait_scheduled : 0,
+        g_probe_target, g_probe_hardware, g_probe_power};
+    g_probe_commits = g_probe_callbacks = g_probe_completed = g_probe_gpu_valid = g_probe_wait_completed = g_probe_wait_scheduled = 0;
+    g_probe_gpu_sum = g_probe_completion_wait = g_probe_scheduling_wait = 0;
     g_probe_wait_sum = g_probe_wait_max = 0;
     os_unfair_lock_unlock(&g_frame_probe_lock);
     if (sample) dispatch_async_f(&_dispatch_main_q, sample, ms_probe_write_main);
@@ -422,172 +447,106 @@ static void ms_probe_attach_presented(id drawable) {
     });
 }
 
-typedef void (*CommandPresentDrawableImp)(id, SEL, id);
-typedef void (*CommandPresentAtTimeImp)(id, SEL, id, double);
-typedef void (*CommandPresentAfterDurationImp)(id, SEL, id, double);
-typedef id (*CommandQueueBufferImp)(id, SEL);
-typedef id (*CommandQueueBufferDescriptorImp)(id, SEL, id);
-static CommandPresentDrawableImp g_original_command_present_drawable = NULL;
-static CommandPresentAtTimeImp g_original_command_present_at_time = NULL;
-static CommandPresentAfterDurationImp g_original_command_present_after_duration = NULL;
-static CommandQueueBufferImp g_original_command_buffer = NULL;
-static CommandQueueBufferDescriptorImp g_original_command_buffer_descriptor = NULL;
-static CommandQueueBufferImp g_original_command_buffer_unretained = NULL;
-static CommandQueueBufferDescriptorImp g_original_command_buffer_unretained_descriptor = NULL;
-static char g_ms_command_buffer_hook_key;
-static int g_ms_metal_present_hook_installed = 0;
-
-typedef void (*DrawablePresentAtTimeImp)(id, SEL, double);
-typedef void (*DrawablePresentAfterDurationImp)(id, SEL, double);
-static DrawablePresentAtTimeImp g_original_drawable_present_at_time = NULL;
-static DrawablePresentAfterDurationImp g_original_drawable_present_after_duration = NULL;
-
-static void drawable_present_at_time_hook(id self, SEL cmd, double time) {
-    (void)time;
-    if (fps_runtime_requested()) {
-        ((void (*)(id, SEL))objc_msgSend)(self, sel_registerName("present"));
-        return;
-    }
-    if (g_original_drawable_present_at_time) {
-        g_original_drawable_present_at_time(self, cmd, time);
-    }
-}
-
-static void drawable_present_after_duration_hook(id self, SEL cmd, double duration) {
-    (void)duration;
-    if (fps_runtime_requested()) {
-        ((void (*)(id, SEL))objc_msgSend)(self, sel_registerName("present"));
-        return;
-    }
-    if (g_original_drawable_present_after_duration) {
-        g_original_drawable_present_after_duration(self, cmd, duration);
-    }
-}
-
-static char g_ms_drawable_hook_key;
-
-static void ms_install_drawable_instance_present_policy(id drawable) {
+static int g_ms_metal_present_hook_installed;
+static char g_ms_present_request_key;
+static void ms_probe_present_request(id drawable) {
     if (!drawable) return;
-    Class cls = object_getClass(drawable);
-    if (!cls || objc_getAssociatedObject((id)cls, &g_ms_drawable_hook_key)) return;
-
-    Method at_time = class_getInstanceMethod(cls, sel_registerName("presentAtTime:"));
-    Method after = class_getInstanceMethod(cls, sel_registerName("presentAfterMinimumDuration:"));
-    if (at_time && !g_original_drawable_present_at_time)
-        g_original_drawable_present_at_time = (DrawablePresentAtTimeImp)method_setImplementation(at_time, (IMP)drawable_present_at_time_hook);
-    if (after && !g_original_drawable_present_after_duration)
-        g_original_drawable_present_after_duration = (DrawablePresentAfterDurationImp)method_setImplementation(after, (IMP)drawable_present_after_duration_hook);
-    objc_setAssociatedObject((id)cls, &g_ms_drawable_hook_key, (id)1, 0);
-    runtime_note("[METAL][DRAWABLE] class=%s presentAtTime=%d presentAfterDuration=%d",
-                 class_getName(cls), at_time != NULL, after != NULL);
+    os_unfair_lock_lock(&g_frame_probe_lock);
+    bool first = objc_getAssociatedObject(drawable, &g_ms_present_request_key) == NULL;
+    if (first) objc_setAssociatedObject(drawable, &g_ms_present_request_key, (id)1, 0);
+    os_unfair_lock_unlock(&g_frame_probe_lock);
+    if (first) ms_probe_record(1, 0);
 }
-
-static void command_present_drawable_hook(id self, SEL cmd, id drawable) {
-    ms_probe_record(1, 0);
-    if (g_original_command_present_drawable) {
-        g_original_command_present_drawable(self, cmd, drawable);
-    }
+static void drawable_present_hook(id self, SEL cmd, IMP original) {
+    ms_probe_present_request(self);
+    ((void (*)(id, SEL))original)(self, cmd);
 }
-
-static void command_present_at_time_hook(id self, SEL cmd, id drawable, double time) {
-    ms_probe_record(1, 0);
-    (void)time;
-    /* Bypass VBlank delay: present drawable immediately without waiting for future VSync timestamp */
-    if (fps_runtime_requested()) {
-        if (g_original_command_present_drawable) {
-            g_original_command_present_drawable(self, sel_registerName("presentDrawable:"), drawable);
-            return;
-        }
-    }
-    if (g_original_command_present_at_time) {
-        g_original_command_present_at_time(self, cmd, drawable, time);
-    }
+static void drawable_present_timed_hook(id self, SEL cmd, double timing, IMP original) {
+    ms_probe_present_request(self);
+    if (fps_runtime_requested()) ((void (*)(id, SEL))objc_msgSend)(self, sel_registerName("present"));
+    else ((void (*)(id, SEL, double))original)(self, cmd, timing);
 }
-
-static void command_present_after_duration_hook(id self, SEL cmd, id drawable, double duration) {
-    ms_probe_record(1, 0);
-    (void)duration;
-    /* Bypass minimum frame duration: present immediately */
-    if (fps_runtime_requested()) {
-        if (g_original_command_present_drawable) {
-            g_original_command_present_drawable(self, sel_registerName("presentDrawable:"), drawable);
-            return;
-        }
-    }
-    if (g_original_command_present_after_duration) {
-        g_original_command_present_after_duration(self, cmd, drawable, duration);
-    }
+static void command_present_drawable_hook(id self, SEL cmd, id drawable, IMP original) {
+    ms_probe_present_request(drawable);
+    ((void (*)(id, SEL, id))original)(self, cmd, drawable);
 }
-
-static void ms_install_command_buffer_present_policy(id command_buffer) {
-    if (!command_buffer) return;
-    Class cls = object_getClass(command_buffer);
-    if (!cls || objc_getAssociatedObject((id)cls, &g_ms_command_buffer_hook_key)) return;
-
-    Method present = class_getInstanceMethod(cls, sel_registerName("presentDrawable:"));
-    Method at_time = class_getInstanceMethod(cls, sel_registerName("presentDrawable:atTime:"));
-    Method after = class_getInstanceMethod(cls, sel_registerName("presentDrawable:afterMinimumDuration:"));
-
-    if (present && !g_original_command_present_drawable)
-        g_original_command_present_drawable = (CommandPresentDrawableImp)method_setImplementation(present, (IMP)command_present_drawable_hook);
-    if (at_time && !g_original_command_present_at_time)
-        g_original_command_present_at_time = (CommandPresentAtTimeImp)method_setImplementation(at_time, (IMP)command_present_at_time_hook);
-    if (after && !g_original_command_present_after_duration)
-        g_original_command_present_after_duration = (CommandPresentAfterDurationImp)method_setImplementation(after, (IMP)command_present_after_duration_hook);
-
-    g_ms_metal_present_hook_installed = (g_original_command_present_drawable != NULL);
-    objc_setAssociatedObject((id)cls, &g_ms_command_buffer_hook_key, (id)1, 0);
-    runtime_note("[METAL][PRESENT] bufferClass=%s present=%d atTime=%d afterDuration=%d policy=IMMEDIATE",
-        class_getName(cls), present != NULL, at_time != NULL, after != NULL);
+static void command_present_timed_hook(id self, SEL cmd, id drawable, double timing, IMP original) {
+    ms_probe_present_request(drawable);
+    if (fps_runtime_requested()) ((void (*)(id, SEL, id))objc_msgSend)(self, sel_registerName("presentDrawable:"), drawable);
+    else ((void (*)(id, SEL, id, double))original)(self, cmd, drawable, timing);
 }
-
-static id command_queue_buffer_hook(id self, SEL cmd) {
-    id buffer = g_original_command_buffer ? g_original_command_buffer(self, cmd) : NULL;
-    ms_install_command_buffer_present_policy(buffer);
+static void command_commit_hook(id self, SEL cmd, IMP original) {
+    ms_probe_record(3, 0);
+    SEL add = sel_registerName("addCompletedHandler:");
+    if (((unsigned char (*)(id, SEL, SEL))objc_msgSend)(self, sel_registerName("respondsToSelector:"), add))
+        ((void (*)(id, SEL, void*))objc_msgSend)(self, add, (void*)^(id buffer) {
+            SEL begin = sel_registerName("GPUStartTime"), end = sel_registerName("GPUEndTime");
+            double seconds = 0;
+            if (((unsigned char (*)(id, SEL, SEL))objc_msgSend)(buffer, sel_registerName("respondsToSelector:"), begin) &&
+                ((unsigned char (*)(id, SEL, SEL))objc_msgSend)(buffer, sel_registerName("respondsToSelector:"), end)) {
+                double a = ((double (*)(id, SEL))objc_msgSend)(buffer, begin);
+                double b = ((double (*)(id, SEL))objc_msgSend)(buffer, end);
+                if (a > 0 && b >= a) seconds = b - a;
+            }
+            ms_probe_record(5, seconds);
+        });
+    ((void (*)(id, SEL))original)(self, cmd);
+}
+static void command_wait_hook(id self, SEL cmd, IMP original) {
+    double start = ms_probe_time();
+    ((void (*)(id, SEL))original)(self, cmd);
+    ms_probe_record(cmd == sel_registerName("waitUntilCompleted") ? 6 : 7, ms_probe_time() - start);
+}
+static void ms_install_command_buffer_class(Class cls) {
+    bool present = ms_hook_instance_method(cls, "presentDrawable:", (IMP)command_present_drawable_hook, "v@:@");
+    ms_hook_instance_method(cls, "presentDrawable:atTime:", (IMP)command_present_timed_hook, "v@:@d");
+    ms_hook_instance_method(cls, "presentDrawable:afterMinimumDuration:", (IMP)command_present_timed_hook, "v@:@d");
+    ms_hook_instance_method(cls, "commit", (IMP)command_commit_hook, "v@:");
+    ms_hook_instance_method(cls, "waitUntilCompleted", (IMP)command_wait_hook, "v@:");
+    ms_hook_instance_method(cls, "waitUntilScheduled", (IMP)command_wait_hook, "v@:");
+    if (present) g_ms_metal_present_hook_installed = 1;
+}
+static void ms_install_drawable_class(Class cls) {
+    ms_hook_instance_method(cls, "present", (IMP)drawable_present_hook, "v@:");
+    ms_hook_instance_method(cls, "presentAtTime:", (IMP)drawable_present_timed_hook, "v@:d");
+    ms_hook_instance_method(cls, "presentAfterMinimumDuration:", (IMP)drawable_present_timed_hook, "v@:d");
+}
+static id command_queue_buffer_hook(id self, SEL cmd, IMP original) {
+    id buffer = ((id (*)(id, SEL))original)(self, cmd);
+    if (buffer) ms_install_command_buffer_class(object_getClass(buffer));
     return buffer;
 }
-
-static id command_queue_buffer_descriptor_hook(id self, SEL cmd, id descriptor) {
-    id buffer = g_original_command_buffer_descriptor ? g_original_command_buffer_descriptor(self, cmd, descriptor) : NULL;
-    ms_install_command_buffer_present_policy(buffer);
+static id command_queue_buffer_descriptor_hook(id self, SEL cmd, id descriptor, IMP original) {
+    id buffer = ((id (*)(id, SEL, id))original)(self, cmd, descriptor);
+    if (buffer) ms_install_command_buffer_class(object_getClass(buffer));
     return buffer;
 }
-
-static id command_queue_buffer_unretained_hook(id self, SEL cmd) {
-    id buffer = g_original_command_buffer_unretained ? g_original_command_buffer_unretained(self, cmd) : NULL;
-    ms_install_command_buffer_present_policy(buffer);
-    return buffer;
+static void ms_install_command_queue_class(Class cls) {
+    ms_hook_instance_method(cls, "commandBuffer", (IMP)command_queue_buffer_hook, "@@:");
+    ms_hook_instance_method(cls, "commandBufferWithUnretainedReferences", (IMP)command_queue_buffer_hook, "@@:");
+    ms_hook_instance_method(cls, "commandBufferWithDescriptor:", (IMP)command_queue_buffer_descriptor_hook, "@@:@");
+    ms_hook_instance_method(cls, "commandBufferWithUnretainedReferencesAndDescriptor:", (IMP)command_queue_buffer_descriptor_hook, "@@:@");
 }
-
-static id command_queue_buffer_unretained_descriptor_hook(id self, SEL cmd, id descriptor) {
-    id buffer = g_original_command_buffer_unretained_descriptor ? g_original_command_buffer_unretained_descriptor(self, cmd, descriptor) : NULL;
-    ms_install_command_buffer_present_policy(buffer);
-    return buffer;
-}
-
-static void ms_install_command_queue_present_policy(id layer) {
-    if (g_original_command_buffer || g_original_command_buffer_unretained) return;
-    id device = layer ? ((id (*)(id, SEL))objc_msgSend)(layer, sel_registerName("device")) : NULL;
-    id queue = device ? ((id (*)(id, SEL))objc_msgSend)(device, sel_registerName("newCommandQueue")) : NULL;
-    Class cls = queue ? object_getClass(queue) : NULL;
-    if (!cls) return;
-    Method buffer = class_getInstanceMethod(cls, sel_registerName("commandBuffer"));
-    Method descriptor = class_getInstanceMethod(cls, sel_registerName("commandBufferWithDescriptor:"));
-    Method unret = class_getInstanceMethod(cls, sel_registerName("commandBufferWithUnretainedReferences"));
-    Method unret_desc = class_getInstanceMethod(cls, sel_registerName("commandBufferWithUnretainedReferencesAndDescriptor:"));
-
-    if (buffer && !g_original_command_buffer)
-        g_original_command_buffer = (CommandQueueBufferImp)method_setImplementation(buffer, (IMP)command_queue_buffer_hook);
-    if (descriptor && !g_original_command_buffer_descriptor)
-        g_original_command_buffer_descriptor = (CommandQueueBufferDescriptorImp)method_setImplementation(descriptor, (IMP)command_queue_buffer_descriptor_hook);
-    if (unret && !g_original_command_buffer_unretained)
-        g_original_command_buffer_unretained = (CommandQueueBufferImp)method_setImplementation(unret, (IMP)command_queue_buffer_unretained_hook);
-    if (unret_desc && !g_original_command_buffer_unretained_descriptor)
-        g_original_command_buffer_unretained_descriptor = (CommandQueueBufferDescriptorImp)method_setImplementation(unret_desc, (IMP)command_queue_buffer_unretained_descriptor_hook);
-
-    runtime_note("[METAL][QUEUE] class=%s commandBuffer=%d descriptor=%d unretained=%d status=%s", class_getName(cls),
-        buffer != NULL, descriptor != NULL, unret != NULL, (g_original_command_buffer || g_original_command_buffer_unretained) ? "READY" : "BLOCKED");
-    ((void (*)(id, SEL))objc_msgSend)(queue, sel_registerName("release"));
+static void ms_install_metal_protocol_hooks(void) {
+    extern int objc_getClassList(Class*, int);
+    extern void* objc_getProtocol(const char*);
+    extern unsigned char class_conformsToProtocol(Class, void*);
+    void* buffer = objc_getProtocol("MTLCommandBuffer");
+    void* queue = objc_getProtocol("MTLCommandQueue");
+    void* drawable = objc_getProtocol("MTLDrawable");
+    if (!buffer || !queue || !drawable) return;
+    int count = objc_getClassList(NULL, 0);
+    if (count <= 0 || count > 65536) return;
+    Class* classes = malloc((size_t)count * sizeof(Class));
+    if (!classes) return;
+    int found = objc_getClassList(classes, count);
+    if (found > count) found = count;
+    for (int i = 0; i < found; i++) {
+        if (class_conformsToProtocol(classes[i], buffer)) ms_install_command_buffer_class(classes[i]);
+        if (class_conformsToProtocol(classes[i], queue)) ms_install_command_queue_class(classes[i]);
+        if (class_conformsToProtocol(classes[i], drawable)) ms_install_drawable_class(classes[i]);
+    }
+    free(classes);
 }
 
 static void ms_apply_metal_layer_policies(id layer) {
@@ -616,7 +575,6 @@ static void ms_apply_metal_layer_policies(id layer) {
 
 static inline void ms_ensure_layer_vsync_uncapped(id layer) {
     if (!layer || !fps_runtime_requested()) return;
-    ms_install_command_queue_present_policy(layer);
     if (objc_getAssociatedObject(layer, &g_ms_layer_uncapped_key)) return;
 
     ms_apply_metal_layer_policies(layer);
@@ -639,8 +597,9 @@ static id metal_layer_next_drawable_hook(id self, SEL cmd) {
     id drawable = g_original_next_drawable ? g_original_next_drawable(self, cmd) : NULL;
     ms_probe_record(0, ms_probe_time() - start);
     if (drawable) {
+        objc_setAssociatedObject(drawable, &g_ms_present_request_key, NULL, 0);
         ms_probe_attach_presented(drawable);
-        ms_install_drawable_instance_present_policy(drawable);
+        ms_install_drawable_class(object_getClass(drawable));
     }
     return drawable;
 }
@@ -777,6 +736,7 @@ static void ms_apply_process_main(void* context) {
     g_display_link_rewrite_count = 0;
     install_display_link_policy();
     install_metal_layer_stretch_policy();
+    ms_install_metal_protocol_hooks();
     ms_install_observer();
     id app = ((id (*)(id, SEL))objc_msgSend)(objc_getClass("UIApplication"), sel_registerName("sharedApplication"));
     if (app && g_ms_policy.loaded && g_ms_policy.keep_display) {

@@ -303,13 +303,14 @@ def fetch_or_load_offsets_map(local_hpp: Path) -> dict:
     return table
 
 
-def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_count: int, offset_entries: list = None, all_flags_table: dict = None, expected_uuid: str = None) -> str:
+def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_count: int, offset_entries: list = None, all_flags_table: dict = None, expected_uuid: str = None, font_profile: dict = None) -> str:
     import uuid
     uuid_bytes = uuid.UUID(expected_uuid).bytes if expected_uuid else bytes(16)
     if offset_entries is None:
         offset_entries = []
     if all_flags_table is None:
         all_flags_table = {}
+    font_profile = font_profile or {}
 
     sorted_all_flags = sorted((name, rva) for name, rva in all_flags_table.items()
         if name.startswith(('FFlag', 'DFFlag', 'SFFlag', 'FInt', 'DFInt', 'SFInt')))
@@ -492,7 +493,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static const char* kEngineSetFFlagBackend = \"not-installed\";",
         "static const char* kEngineGetFastFlagBackend = \"not-installed\";",
         "static const char* kFpsRuntimeBackend = \"cadisplaylink-range-policy-v2\";",
-        "static const char* kFontRuntimeBackend = \"native-asset-replacement-v1\";",
+        "static const char* kFontRuntimeBackend = \"engine-import-stock-family-v1\";",
         "static const char* kShaderRuntimeBackend = \"guarded-ios-luau-pending\";",
         "static const char* kStretchRuntimeBackend = \"cametallayer-drawable-resize\";",
         "",
@@ -837,6 +838,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static char g_shader_package[64] = \"none\";",
         "static bool g_shader_wet_floor = false;",
         "static char g_font_family[64] = \"Default\";",
+        "static bool g_font_enabled = false;",
         "static int g_font_size_step = 0;",
         "bool g_launch_authorized = false;",
         "",
@@ -998,7 +1000,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static void load_and_apply_runtime_profiles(void* log_file) {",
         "    // Every new request replaces the previous profile, including missing fields.",
         "    g_profile_loaded = g_game_mode_enabled = g_refresh_requested = g_keep_display_active = false;",
-        "    g_target_fps = 10000; g_stretch_percent = 80; g_shader_wet_floor = false; g_font_size_step = 0;",
+        "    g_target_fps = 10000; g_stretch_percent = 80; g_shader_wet_floor = false; g_font_size_step = 0; g_font_enabled = false;",
         "    snprintf(g_renderer_mode, sizeof(g_renderer_mode), \"Automatic\");",
         "    snprintf(g_shader_package, sizeof(g_shader_package), \"none\");",
         "    snprintf(g_font_family, sizeof(g_font_family), \"Default\");",
@@ -1033,6 +1035,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    long font_size = 0;",
         "    char* font = read_profile_file(\"MasterstrapFontProfile.json\", &font_size);",
         "    if (font) {",
+        "        g_font_enabled = profile_read_bool(font, \"enabled\", NULL, false);",
         "        profile_read_string(font, \"font\", NULL, g_font_family, sizeof(g_font_family));",
         "        g_font_size_step = profile_read_signed_int(font, \"sizeStep\", 0);",
         "        if (log_file) fprintf(log_file, \"[PROFILE][FONT] status=LOADED bytes=%ld family=%s sizeStep=%d enabled=%d\\n\", font_size, g_font_family, g_font_size_step, profile_read_bool(font, \"enabled\", NULL, false));",
@@ -1192,11 +1195,22 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "",
         *(ROOT / "tools" / "ios_frame_policy.h").read_text(encoding="utf-8").splitlines(),
         *(ROOT / "tools" / "ios_bridge_codec.h").read_text(encoding="utf-8").splitlines(),
+        *(ROOT / "tools" / "ios_method_hooks.c").read_text(encoding="utf-8").splitlines(),
         *(ROOT / "tools" / "ios_display_policy.c").read_text(encoding="utf-8").splitlines(),
+        "static const struct { const char* name; const char* asset; } kFontCatalog[] = {",
+        *[f"    {{{json.dumps(name)}, {json.dumps(asset)}}}," for name, asset in sorted(font_profile.get('catalog', {}).items())],
+        "    {NULL, NULL}};",
+        "static const char* kStockFontFamilies[] = {",
+        *[f"    {json.dumps(name)}," for name in font_profile.get('stockFamilies', [])],
+        "    NULL};",
+        "static const struct { uintptr_t rva; int kind; } kFontReaderSlots[] = {",
+        *[f"    {{0x{slot['rva']:x}, {slot['kind']}}}," for slot in font_profile.get('readerSlots', [])],
+        "    {0, 0}};",
+        *(ROOT / "tools" / "ios_font_assets.c").read_text(encoding="utf-8").splitlines(),
         "",
         "static void log_runtime_consumer_contract(void) {",
         "    runtime_note(\"[REQUEST][FONT] family=%s sizeStep=%d\", g_font_family, g_font_size_step);",
-        "    runtime_note(\"[CAPABILITY][FONT] backend=%s status=UNAVAILABLE reason=font-backend-disabled-in-current-isolation-build\", kFontRuntimeBackend);",
+        "    runtime_note(\"[CAPABILITY][FONT] backend=%s imports=%u familyEffect=REQUIRES_DEVICE_READBACK sizeEffect=UNSUPPORTED_KEEP_ORIGINAL\", kFontRuntimeBackend, g_font_imports_installed);",
         "    runtime_note(\"[REQUEST][SHADER] package=%s wetFloor=%d\", g_shader_package, g_shader_wet_floor);",
         "    runtime_note(\"[CAPABILITY][SHADER] backend=%s status=BLOCKED reason=address-probe-only-luau-lifecycle-unverified abiPlausible=%d/%d\", kShaderRuntimeBackend, g_abi_probe_plausible, g_abi_probe_total);",
         "    runtime_note(\"[REQUEST][STRETCH] percent=%d\", g_stretch_percent);",
@@ -1211,7 +1225,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    snprintf(path, sizeof(path), \"%s/Documents/MasterstrapRuntimeReceipt.json\", home);",
         "    void* file = fopen(path, \"w\");",
         "    if (!file) return;",
-        "    fprintf(file, \"{\\\"schema\\\":2,\\\"generatedAtUnix\\\":%ld,\\\"profileLoaded\\\":%s,\\\"request\\\":\\\"%s\\\",\\\"appliedRequest\\\":\\\"%s\\\",\\\"configSource\\\":\\\"%s\\\",\\\"applyCount\\\":%u,\\\"abiProbe\\\":{\\\"total\\\":%d,\\\"executable\\\":%d,\\\"plausible\\\":%d,\\\"ambiguousRoles\\\":%d,\\\"callGateOpen\\\":false},\\\"fps\\\":{\\\"backend\\\":\\\"%s\\\",\\\"requested\\\":%d,\\\"screenMaximum\\\":%d,\\\"hookInstalled\\\":%s},\\\"renderer\\\":{\\\"requested\\\":\\\"%s\\\",\\\"effective\\\":\\\"Metal\\\"},\\\"boost\\\":{\\\"enabled\\\":%s,\\\"status\\\":\\\"%s\\\"},\\\"font\\\":{\\\"requested\\\":\\\"%s\\\",\\\"sizeStep\\\":%d,\\\"status\\\":\\\"blocked_abi_signature\\\"},\\\"shader\\\":{\\\"requested\\\":\\\"%s\\\",\\\"wetFloor\\\":%s,\\\"status\\\":\\\"blocked_abi_lifecycle\\\"},\\\"stretch\\\":{\\\"requestedPercent\\\":%d,\\\"status\\\":\\\"blocked_camera_role\\\"}}\\n\",",
+        "    fprintf(file, \"{\\\"schema\\\":2,\\\"generatedAtUnix\\\":%ld,\\\"profileLoaded\\\":%s,\\\"request\\\":\\\"%s\\\",\\\"appliedRequest\\\":\\\"%s\\\",\\\"configSource\\\":\\\"%s\\\",\\\"applyCount\\\":%u,\\\"abiProbe\\\":{\\\"total\\\":%d,\\\"executable\\\":%d,\\\"plausible\\\":%d,\\\"ambiguousRoles\\\":%d,\\\"callGateOpen\\\":false},\\\"fps\\\":{\\\"backend\\\":\\\"%s\\\",\\\"requested\\\":%d,\\\"screenMaximum\\\":%d,\\\"hookInstalled\\\":%s},\\\"renderer\\\":{\\\"requested\\\":\\\"%s\\\",\\\"effective\\\":\\\"Metal\\\"},\\\"boost\\\":{\\\"enabled\\\":%s,\\\"status\\\":\\\"%s\\\"},\\\"font\\\":{\\\"requested\\\":\\\"%s\\\",\\\"sizeStep\\\":%d,\\\"status\\\":\\\"family_requires_device_readback\\\",\\\"sizeStatus\\\":\\\"unsupported_keep_original\\\"},\\\"shader\\\":{\\\"requested\\\":\\\"%s\\\",\\\"wetFloor\\\":%s,\\\"status\\\":\\\"blocked_abi_lifecycle\\\"},\\\"stretch\\\":{\\\"requestedPercent\\\":%d,\\\"status\\\":\\\"blocked_camera_role\\\"}}\\n\",",
         "            time(NULL), g_profile_loaded ? \"true\" : \"false\", g_session_request, g_applied_request, g_session_payload ? \"BRIDGE_SNAPSHOT\" : \"BASELINE\", g_session_apply_count,",
         "            g_abi_probe_total, g_abi_probe_executable, g_abi_probe_plausible, g_abi_probe_duplicate_roles,",
         "            kFpsRuntimeBackend, g_target_fps,",
@@ -1375,6 +1389,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    restore_inactive_flags(g_engine_base);",
         "    snprintf(g_applied_request, sizeof(g_applied_request), \"%s\", g_session_request);",
         "    g_launch_authorized = true;",
+        "    apply_font_asset_profile(g_engine_base);",
         "    g_session_apply_count++;",
         "    install_display_link_policy();",
         "    install_metal_layer_stretch_policy();",
@@ -1876,7 +1891,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "                g_shader_package, g_shader_wet_floor, launch_authorized, g_profile_loaded,",
         "                !launch_authorized ? \"NO_AUTH\" : !g_profile_loaded ? \"NO_PROFILE\" : !g_shader_wet_floor ? \"WET_FLOOR_DISABLED\" : \"none\");",
         "        // FEATURE_07: Font Override",
-        "        fprintf(log_file, \"[FEATURE_07_FONT] status=UNAVAILABLE family=%s sizeStep=%d backend=%s gate=EmbeddedAssets(0) blockedReason=ISOLATION_BUILD\\n\",",
+        "        fprintf(log_file, \"[FEATURE_07_FONT] status=REQUIRES_DEVICE_READBACK family=%s sizeStep=%d backend=%s sizeEffect=UNSUPPORTED_KEEP_ORIGINAL\\n\",",
         "                g_font_family, g_font_size_step, kFontRuntimeBackend);",
         "        // FEATURE_08: Stretch / Aspect-Ratio",
         "        fprintf(log_file, \"[FEATURE_08_STRETCH] status=STANDBY stretchPct=%d backend=%s gate=NativePassthrough(1) blockedReason=none\\n\",",
@@ -2357,7 +2372,11 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
         with tempfile.TemporaryDirectory() as td:
             tpath = Path(td)
             dylib_path = tpath / "libmasterstrap.dylib"
-            c_src = generate_native_hook_source(verified_entries, miss_offsets, len(flags), offsets_entries, all_flags_table=table, expected_uuid=expected_uuid)
+            from ios_font_profile import build_font_profile
+            font_profile = build_font_profile(input_ipa, out_dir / "font_asset_profile.json")
+            if font_profile['uuid'] != expected_uuid:
+                raise RuntimeError("Font profile UUID does not match verified engine")
+            c_src = generate_native_hook_source(verified_entries, miss_offsets, len(flags), offsets_entries, all_flags_table=table, expected_uuid=expected_uuid, font_profile=font_profile)
             compile_dylib(c_src, dylib_path)
             dylib_bytes = dylib_path.read_bytes()
 
