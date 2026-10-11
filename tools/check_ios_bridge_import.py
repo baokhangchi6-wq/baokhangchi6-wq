@@ -63,6 +63,10 @@ int test_session(void* base, unsigned expected) {
     if (!g_runtime_ready || !g_profile_loaded || !g_launch_authorized ||
         g_session_apply_count != expected || strcmp(g_session_request, g_applied_request) != 0 ||
         g_target_fps != 240 || g_stretch_percent != 80 || g_font_size_step != -1) return 0;
+    // Verify the importer itself before persistence could hide a failed initial apply.
+    if (*(uint8_t*)((uintptr_t)base + 0x20) != (expected == 1 ? 1 : 0) ||
+        *(int32_t*)((uintptr_t)base + 0x24) != 240 ||
+        *(int32_t*)((uintptr_t)base + 0x28) != 240) return 0;
     // Persistence must not restore baseline values into user-owned slots.
     apply_baseline_flags((uintptr_t)base);
     apply_cached_dynamic_flags((uintptr_t)base);
