@@ -165,7 +165,7 @@ def patch_render_roles(data, profile):
         elif kind==2:
             relocate(blob,8);relocate(blob,16)
         elif kind==11:
-            for field in (24,32,40,56,64,72): relocate(blob,field)
+            for field in (32,40,48,56,64,72): relocate(blob,field)
         elif kind in (0x22,0x80000022):
             for field in (8,16,24,32,40): relocate(blob,field)
         elif kind in (0x1d,0x1e,0x26,0x29,0x2b,0x2e,0x80000033,0x80000034,0x16):
