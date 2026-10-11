@@ -24,6 +24,7 @@ void ms_pacing_record(int kind, uintptr_t caller, uint64_t nanoseconds, unsigned
     os_unfair_lock_unlock(&g_pacing_lock);
 }
 static void ms_pacing_write_receipt(void) {
+    SESSION_LOCK;
     char content[16384];
     os_unfair_lock_lock(&g_pacing_lock);
     if (!ms_pacing_generation()) { os_unfair_lock_unlock(&g_pacing_lock); return; }
