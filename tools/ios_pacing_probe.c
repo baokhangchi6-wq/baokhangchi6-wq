@@ -26,12 +26,15 @@ void ms_pacing_record(int kind, uintptr_t caller, uint64_t nanoseconds, unsigned
 static void ms_pacing_write_receipt(void) {
     SESSION_LOCK;
     char content[16384];
+    MSPacingCounter counters[sizeof(g_pacing_counters) / sizeof(g_pacing_counters[0])];
     os_unfair_lock_lock(&g_pacing_lock);
     if (!ms_pacing_generation()) { os_unfair_lock_unlock(&g_pacing_lock); return; }
+    for (size_t i = 0; i < sizeof(counters) / sizeof(counters[0]); i++) counters[i] = g_pacing_counters[i];
+    os_unfair_lock_unlock(&g_pacing_lock);
     int length = snprintf(content, sizeof(content), "{\"schema\":1,\"request\":\"%s\",\"pid\":%d,\"generatedAtUnix\":%ld,\"mode\":\"observe-only-preserve-wait\",\"engineFps\":null,\"waits\":[", g_applied_request, getpid(), time(NULL));
     bool first = true;
     for (size_t i = 0; kPacingCallers[i].call; i++) {
-        MSPacingCounter counter = g_pacing_counters[i];
+        MSPacingCounter counter = counters[i];
         if (!counter.calls) continue;
         double average = (double)counter.sum / counter.calls / 1000000, maximum = (double)counter.maximum / 1000000;
         int added = snprintf(content + length, sizeof(content) - (size_t)length,
@@ -44,7 +47,6 @@ static void ms_pacing_write_receipt(void) {
         snprintf(content + length, sizeof(content) - (size_t)length, "]}\n");
         bridge_write_document("MasterstrapPacingReceipt.json", content);
     }
-    os_unfair_lock_unlock(&g_pacing_lock);
 }
 static void ms_install_pacing_probe(uintptr_t base, unsigned generation) {
     __atomic_store_n(&g_pacing_epoch, 0, __ATOMIC_RELEASE);
