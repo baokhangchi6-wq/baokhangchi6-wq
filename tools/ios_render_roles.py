@@ -129,8 +129,10 @@ def patch_render_roles(data, profile):
     header_end = 32 + struct.unpack_from('<I',data,20)[0]
     text = next(s for s in image.sections if s.name == '__text' and s.size)
     cave = (header_end + 1024 + 15) & ~15
-    state = (max(s.end_address for s in image.segments) + 0x3FFF) & ~0x3FFF
-    offset = (len(data) + 0x3FFF) & ~0x3FFF
+    linkedit = next(s for s in image.segments if s.name == '__LINKEDIT')
+    if linkedit.file_offset % 0x4000 or linkedit.vm_address % 0x4000 or linkedit.sections:
+        raise ValueError('Role state requires aligned sectionless LINKEDIT')
+    state = linkedit.vm_address; offset = linkedit.file_offset
     command = struct.pack('<II16sQQQQiiII',0x19,72,b'__MSDATA'.ljust(16,b'\0'),state,0x4000,offset,0x4000,3,3,0,0)
     if any(data[header_end:header_end+len(command)]): raise ValueError('No padding for role segment command')
     planned=[]
@@ -146,10 +148,33 @@ def patch_render_roles(data, profile):
     output=bytearray(data)
     for site,cave,blob,branch in planned:
         output[cave:cave+len(blob)]=blob; struct.pack_into('<I',output,site,branch)
-    output[header_end:header_end+72]=command
-    count=struct.unpack_from('<I',output,16)[0]
-    struct.pack_into('<II',output,16,count+1,header_end-32+72)
-    output.extend(bytes(offset+0x4000-len(output)))
+    # Keep LINKEDIT last. Insert a file/VM page before it and relocate its file-offset commands.
+    output[offset:offset]=bytes(0x4000)
+    commands=[]; cursor=32; count=struct.unpack_from('<I',data,16)[0]
+    def relocate(blob, field, width=4):
+        fmt='<Q' if width==8 else '<I'
+        value=struct.unpack_from(fmt,blob,field)[0]
+        if value >= offset and value: struct.pack_into(fmt,blob,field,value+0x4000)
+    for _ in range(count):
+        kind,size=struct.unpack_from('<II',data,cursor)
+        blob=bytearray(data[cursor:cursor+size]);cursor+=size
+        if kind==0x19 and bytes(blob[8:24]).rstrip(b'\0')==b'__LINKEDIT':
+            commands.append(command)
+            struct.pack_into('<Q',blob,24,linkedit.vm_address+0x4000)
+            relocate(blob,40,8)
+        elif kind==2:
+            relocate(blob,8);relocate(blob,16)
+        elif kind==11:
+            for field in (24,32,40,56,64,72): relocate(blob,field)
+        elif kind in (0x22,0x80000022):
+            for field in (8,16,24,32,40): relocate(blob,field)
+        elif kind in (0x1d,0x1e,0x26,0x29,0x2b,0x2e,0x80000033,0x80000034,0x16):
+            relocate(blob,8)
+        elif kind==0x31: relocate(blob,24,8)
+        commands.append(blob)
+    encoded=b''.join(commands)
+    output[32:32+len(encoded)]=encoded
+    struct.pack_into('<II',output,16,count+1,len(encoded))
     struct.pack_into('<Q',output,offset,COOKIE)
     profile['outputSha256']=hashlib.sha256(output).hexdigest()
     profile['stateRva']=image.to_rva(state)
