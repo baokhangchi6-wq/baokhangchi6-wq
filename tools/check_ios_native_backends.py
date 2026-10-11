@@ -79,6 +79,9 @@ int test_stretch(void* view) {
         MSStretchRect result = ms_stretch_frame_value(native, 0x10300);
         if (result.origin.x != 10 || result.origin.y != 20 || result.size.width != 500 || result.size.height != 500) return 0;
     }
+    g_stretch_content_scale = 3;
+    if (ms_stretch_ui_width(1500) != 3000 || ms_stretch_ui_width(1497) != 1497) return 0;
+    if (g_stretch_ui_reads != 1) return 0;
     if (ms_stretch_frame_value(native, 0x10400).size.width != 500) return 0;
     if (ms_stretch_frame_value(native, 0x10500).size.width != 1000) return 0;
     if (ms_stretch_frame_hook(view, frame).size.width != 1000) return 0; // ordinary UIKit caller stays native
@@ -93,9 +96,11 @@ int test_stretch(void* view) {
     if (ms_stretch_frame_value(native, 0x10300).size.width != 750) return 0;
     g_stretch_target = 100;
     if (ms_stretch_frame_value(native, 0x10300).size.width != 1000) return 0;
+    if (ms_stretch_ui_width(3000) != 3000) return 0;
     g_stretch_base = 0; g_stretch_target = 50;
     if (ms_stretch_frame_value(native, 0x10300).size.width != 1000) return 0;
     g_stretch_original_frame = NULL; g_stretch_target = 100;
+    g_stretch_content_scale = 0;
     return 1;
 }
 void test_refresh_layers(void* layer) { ms_track_metal_layer(layer); ms_refresh_observed_layers(); }

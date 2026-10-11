@@ -13,6 +13,9 @@ static MSStretchRect g_stretch_native, g_stretch_adjusted;
 static int g_stretch_last_percent = 100;
 static long g_stretch_texture_width, g_stretch_texture_height;
 static unsigned g_stretch_drawable_samples;
+static double g_stretch_content_scale;
+static unsigned long g_stretch_ui_reads;
+static float g_stretch_ui_input, g_stretch_ui_output;
 
 static MSStretchRect ms_stretch_frame_value(MSStretchRect native, uintptr_t caller) {
     if (!__builtin_isfinite(native.size.width) || !__builtin_isfinite(native.size.height)) return native;
@@ -43,7 +46,37 @@ static MSStretchRect ms_stretch_frame_value(MSStretchRect native, uintptr_t call
 __attribute__((noinline, used)) static MSStretchRect ms_stretch_frame_hook(id self, SEL cmd) {
     uintptr_t caller = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(0));
     MSStretchRect native = g_stretch_original_frame(self, cmd);
+    uintptr_t base = __atomic_load_n(&g_stretch_base, __ATOMIC_ACQUIRE);
+    for (size_t i = 0; base && i < sizeof(kStretchFrameReturns) / sizeof(kStretchFrameReturns[0]); i++) {
+        if (!kStretchFrameReturns[i] || caller != base + kStretchFrameReturns[i]) continue;
+        SEL selector = sel_registerName("contentScaleFactor");
+        if (ms_method_abi_matches(class_getInstanceMethod(object_getClass(self), selector), "d@:")) {
+            double scale = ((double (*)(id, SEL))objc_msgSend)(self, selector);
+            os_unfair_lock_lock(&g_stretch_lock);
+            g_stretch_content_scale = scale >= 1 && scale <= 4 ? scale : 0;
+            os_unfair_lock_unlock(&g_stretch_lock);
+        }
+        break;
+    }
     return ms_stretch_frame_value(native, caller);
+}
+static float ms_stretch_ui_width(float input) {
+    os_unfair_lock_lock(&g_stretch_lock);
+    double native = g_stretch_native.size.width * g_stretch_content_scale;
+    double expected = native * g_stretch_target / 100.0;
+    float result = input;
+    if (g_stretch_base && g_stretch_target >= 25 && g_stretch_target < 100 &&
+        g_stretch_native.size.width > g_stretch_native.size.height && g_stretch_content_scale > 0 &&
+        __builtin_isfinite(input) && input > 0 && __builtin_fabs(input - expected) <= 2) {
+        result = (float)native;
+        bool first = g_stretch_ui_reads++ == 0;
+        g_stretch_ui_input = input; g_stretch_ui_output = result;
+        os_unfair_lock_unlock(&g_stretch_lock);
+        if (first) runtime_note("[STRETCH][UI_PROJECTION] inputWidth=%.1f logicalWidth=%.1f scope=VERIFIED_RENDER2D actualTargetWidth=UNCHANGED touchLayout=NATIVE", input, result);
+        return result;
+    }
+    os_unfair_lock_unlock(&g_stretch_lock);
+    return result;
 }
 static bool ms_stretch_frame_abi(Method method) {
     if (!method || method_getNumberOfArguments(method) != 2) return false;
@@ -70,6 +103,8 @@ static void ms_configure_stretch(uintptr_t base) {
     g_stretch_native = g_stretch_adjusted = (MSStretchRect){0};
     g_stretch_texture_width = g_stretch_texture_height = 0;
     g_stretch_drawable_samples = 0;
+    g_stretch_content_scale = 0; g_stretch_ui_reads = 0;
+    g_stretch_ui_input = g_stretch_ui_output = 0;
     os_unfair_lock_unlock(&g_stretch_lock);
     runtime_note("[CAPABILITY][STRETCH] status=%s percent=%d backend=verified-framebuffer-input deviceEffect=UNVERIFIED",
         g_stretch_base ? "READY" : "BLOCKED_BINARY_OR_UIKIT_ABI", g_stretch_target);
@@ -94,9 +129,11 @@ static void ms_stretch_write_receipt(void) {
     MSStretchRect native = g_stretch_native, adjusted = g_stretch_adjusted;
     int percent = g_stretch_target; bool enabled = g_stretch_base != 0;
     long width = g_stretch_texture_width, height = g_stretch_texture_height;
+    unsigned long ui = g_stretch_ui_reads;
+    float ui_input = g_stretch_ui_input, ui_output = g_stretch_ui_output;
     os_unfair_lock_unlock(&g_stretch_lock);
     char content[768];
-    snprintf(content, sizeof(content), "{\"schema\":1,\"request\":\"%s\",\"pid\":%d,\"gateOpen\":%s,\"percent\":%d,\"frameReads\":%lu,\"nativeWidth\":%.3f,\"nativeHeight\":%.3f,\"framebufferInputWidth\":%.3f,\"framebufferInputHeight\":%.3f,\"observedDrawableWidth\":%ld,\"observedDrawableHeight\":%ld,\"layoutChanged\":false,\"deviceVerified\":false}\n",
-        g_applied_request, getpid(), enabled ? "true" : "false", percent, hits, native.size.width, native.size.height, adjusted.size.width, adjusted.size.height, width, height);
+    snprintf(content, sizeof(content), "{\"schema\":2,\"request\":\"%s\",\"pid\":%d,\"gateOpen\":%s,\"percent\":%d,\"frameReads\":%lu,\"nativeWidth\":%.3f,\"nativeHeight\":%.3f,\"framebufferInputWidth\":%.3f,\"framebufferInputHeight\":%.3f,\"observedDrawableWidth\":%ld,\"observedDrawableHeight\":%ld,\"uiProjectionReads\":%lu,\"uiInputWidth\":%.3f,\"uiLogicalWidth\":%.3f,\"layoutChanged\":false,\"deviceVerified\":false}\n",
+        g_applied_request, getpid(), enabled ? "true" : "false", percent, hits, native.size.width, native.size.height, adjusted.size.width, adjusted.size.height, width, height, ui, ui_input, ui_output);
     bridge_write_document("MasterstrapStretchReceipt.json", content);
 }

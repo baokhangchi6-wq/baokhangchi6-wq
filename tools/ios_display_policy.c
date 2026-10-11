@@ -61,6 +61,8 @@ static bool bridge_write_document(const char* file_name, const char* content);
 static void ms_pacing_write_receipt(void);
 static void ms_stretch_write_receipt(void);
 static void ms_stretch_observe_drawable(id drawable);
+static void ms_render_job_drawable(double seconds);
+static void ms_render_roles_write_receipt(void);
 static bool fps_runtime_requested(void);
 
 typedef unsigned char (*ProcessInfoLowPowerImp)(id, SEL);
@@ -493,6 +495,7 @@ static void ms_probe_write_main(void* context) {
     ms_pacing_write_receipt();
     ms_write_drawable_receipt();
     ms_stretch_write_receipt();
+    ms_render_roles_write_receipt();
 }
 static void ms_probe_record(int event, double wait) {
     double now = ms_probe_time();
@@ -775,7 +778,9 @@ static id metal_layer_next_drawable_hook(id self, SEL cmd) {
     ms_ensure_layer_vsync_uncapped(self);
     double start = ms_probe_time();
     id drawable = g_original_next_drawable ? g_original_next_drawable(self, cmd) : NULL;
-    ms_probe_record(0, ms_probe_time() - start);
+    double wait = ms_probe_time() - start;
+    ms_render_job_drawable(wait);
+    ms_probe_record(0, wait);
     if (drawable) {
         ms_stretch_observe_drawable(drawable);
         ms_track_drawable_lifetime(drawable);

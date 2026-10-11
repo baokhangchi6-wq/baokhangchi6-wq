@@ -7,6 +7,7 @@ on:
       - "roblox/**"
       - "tools/ios_render_idle_profile.py"
       - "tools/ios_stretch_profile.py"
+      - "tools/ios_render_roles.py"
       - ".github/workflows/ios-dumper-validation.yml"
   push:
     branches: [ master, main ]
@@ -14,6 +15,7 @@ on:
       - "roblox/**"
       - "tools/ios_render_idle_profile.py"
       - "tools/ios_stretch_profile.py"
+      - "tools/ios_render_roles.py"
       - ".github/workflows/ios-dumper-validation.yml"
 
 permissions:

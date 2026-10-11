@@ -303,7 +303,7 @@ def fetch_or_load_offsets_map(local_hpp: Path) -> dict:
     return table
 
 
-def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_count: int, offset_entries: list = None, all_flags_table: dict = None, expected_uuid: str = None, font_profile: dict = None, pacing_profile: dict = None, render_idle_profile: dict = None, stretch_profile: dict = None) -> str:
+def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_count: int, offset_entries: list = None, all_flags_table: dict = None, expected_uuid: str = None, font_profile: dict = None, pacing_profile: dict = None, render_idle_profile: dict = None, stretch_profile: dict = None, render_roles_profile: dict = None) -> str:
     import uuid
     uuid_bytes = uuid.UUID(expected_uuid).bytes if expected_uuid else bytes(16)
     if offset_entries is None:
@@ -314,6 +314,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
     pacing_profile = pacing_profile or {}
     render_idle_profile = render_idle_profile or {}
     stretch_profile = stretch_profile or {}
+    render_roles_profile = render_roles_profile or {}
 
     sorted_all_flags = sorted((name, rva) for name, rva in all_flags_table.items()
         if name.startswith(('FFlag', 'DFFlag', 'SFFlag', 'FInt', 'DFInt', 'SFInt')))
@@ -1203,6 +1204,8 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         f"static const bool kStretchVerified = {'true' if stretch_profile.get('verified') else 'false'};",
         "static const uintptr_t kStretchFrameReturns[] = {" + ','.join(hex(role['frameReturnRva']) for role in stretch_profile.get('roles', [])) + ("," if stretch_profile.get('roles') else "") + "0};",
         *(ROOT / "tools" / "ios_stretch.c").read_text(encoding="utf-8").splitlines(),
+        f"static const uintptr_t kRenderRolesStateRva = 0x{render_roles_profile.get('stateRva', 0):x};",
+        *(ROOT / "tools" / "ios_render_roles.c").read_text(encoding="utf-8").splitlines(),
         "static const struct { const char* name; const char* asset; } kFontCatalog[] = {",
         *[f"    {{{json.dumps(name)}, {json.dumps(asset)}}}," for name, asset in sorted(font_profile.get('catalog', {}).items())],
         "    {NULL, NULL}};",
@@ -1410,6 +1413,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    ms_configure_stretch(g_engine_base);",
         "    apply_font_asset_profile(g_engine_base);",
         "    g_session_apply_count++;",
+        "    ms_bind_render_roles(g_engine_base, g_session_apply_count);",
         "    ms_install_pacing_probe(g_engine_base, g_session_apply_count);",
         "    install_display_link_policy();",
         "    install_metal_layer_stretch_policy();",
@@ -2407,10 +2411,23 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
             from ios_pacing_profile import build_pacing_profile
             from ios_render_idle_profile import build_render_idle_profile
             from ios_stretch_profile import build_stretch_profile
+            from ios_render_roles import build_render_roles_profile, patch_render_roles
             font_profile = build_font_profile(input_ipa, out_dir / "font_asset_profile.json")
             pacing_profile = build_pacing_profile(input_ipa, out_dir / "pacing_profile.json")
             render_idle_profile = build_render_idle_profile(input_ipa, table, out_dir / "render_idle_profile.json")
             stretch_profile = build_stretch_profile(input_ipa, out_dir / "stretch_profile.json")
+            render_roles_profile = build_render_roles_profile(input_ipa, out_dir / "render_roles_profile.json")
+            if render_roles_profile['uuid'] != expected_uuid:
+                raise RuntimeError('Render roles UUID mismatch')
+            prepared_engine = None
+            if render_roles_profile['verified']:
+                with zipfile.ZipFile(input_ipa) as roles_archive:
+                    original_engine = roles_archive.read('Payload/Roblox.app/Frameworks/RobloxLib.framework/RobloxLib')
+                prepared_engine, state = patch_render_roles(bytearray(original_engine), render_roles_profile)
+                render_roles_profile['stateRva'] = state
+                (out_dir / 'render_roles_profile.json').write_text(json.dumps(render_roles_profile, indent=2), encoding='utf-8')
+            elif os.environ.get('MASTERSTRAP_BUILD_TYPE') != 'Debug':
+                raise RuntimeError('UI projection/RenderJob roles unresolved; Release gate rejected')
             if font_profile['uuid'] != expected_uuid:
                 raise RuntimeError("Font profile UUID does not match verified engine")
             if pacing_profile['uuid'] != expected_uuid:
@@ -2423,7 +2440,7 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                 raise RuntimeError('Framebuffer size flow unresolved; Release gate rejected')
             if not render_idle_profile['verified'] and os.environ.get('MASTERSTRAP_BUILD_TYPE') != 'Debug':
                 raise RuntimeError('RenderJob minimum-idle role unresolved; Release gate rejected')
-            c_src = generate_native_hook_source(verified_entries, miss_offsets, len(flags), offsets_entries, all_flags_table=table, expected_uuid=expected_uuid, font_profile=font_profile, pacing_profile=pacing_profile, render_idle_profile=render_idle_profile, stretch_profile=stretch_profile)
+            c_src = generate_native_hook_source(verified_entries, miss_offsets, len(flags), offsets_entries, all_flags_table=table, expected_uuid=expected_uuid, font_profile=font_profile, pacing_profile=pacing_profile, render_idle_profile=render_idle_profile, stretch_profile=stretch_profile, render_roles_profile=render_roles_profile)
             compile_dylib(c_src, dylib_path)
             dylib_bytes = dylib_path.read_bytes()
 
@@ -2493,7 +2510,7 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                                 data = insert_load_dylib(data, "@executable_path/Frameworks/libmasterstrap.dylib")
                         elif name == "Payload/Roblox.app/Frameworks/RobloxLib.framework/RobloxLib":
                             data = remove_load_dylib(data, ["libgloop", "gloop", "delta", "libmasterstrap"])
-                            data = patch_robloxlib_fps_clamps(bytearray(data), out_dir / "fps_patch_profile.json")
+                            data = patch_robloxlib_fps_clamps(bytearray(prepared_engine if prepared_engine is not None else data), out_dir / "fps_patch_profile.json")
                             data = bytes(data)
                             data = insert_load_dylib(data, "@rpath/libmasterstrap.dylib")
                         elif name.endswith("Roblox.app/Info.plist"):
