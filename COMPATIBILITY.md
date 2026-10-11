@@ -62,6 +62,18 @@ CI phải phát hiện/chặn, không đoán địa chỉ để giữ workflow x
   Cần tách scene target khỏi `Pass2d/PlayerGui` và `Pass2d/CoreGui`, giữ final
   drawable/UI ở kích thước gốc, xác minh touch và restore trên thiết bị. Nếu
   compiler đổi graph pass/attachment, gate phải đóng, không lấy tên pass làm ABI.
+- Bản thử UI projection: resolver xác minh `render2D` truyền width/height tới
+  hàm chiếu trực giao `2/width`, `-2/height`. Callback chỉ khôi phục width logic
+  khi input khớp frame đã co × contentScaleFactor; texture cảnh vẫn giữ kích
+  thước hiện tại. Đây là gate khác với native-resolution UI target/composite;
+  cần nghiệm thu hình dạng, vị trí chạm và độ nét UI riêng trên iPhone.
+- Role callbacks được đặt trong segment RW riêng trước LINKEDIT; nhánh trong
+  TEXT padding chỉ được viết lúc đóng gói. Runtime kiểm tra UUID, segment và
+  cookie, không ghi executable memory. Gate macOS arm64 ký/nạp dylib thực và
+  kiểm tra register, SIMD, NZCV/FPCR/FPSR, baseline khi callback chưa bind.
+- `MasterstrapRenderJobReceipt.json` đo trọn `scheduleRender` và drawable wait
+  nằm trên cùng thread/job. Chưa gọi counter scheduling này là engine FPS;
+  nếu jobsWithDrawables=0 phải truy tiếp thread handoff, không gán nhãn giả.
 - Font sizeStep: contract riêng; family assets remap không chứng minh đổi cỡ chữ.
 - Mọi tính năng mới dùng snapshot năm tài liệu hiện có. Không thêm request riêng
   từng feature, polling bridge hoặc D1 diagnostics; licence vẫn xác minh server.
