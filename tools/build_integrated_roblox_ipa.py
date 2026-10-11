@@ -465,6 +465,10 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "#define MAX_CACHED_DYNAMIC_FLAGS 1024",
         "static CachedDynamicFlag g_cached_dynamic_flags[MAX_CACHED_DYNAMIC_FLAGS];",
         "static size_t g_cached_dynamic_count = 0;",
+        f"static const size_t kOriginalFlagCapacity = {max(64, len(sorted_all_flags) + len(entries))};",
+        "typedef struct { uintptr_t rva; int kind; int64_t value; bool active; } OriginalFlag;",
+        f"static OriginalFlag g_original_flags[{max(64, len(sorted_all_flags) + len(entries))}];",
+        "static size_t g_original_flag_count = 0;",
         "",
         "typedef struct {",
         "    const char* name;",
@@ -511,10 +515,19 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    uintptr_t page_start = target & ~(page_size - 1);",
         "    size_t width = entry->kind == 0 ? 1 : 4;",
         "    size_t page_len = (((target + width - 1) & ~(page_size - 1)) - page_start) + page_size;",
+        "    size_t original = 0;",
+        "    while (original < g_original_flag_count && g_original_flags[original].rva != entry->rva) original++;",
+        "    if (original == g_original_flag_count && original >= kOriginalFlagCapacity) return false;",
+        "    if (original < g_original_flag_count && g_original_flags[original].kind != entry->kind) return false;",
         "    if (mprotect((void*)page_start, page_len, PROT_READ | PROT_WRITE) != 0) {",
         "        return false; /* Never write after a failed protection change. */",
         "    }",
         "",
+        "    if (original == g_original_flag_count) {",
+        "        g_original_flags[original] = (OriginalFlag){entry->rva, entry->kind,",
+        "            entry->kind == 0 ? *(volatile uint8_t*)target : *(volatile int32_t*)target, false};",
+        "        g_original_flag_count++;",
+        "    }",
         "    if (entry->kind == 0) {",
         "        volatile uint8_t* ptr = (volatile uint8_t*)target;",
         "        *ptr = (uint8_t)(entry->value ? 1 : 0);",
@@ -528,6 +541,8 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "",
         "static void cache_dynamic_flag(const MasterFlagEntry* flag, int kind, int64_t value) {",
         "    if (!flag) return;",
+        "    for (size_t i = 0; i < g_original_flag_count; i++)",
+        "        if (g_original_flags[i].rva == flag->rva) g_original_flags[i].active = true;",
         "    for (size_t i = 0; i < g_cached_dynamic_count; i++) {",
         "        if (g_cached_dynamic_flags[i].flag == flag) {",
         "            g_cached_dynamic_flags[i].kind = kind;",
@@ -542,6 +557,15 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    g_cached_dynamic_count++;",
         "}",
         "",
+        "static void runtime_note(const char* fmt, ...);",
+        "static void restore_inactive_flags(uintptr_t base) {",
+        "    for (size_t i = 0; i < g_original_flag_count; i++) {",
+        "        OriginalFlag* original = &g_original_flags[i];",
+        "        if (original->active) continue;",
+        "        FFlagPatchEntry entry = {\"restore-original\", original->rva, original->kind, original->value};",
+        "        if (SetFastFlag(base, &entry)) runtime_note(\"[FFLAG][RESTORE] rva=0x%lx value=%lld source=PRE_MASTERSTRAP\", (unsigned long)entry.rva, (long long)entry.value);",
+        "    }",
+        "}",
         "static int apply_cached_dynamic_flags(uintptr_t base) {",
         "    int applied = 0;",
         "    if (!base) return 0;",
@@ -1334,6 +1358,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "}",
         "",
         "static int apply_baseline_flags(uintptr_t base) {",
+        "    if (g_session_payload) return 0; /* Valid snapshots own configuration; no compiled preset injection. */",
         "    int count = 0;",
         "    for (size_t i = 0; base && i < kVerifiedCount; i++) {",
         "        bool user_owned = false;",
@@ -1352,7 +1377,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    if (!g_runtime_ready || !g_engine_base || !g_session_payload) return 0;",
         "    if (strcmp(g_applied_request, g_session_request) == 0) return (int)g_cached_dynamic_count;",
         "    g_cached_dynamic_count = 0;",
-        "    apply_baseline_flags(g_engine_base);",
+        "    for (size_t i = 0; i < g_original_flag_count; i++) g_original_flags[i].active = false;",
         "    int user_flags = load_dynamic_config_files(g_engine_base, log_file);",
         "    load_and_apply_runtime_profiles(log_file);",
         "    const MasterFlagEntry* fps = lookup_flag_with_fallback(\"DFIntTaskSchedulerTargetFps\");",
@@ -1360,6 +1385,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        FFlagPatchEntry entry = {fps->name, fps->rva, 1, g_target_fps};",
         "        if (SetFastFlag(g_engine_base, &entry)) cache_dynamic_flag(fps, 1, g_target_fps);",
         "    }",
+        "    restore_inactive_flags(g_engine_base);",
         "    snprintf(g_applied_request, sizeof(g_applied_request), \"%s\", g_session_request);",
         "    g_launch_authorized = true;",
         "    g_session_apply_count++;",
@@ -1375,7 +1401,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    SESSION_LOCK;",
         "    g_engine_base = base;",
         "    if (!g_runtime_ready) {",
-        "        g_baseline_applied = apply_baseline_flags(base);",
+        "        g_baseline_applied = 0;",
         "        g_runtime_ready = true;",
         "        if (!g_session_payload) apply_ios_process_policies();",
         "    }",
@@ -1988,6 +2014,7 @@ def compile_dylib(c_source: str, out_dylib: Path) -> Path:
             "clang",
             "-target", "arm64-apple-ios14.0",
             "-dynamiclib",
+            "-fblocks",
             *native_options,
             "-undefined", "dynamic_lookup",
             "-install_name", "@rpath/libmasterstrap.dylib",
@@ -2008,6 +2035,7 @@ def compile_dylib(c_source: str, out_dylib: Path) -> Path:
         clang_bin,
         "-target", "arm64-apple-ios14.0",
         *native_options,
+        "-fblocks",
         "-c", str(c_file),
         "-o", str(obj_file)
     ]
@@ -2126,12 +2154,20 @@ SUMMARY:
     runtime_log.write_text(report_text, encoding="utf-8")
 
 
-def patch_robloxlib_fps_clamps(data: bytearray) -> bytearray:
-    """Version-agnostic dynamic scanner and patcher for RobloxLib ARM64 FPS clamps.
-
-    Automatically locates clamp opcodes across future Roblox engine updates
-    using unique machine instruction signatures, with static offset fallbacks.
-    """
+def patch_robloxlib_fps_clamps(data: bytearray, report_path: Path = None) -> bytearray:
+    """Resolve unique aligned instruction sites inside this exact Mach-O's executable sections."""
+    sys.path.insert(0, str(ROOT / "roblox"))
+    from roblox_ios_dumper.macho import MachOImage, MachOError
+    from bisect import bisect_right
+    import hashlib
+    try:
+        image = MachOImage(bytes(data), "arm64")
+    except MachOError:
+        print("[PATCH_ROBLOXLIB] Invalid Mach-O; no bytes modified")
+        return data
+    if image.slice.file_offset or image.is_encrypted:
+        raise RuntimeError("FPS binary gate requires a decrypted thin ARM64 Mach-O")
+    records = []
     patches = [
         # 1. GetDefaultFramerateCap 240 FPS clamp (cmp w8, #240; mov w9, #240; csel -> mov w9, w8)
         (
@@ -2139,7 +2175,6 @@ def patch_robloxlib_fps_clamps(data: bytearray) -> bytearray:
             re.compile(re.escape(b"\x1f\xc1\x03\x71\x09\x1e\x80\x52") + b"(" + re.escape(b"\x09\xb1\x89\x1a") + b"|" + re.escape(b"\xe9\x03\x08\x2a") + b")"),
             8,
             b"\xe9\x03\x08\x2a",
-            0x47643b0,
         ),
         # 2. TaskScheduler dt 240 FPS clamp (cmp w11, #240; mov w12, #240; csel -> nop)
         (
@@ -2147,15 +2182,13 @@ def patch_robloxlib_fps_clamps(data: bytearray) -> bytearray:
             re.compile(re.escape(b"\x7f\xc1\x03\x71\x0c\x1e\x80\x52") + b"(" + re.escape(b"\x6b\xb1\x8c\x1a") + b"|" + re.escape(b"\x1f\x20\x03\xd5") + b")"),
             8,
             b"\x1f\x20\x03\xd5",
-            0x93b540,
         ),
         # 3. TaskScheduler target frametime calculator 240 clamp (cmp w23, #240; mov w8, #240; csel -> mov w8, w23)
         (
             "TaskScheduler frametime calculator 240 clamp",
-            re.compile(b"[\x00-\xff]\xc2\x03\x71" + re.escape(b"\x08\x1e\x80\x52") + b"(" + re.escape(b"\xe8\x32\x88\x1a") + b"|" + re.escape(b"\xe8\x03\x17\x2a") + b")"),
+            re.compile(re.escape(b"\xff\xc2\x03\x71\x08\x1e\x80\x52") + b"(" + re.escape(b"\xe8\x32\x88\x1a") + b"|" + re.escape(b"\xe8\x03\x17\x2a") + b")"),
             8,
             b"\xe8\x03\x17\x2a",
-            0x4766e64,
         ),
         # 4. TaskScheduler getTargetFps fallback 60 FPS (cmp w8, #0; mov w8, #0x3c -> mov w8, #10000)
         (
@@ -2163,7 +2196,6 @@ def patch_robloxlib_fps_clamps(data: bytearray) -> bytearray:
             re.compile(re.escape(b"\x1f\x01\x00\x71") + b"(" + re.escape(b"\x88\x07\x80\x52") + b"|" + re.escape(b"\x08\xe2\x84\x52") + b")" + re.escape(b"\x00\x01\x89\x1a")),
             4,
             b"\x08\xe2\x84\x52",
-            0x47643b8,
         ),
         # 5. AdaptiveSync schedule target 10000 FPS (ldr w8, [x0, #0x118]; cmp w8, #1; csinc/mov w22, #10000)
         (
@@ -2171,7 +2203,6 @@ def patch_robloxlib_fps_clamps(data: bytearray) -> bytearray:
             re.compile(re.escape(b"\x08\x18\x41\xb9\x1f\x05\x00\x71") + b"(" + re.escape(b"\x16\xc5\x9f\x1a") + b"|" + re.escape(b"\x16\xe2\x84\x52") + b")"),
             8,
             b"\x16\xe2\x84\x52",
-            0x409d17c,
         ),
         # 6. AdaptiveSync refresh clamp bypass (cmp w21, w22; csel -> nop)
         (
@@ -2179,7 +2210,6 @@ def patch_robloxlib_fps_clamps(data: bytearray) -> bytearray:
             re.compile(re.escape(b"\xbf\x02\x16\x6b") + b"(" + re.escape(b"\xb6\x32\x96\x1a") + b"|" + re.escape(b"\x1f\x20\x03\xd5") + b")"),
             4,
             b"\x1f\x20\x03\xd5",
-            0x409d1dc,
         ),
         # 7. DisplayTiming in-game pacing clamp (csel w8, w21, w22, ne -> mov w8, w22; ucvtf s1, w21 -> ucvtf s1, w22)
         (
@@ -2187,23 +2217,36 @@ def patch_robloxlib_fps_clamps(data: bytearray) -> bytearray:
             re.compile(b"(" + re.escape(b"\xa8\x12\x96\x1a") + b"|" + re.escape(b"\xe8\x03\x16\x2a") + b")" + re.escape(b"\x80\x02\x23\x1e") + b"(" + re.escape(b"\xa1\x02\x23\x1e") + b"|" + re.escape(b"\xc1\x02\x23\x1e") + b")" + re.escape(b"\x02\x01\x23\x1e")),
             0,
             b"\xe8\x03\x16\x2a\x80\x02\x23\x1e\xc1\x02\x23\x1e\x02\x01\x23\x1e",
-            0x409d268,
         ),
         # 8. DeviceMtl presentDrawable:atTime: delay clamp bypass (b.le presentDrawable -> b presentDrawable)
         (
             "DeviceMtl presentDrawable:atTime: delay clamp bypass",
-            re.compile(b"\x62\x7a\x40\xf9\x08\x20\x60\x1e" + b"([\x00-\xff]{2}\x00\x54|\x5e\x01\x00\x14)"),
+            re.compile(re.escape(b"\x62\x7a\x40\xf9\x08\x20\x60\x1e") + b"(" + b"[\x00-\xff]{2}\x00\x54|" + re.escape(b"\x5e\x01\x00\x14") + b")"),
             8,
             b"\x5e\x01\x00\x14",
-            0x40a43c8,
         ),
     ]
 
     applied = 0
-    for name, pattern, offset, replacement, fallback_site in patches:
-        matches = list(pattern.finditer(data))
+    for name, pattern, offset, replacement in patches:
+        matches = [match for section in image.executable_sections
+                   for match in pattern.finditer(data, section.file_offset, section.file_offset + section.size)
+                   if match.start() % 4 == 0]
+        record = {"role": name, "matches": len(matches), "status": "unresolved"}
+        records.append(record)
         if len(matches) == 1:
             site = matches[0].start() + offset
+            address = image.file_to_virtual(site)
+            index = bisect_right(image.function_starts, address) - 1 if address is not None else -1
+            if index < 0 or site + len(replacement) > matches[0].end():
+                record["status"] = "missing-function-boundary"
+                continue
+            function_start = image.function_starts[index]
+            function_end = image.function_starts[index + 1] if index + 1 < len(image.function_starts) else address + len(replacement)
+            if image.file_to_virtual(matches[0].start()) < function_start or image.file_to_virtual(matches[0].end() - 1) >= function_end:
+                record["status"] = "crosses-function-boundary"
+                continue
+            original = bytes(data[site:site + len(replacement)])
             rep = replacement
             if name == "DeviceMtl presentDrawable:atTime: delay clamp bypass":
                 cur_insn = data[site:site + 4]
@@ -2216,11 +2259,21 @@ def patch_robloxlib_fps_clamps(data: bytearray) -> bytearray:
                     rep = struct.pack('<I', (0x14 << 24) | imm26)
             data[site:site + len(rep)] = rep
             applied += 1
+            record.update(status="resolved-signature-site", fileOffset=site, rva=image.to_rva(address),
+                          functionRva=image.to_rva(function_start), before=original.hex(), after=rep.hex(),
+                          runtimeEffect="unverified-requires-device-trace")
             print(f"[PATCH_ROBLOXLIB_DYNAMIC] {name} matched & un-clamped @ 0x{site:X} (signature)")
         else:
             print(f"[PATCH_ROBLOXLIB] {name} skipped: expected unique signature, found {len(matches)}")
 
     print(f"[PATCH_ROBLOXLIB] Applied {applied}/{len(patches)} version-agnostic FPS uncap clamps")
+    report = {"schema": 1, "uuid": image.uuid, "architecture": image.architecture,
+              "sourceSha256": hashlib.sha256(image.data).hexdigest(), "outputSha256": hashlib.sha256(data).hexdigest(), "patches": records,
+              "resolved": applied, "required": len(patches), "deviceVerified": False}
+    if report_path:
+        report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    if os.environ.get("MASTERSTRAP_BUILD_TYPE", "Release") != "Debug" and applied != len(patches):
+        raise RuntimeError("FPS binary gate rejected unresolved/ambiguous patch roles; inspect fps_patch_profile.json")
     return data
 
 
@@ -2387,7 +2440,7 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                                 data = insert_load_dylib(data, "@executable_path/Frameworks/libmasterstrap.dylib")
                         elif name == "Payload/Roblox.app/Frameworks/RobloxLib.framework/RobloxLib":
                             data = remove_load_dylib(data, ["libgloop", "gloop", "delta", "libmasterstrap"])
-                            data = patch_robloxlib_fps_clamps(bytearray(data))
+                            data = patch_robloxlib_fps_clamps(bytearray(data), out_dir / "fps_patch_profile.json")
                             data = bytes(data)
                             data = insert_load_dylib(data, "@rpath/libmasterstrap.dylib")
                         elif name.endswith("Roblox.app/Info.plist"):

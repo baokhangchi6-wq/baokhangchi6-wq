@@ -87,6 +87,47 @@ class DisplayPolicyTests(unittest.TestCase):
         self.assertIn("parse_dynamic_scalar_text(token", body)
         self.assertIn("number != 0 && number != 1", body)
 
+    def test_fps_patch_rejects_ambiguous_and_non_code_matches(self):
+        import os
+        import tempfile
+        import json
+        from tests.fixtures import build_macho
+        signature = bytes.fromhex("1fc10371091e805209b1891a")
+        with mock.patch.dict(os.environ, {"MASTERSTRAP_BUILD_TYPE": "Debug"}), tempfile.TemporaryDirectory() as directory:
+            report = Path(directory) / "fps.json"
+            data = bytearray(build_macho(with_function_starts=True))
+            data[0x420:0x42c] = signature
+            data[0x1000:0x100c] = signature  # writable data must not count as executable evidence
+            result = self.builder.patch_robloxlib_fps_clamps(data, report)
+            self.assertEqual(result[0x428:0x42c], bytes.fromhex("e903082a"))
+            self.assertEqual(result[0x1000:0x100c], signature)
+            self.assertEqual(json.loads(report.read_text())["patches"][0]["matches"], 1)
+            data = bytearray(build_macho(with_function_starts=True))
+            data[0x420:0x42c] = data[0x4a0:0x4ac] = signature
+            original = bytes(data)
+            self.builder.patch_robloxlib_fps_clamps(data, report)
+            self.assertEqual(bytes(data), original)
+            self.assertEqual(json.loads(report.read_text())["patches"][0]["matches"], 2)
+            with mock.patch.dict(os.environ, {"MASTERSTRAP_BUILD_TYPE": "Release"}):
+                with self.assertRaisesRegex(RuntimeError, "binary gate"):
+                    self.builder.patch_robloxlib_fps_clamps(data, report)
+            data = bytearray(build_macho(with_function_starts=True))
+            data[0x47c:0x488] = signature  # spans two LC_FUNCTION_STARTS entries
+            original = bytes(data)
+            self.builder.patch_robloxlib_fps_clamps(data, report)
+            self.assertEqual(bytes(data), original)
+
+    def test_fps_patch_is_idempotent_for_branch_signature(self):
+        import os
+        from tests.fixtures import build_macho
+        data = bytearray(build_macho(with_function_starts=True))
+        data[0x420:0x42c] = bytes.fromhex("627a40f90820601ecd2b0054")
+        with mock.patch.dict(os.environ, {"MASTERSTRAP_BUILD_TYPE": "Debug"}):
+            self.builder.patch_robloxlib_fps_clamps(data)
+            first = bytes(data)
+            self.builder.patch_robloxlib_fps_clamps(data)
+            self.assertEqual(bytes(data), first)
+
 
 if __name__ == "__main__":
     unittest.main()

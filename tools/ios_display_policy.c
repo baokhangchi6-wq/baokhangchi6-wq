@@ -29,9 +29,11 @@ static bool g_ms_idle_owned, g_ms_idle_original;
 typedef struct { bool loaded, refresh, keep_display, boost; int target; unsigned session_generation; } MSDisplayPolicy;
 static MSDisplayPolicy g_ms_policy;
 static unsigned g_ms_generation;
+static void ms_update_probe_environment(void);
 static char g_ms_link_request_key;
 typedef struct { long fps; MSFrameRateRange range; int has_range, managed; } MSLinkRequest;
 static void write_runtime_capability_receipt(void);
+static bool bridge_write_document(const char* file_name, const char* content);
 static bool fps_runtime_requested(void);
 
 typedef unsigned char (*ProcessInfoLowPowerImp)(id, SEL);
@@ -79,7 +81,8 @@ static int ms_thermal(void) {
     return (int)((long (*)(id, SEL))objc_msgSend)(ms_process_info(), sel_registerName("thermalState"));
 }
 static bool fps_runtime_requested(void) {
-    return (g_target_fps > 60 || (g_ms_policy.loaded && (g_ms_policy.refresh || g_ms_policy.target > 60)));
+    return g_launch_authorized && g_profile_loaded &&
+        (g_target_fps > 60 || (g_ms_policy.loaded && (g_ms_policy.refresh || g_ms_policy.target > 60)));
 }
 static long fps_runtime_target(void) {
     int target = g_target_fps > 0 ? g_target_fps : g_ms_policy.target;
@@ -255,6 +258,7 @@ static void ms_refresh_links(const char* source) {
 static void ms_environment_main(void* ignored) {
     (void)ignored;
     SESSION_LOCK;
+    ms_update_probe_environment();
     if (!g_ms_policy.loaded) return;
     g_display_link_rewrite_count = 0;
     runtime_note("[LIFECYCLE][DISPLAY] lowPower=%d thermal=%d screenMax=%d", ms_low_power(), ms_thermal(), ios_maximum_frames_per_second());
@@ -342,6 +346,82 @@ static SetContentsGravityImp g_original_set_contents_gravity = NULL;
 static int g_metal_layer_stretch_installed = 0;
 static char g_ms_layer_uncapped_key;
 
+static os_unfair_lock g_frame_probe_lock = OS_UNFAIR_LOCK_INIT;
+static int g_probe_hardware, g_probe_power, g_probe_target;
+static bool g_probe_enabled;
+static double g_probe_started, g_probe_wait_sum, g_probe_wait_max;
+static unsigned long g_probe_drawables, g_probe_scheduled, g_probe_presented;
+typedef struct { double elapsed, draws, scheduled, presented, average, maximum; int target, hardware, power; } MSFrameSample;
+static double ms_probe_time(void) {
+    id info = ms_process_info();
+    return info ? ((double (*)(id, SEL))objc_msgSend)(info, sel_registerName("systemUptime")) : 0;
+}
+static int ms_hardware_maximum_fps(void) {
+    id screen = ((id (*)(id, SEL))objc_msgSend)(objc_getClass("UIScreen"), sel_registerName("mainScreen"));
+    if (!screen) return 0;
+    return g_original_screen_max_fps
+        ? (int)g_original_screen_max_fps(screen, sel_registerName("maximumFramesPerSecond"))
+        : (int)((long (*)(id, SEL))objc_msgSend)(screen, sel_registerName("maximumFramesPerSecond"));
+}
+static int ms_actual_low_power(void) {
+    id info = ms_process_info();
+    return g_original_is_low_power ? g_original_is_low_power(info, sel_registerName("isLowPowerModeEnabled"))
+        : ((unsigned char (*)(id, SEL))objc_msgSend)(info, sel_registerName("isLowPowerModeEnabled"));
+}
+static void ms_update_probe_environment(void) {
+    if (!pthread_main_np()) return;
+    int hardware = ms_hardware_maximum_fps(), power = ms_actual_low_power();
+    os_unfair_lock_lock(&g_frame_probe_lock);
+    g_probe_hardware = hardware;
+    g_probe_power = power;
+    g_probe_target = g_ms_policy.target;
+    g_probe_enabled = g_ms_policy.loaded;
+    g_probe_started = 0;
+    g_probe_drawables = g_probe_scheduled = g_probe_presented = 0;
+    g_probe_wait_sum = g_probe_wait_max = 0;
+    os_unfair_lock_unlock(&g_frame_probe_lock);
+}
+static void ms_probe_write_main(void* context) {
+    MSFrameSample sample = *(MSFrameSample*)context;
+    free(context);
+    runtime_note("[FPS][MEASURED] windowSeconds=%.2f target=%d drawableCallsPerSecond=%.1f scheduledPerSecond=%.1f presentedPerSecond=%.1f nextDrawableWaitAverageMs=%.3f nextDrawableWaitMaximumMs=%.3f hardwareMaximum=%d lowPowerActual=%d",
+        sample.elapsed, sample.target, sample.draws, sample.scheduled, sample.presented, sample.average, sample.maximum, sample.hardware, sample.power);
+    char content[1024];
+    snprintf(content, sizeof(content), "{\"schema\":1,\"generatedAtUnix\":%ld,\"windowSeconds\":%.3f,\"targetFps\":%d,\"drawableCallsPerSecond\":%.3f,\"scheduledPerSecond\":%.3f,\"presentedPerSecond\":%.3f,\"nextDrawableWaitAverageMs\":%.3f,\"nextDrawableWaitMaximumMs\":%.3f,\"hardwareMaximumFps\":%d,\"lowPowerActual\":%s,\"scope\":\"observed-metal-drawables\"}\n",
+        time(NULL), sample.elapsed, sample.target, sample.draws, sample.scheduled, sample.presented, sample.average, sample.maximum, sample.hardware, sample.power ? "true" : "false");
+    bridge_write_document("MasterstrapFrameReceipt.json", content);
+}
+static void ms_probe_record(int event, double wait) {
+    double now = ms_probe_time();
+    if (now <= 0) return;
+    os_unfair_lock_lock(&g_frame_probe_lock);
+    if (!g_probe_enabled) { os_unfair_lock_unlock(&g_frame_probe_lock); return; }
+    if (!g_probe_started) g_probe_started = now;
+    if (event == 0) { g_probe_drawables++; g_probe_wait_sum += wait; if (wait > g_probe_wait_max) g_probe_wait_max = wait; }
+    else if (event == 1) g_probe_scheduled++;
+    else g_probe_presented++;
+    double elapsed = now - g_probe_started;
+    if (elapsed < 3.0) { os_unfair_lock_unlock(&g_frame_probe_lock); return; }
+    double draws = g_probe_drawables / elapsed, scheduled = g_probe_scheduled / elapsed, presented = g_probe_presented / elapsed;
+    double average = g_probe_drawables ? g_probe_wait_sum * 1000.0 / g_probe_drawables : 0;
+    double maximum = g_probe_wait_max * 1000.0;
+    g_probe_started = now; g_probe_drawables = g_probe_scheduled = g_probe_presented = 0;
+    MSFrameSample* sample = malloc(sizeof(MSFrameSample));
+    if (sample) *sample = (MSFrameSample){elapsed, draws, scheduled, presented, average, maximum, g_probe_target, g_probe_hardware, g_probe_power};
+    g_probe_wait_sum = g_probe_wait_max = 0;
+    os_unfair_lock_unlock(&g_frame_probe_lock);
+    if (sample) dispatch_async_f(&_dispatch_main_q, sample, ms_probe_write_main);
+}
+static void ms_probe_attach_presented(id drawable) {
+    SEL add = sel_registerName("addPresentedHandler:");
+    if (!((unsigned char (*)(id, SEL, SEL))objc_msgSend)(drawable, sel_registerName("respondsToSelector:"), add)) return;
+    ((void (*)(id, SEL, void*))objc_msgSend)(drawable, add, (void*)^(id presented) {
+        SEL stamp = sel_registerName("presentedTime");
+        if (((unsigned char (*)(id, SEL, SEL))objc_msgSend)(presented, sel_registerName("respondsToSelector:"), stamp)
+            && ((double (*)(id, SEL))objc_msgSend)(presented, stamp) > 0) ms_probe_record(2, 0);
+    });
+}
+
 typedef void (*CommandPresentDrawableImp)(id, SEL, id);
 typedef void (*CommandPresentAtTimeImp)(id, SEL, id, double);
 typedef void (*CommandPresentAfterDurationImp)(id, SEL, id, double);
@@ -403,12 +483,14 @@ static void ms_install_drawable_instance_present_policy(id drawable) {
 }
 
 static void command_present_drawable_hook(id self, SEL cmd, id drawable) {
+    ms_probe_record(1, 0);
     if (g_original_command_present_drawable) {
         g_original_command_present_drawable(self, cmd, drawable);
     }
 }
 
 static void command_present_at_time_hook(id self, SEL cmd, id drawable, double time) {
+    ms_probe_record(1, 0);
     (void)time;
     /* Bypass VBlank delay: present drawable immediately without waiting for future VSync timestamp */
     if (fps_runtime_requested()) {
@@ -423,6 +505,7 @@ static void command_present_at_time_hook(id self, SEL cmd, id drawable, double t
 }
 
 static void command_present_after_duration_hook(id self, SEL cmd, id drawable, double duration) {
+    ms_probe_record(1, 0);
     (void)duration;
     /* Bypass minimum frame duration: present immediately */
     if (fps_runtime_requested()) {
@@ -552,8 +635,11 @@ static void metal_layer_set_display_sync_hook(id self, SEL cmd, bool enabled) {
 
 static id metal_layer_next_drawable_hook(id self, SEL cmd) {
     ms_ensure_layer_vsync_uncapped(self);
+    double start = ms_probe_time();
     id drawable = g_original_next_drawable ? g_original_next_drawable(self, cmd) : NULL;
+    ms_probe_record(0, ms_probe_time() - start);
     if (drawable) {
+        ms_probe_attach_presented(drawable);
         ms_install_drawable_instance_present_policy(drawable);
     }
     return drawable;
@@ -705,6 +791,7 @@ static void ms_apply_process_main(void* context) {
         g_ms_policy.keep_display, app ? ((unsigned char (*)(id, SEL))objc_msgSend)(app, sel_registerName("isIdleTimerDisabled")) : -1);
     runtime_note("[CAPABILITY][SAFE] thermalGuard=SYSTEM_RESPECTED lowPower=%d thermal=%d ramCleanup=UNSUPPORTED networkAcceleration=UNSUPPORTED", ms_low_power(), ms_thermal());
     runtime_note("[CAPABILITY][TURBO] requested=%d cpuOverclock=UNSUPPORTED gpuOverclock=UNSUPPORTED androidPowerHints=UNSUPPORTED", g_ms_policy.boost);
+    ms_update_probe_environment();
     ms_refresh_links("profile-loaded");
     ms_refresh_metal_layers();
     write_runtime_capability_receipt();

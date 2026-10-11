@@ -28,8 +28,9 @@ def main():
     def url(version, data, request):
         encoded = urllib.parse.quote(base64.b64encode(data).decode(), safe='')
         return f'robloxmobile://apply?v={version}&request={request}&payload={encoded}'
+    removed = {**payload, 'clientAppSettings': '{"DFIntExample":240}'}
     cases = [url(3, zlib.compress(serialized), 'native-v3-cold'),
-             url(1, serialized, 'native-v1-compat'),
+             url(1, json.dumps(removed).encode(), 'native-v1-compat'),
              url(3, b'not-zlib', 'native-v3-invalid'),
              url(3, zlib.compress(b'x' * 524289), 'native-v3-oversize'),
              url(4, serialized, 'native-v4-rejected')]
@@ -66,7 +67,7 @@ int test_session(void* base, unsigned expected) {
     apply_baseline_flags((uintptr_t)base);
     apply_cached_dynamic_flags((uintptr_t)base);
     write_runtime_capability_receipt();
-    return *(uint8_t*)((uintptr_t)base + 0x20) == 1 &&
+    return *(uint8_t*)((uintptr_t)base + 0x20) == (expected == 1 ? 1 : 0) &&
         *(int32_t*)((uintptr_t)base + 0x24) == 240 &&
         *(int32_t*)((uintptr_t)base + 0x28) == 240;
 }
@@ -159,7 +160,7 @@ int main(int argc, const char* argv[]) {
         (root / 'native.c').write_text(source, encoding='utf-8')
         (root / 'check.m').write_text(harness, encoding='utf-8')
         (root / 'expected.json').write_bytes(serialized)
-        subprocess.run(['xcrun', 'clang', '-O0', '-c', str(root / 'native.c'),
+        subprocess.run(['xcrun', 'clang', '-O0', '-fblocks', '-c', str(root / 'native.c'),
                         '-o', str(root / 'native.o')], check=True)
         subprocess.run(['xcrun', 'clang', str(root / 'check.m'), str(root / 'native.o'),
                         '-framework', 'Foundation', '-lz', '-o', str(root / 'check')], check=True)
