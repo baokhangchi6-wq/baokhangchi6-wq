@@ -57,24 +57,35 @@ def build_stretch_profile(ipa, report):
         drawable = [i for i, target in calls if target in stubs.get('setDrawableSize:', [])]
         if len(frame) != 2 or len(scale) != 2 or len(drawable) != 1: break
         i, j = frame
-        if j != i + 6 or scale != [i + 3, j + 3] or j + 6 >= len(code): break
-        # Require both dimensions from the same view and scale getter, then uint pixel conversions.
-        receiver = code[i - 1].op_str
-        if any(code[k].mnemonic != 'mov' or code[k].op_str != receiver for k in (i - 1, i + 2, i + 5, j + 2)): break
-        if not receiver.startswith('x0, x'): break
-        if code[i + 1].mnemonic != 'fmov' or code[j + 1].mnemonic != 'fmov': break
-        temp = code[i + 1].op_str.split(', ')[0]
-        if code[i + 1].op_str != temp + ', d2' or code[j + 1].op_str != temp + ', d3': break
-        width = code[i + 4].op_str.split(', ')[0]
-        if code[i + 4].mnemonic != 'fmul' or code[i + 4].op_str != width + ', d0, ' + temp: break
-        if code[j + 4].mnemonic != 'fmul' or code[j + 4].op_str != 'd0, d0, ' + temp: break
-        conversions = code[j + 5:j + 7]
-        wreg, hreg = (ins.op_str.split(', ')[0] for ins in conversions)
-        if any(ins.mnemonic != 'fcvtzu' for ins in conversions) or not wreg.startswith('w') or not hreg.startswith('w'): break
+        if not (i < scale[0] < j < scale[1] < drawable[0]): break
+        if any(ins.mnemonic.startswith(('b.', 'cb', 'tb')) or ins.mnemonic == 'b'
+               for ins in code[i:scale[1]]): break
+        # Match dimensions by dataflow; compiler may insert unrelated instructions.
+        def unique_between(start, stop, predicate):
+            matches = [k for k in range(start, stop) if predicate(code[k])]
+            return matches[0] if len(matches) == 1 else None
+        receiver = code[i - 1].op_str if code[i - 1].mnemonic == 'mov' else None
+        if not receiver or not receiver.startswith('x0, x'): break
+        if any(unique_between(lo, hi, lambda ins: ins.mnemonic == 'mov' and ins.op_str == receiver) is None
+               for lo, hi in ((i + 1, scale[0]), (scale[0] + 1, j), (j + 1, scale[1]))): break
+        width_move = unique_between(i + 1, scale[0], lambda ins: ins.mnemonic == 'fmov' and ins.op_str.endswith(', d2'))
+        height_move = unique_between(j + 1, scale[1], lambda ins: ins.mnemonic == 'fmov' and ins.op_str.endswith(', d3'))
+        if width_move is None or height_move is None: break
+        temp = code[width_move].op_str.split(', ')[0]
+        if code[height_move].op_str.split(', ')[0] != temp: break
+        width_multiply = unique_between(scale[0] + 1, j, lambda ins: ins.mnemonic == 'fmul' and ins.op_str.endswith(', d0, ' + temp))
+        height_multiply = unique_between(scale[1] + 1, scale[1] + 10, lambda ins: ins.mnemonic == 'fmul' and ins.op_str == 'd0, d0, ' + temp)
+        if width_multiply is None or height_multiply is None: break
+        width = code[width_multiply].op_str.split(', ')[0]
+        conversions = [k for k in range(height_multiply + 1, min(height_multiply + 10, len(code)))
+                       if code[k].mnemonic == 'fcvtzu']
+        if len(conversions) != 2: break
+        wreg, hreg = (code[k].op_str.split(', ')[0] for k in conversions)
+        if not wreg.startswith('w') or not hreg.startswith('w'): break
         if wreg == hreg or not all(19 <= int(reg[1:]) <= 28 for reg in (wreg, hreg)): break
-        if conversions[0].op_str != wreg + ', ' + width or conversions[1].op_str != hreg + ', d0': break
+        if code[conversions[0]].op_str != wreg + ', ' + width or code[conversions[1]].op_str != hreg + ', d0': break
         setter = drawable[0]
-        size_loads = [k for k in range(j + 7, setter - 1) if code[k].mnemonic == code[k + 1].mnemonic == 'ucvtf' and
+        size_loads = [k for k in range(conversions[1] + 1, setter - 1) if code[k].mnemonic == code[k + 1].mnemonic == 'ucvtf' and
                    code[k].op_str == 'd0, ' + wreg and code[k + 1].op_str == 'd1, ' + hreg
                    ]
         if len(size_loads) != 1: break
@@ -94,7 +105,7 @@ def build_stretch_profile(ipa, report):
         pending = [code[size_loads[0]].address, allocations[0][0]]; relevant = set()
         while pending:
             for k in parents.get(pending.pop(), []):
-                if k <= j + 6 or k in relevant: continue
+                if k <= conversions[1] or k in relevant: continue
                 relevant.add(k); pending.append(code[k].address)
         if any(ins.reg_name(reg).lstrip('xw') in (wreg[1:], hreg[1:])
                for k in relevant for ins in [code[k]] for reg in ins.regs_access()[1]): break

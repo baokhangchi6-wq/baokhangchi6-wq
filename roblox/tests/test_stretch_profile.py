@@ -10,7 +10,7 @@ from ios_stretch_profile import ANCHORS, build_stretch_profile
 from .fixtures import BASE, build_macho, _segment, _section, encode_adrp, encode_add, encode_bl
 
 class StretchProfileTests(unittest.TestCase):
-    def profile(self, *, wrong_axis=False, missing_resize=False, different_allocator=False, clobbered_width=False):
+    def profile(self, *, wrong_axis=False, missing_resize=False, different_allocator=False, clobbered_width=False, padded=False):
         data = bytearray(build_macho(with_function_starts=True))
         struct.pack_into('<i', data, 8, 0)
         cursor = 32; commands = []
@@ -45,6 +45,11 @@ class StretchProfileTests(unittest.TestCase):
                      0xAA1403E0, 0xAA1503E1, 0xAA1603E2,
                      encode_bl(BASE+start+76,BASE+(0x580 if different_allocator and index else 0x500)),
                      0x1E6302A0, 0x1E6302C1, encode_bl(BASE+start+88,BASE+0x640)]
+            if padded:
+                words.insert(8, 0xD503201F)
+                for position in (10, 13, 20, 23):
+                    target = {10: 0x600, 13: 0x620, 20: (0x580 if different_allocator and index else 0x500), 23: 0x640}[position]
+                    words[position] = encode_bl(BASE + start + position * 4, BASE + target)
             struct.pack_into('<'+'I'*len(words), data, start, *words)
             if clobbered_width: struct.pack_into('<I', data, start + 64, 0x52800015)
         with tempfile.TemporaryDirectory() as directory:
@@ -55,6 +60,7 @@ class StretchProfileTests(unittest.TestCase):
 
     def test_size_flow_and_rejection(self):
         self.assertTrue(self.profile()['verified'])
+        self.assertTrue(self.profile(padded=True)['verified'])
         for variant in ('wrong_axis', 'missing_resize', 'different_allocator', 'clobbered_width'):
             with self.subTest(variant=variant): self.assertFalse(self.profile(**{variant: True})['verified'])
 

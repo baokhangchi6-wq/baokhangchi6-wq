@@ -2194,7 +2194,25 @@ window.MasterstrapAds = (() => {
     document.addEventListener("touchstart", triggerBannerRefreshOnInteraction, { passive: true });
     document.addEventListener("click", triggerBannerRefreshOnInteraction, { passive: true });
 
-    return { request, nativeResult, onAdDisplayed, banner, isFree, needsFpsReward, grants };
+    return { request, nativeResult, onAdDisplayed, banner, isFree, needsFpsReward, grants,
+        busy: () => pending.size > 0 };
+})();
+
+// Additional interaction placement; existing launch, editor and banner flows keep their own gates.
+(() => {
+    let lastAttempt = 0;
+    function maybeShow(event) {
+        if (!MasterstrapAds.isFree() || document.visibilityState !== "visible" || MasterstrapAds.busy?.()) return;
+        const element = event.target?.closest?.("button, input[type=checkbox], input[type=range], select, [role=button], [role=switch]");
+        if (!element || element.disabled || element.closest(".nav-floating-launch-btn, [onclick*='saveAndLaunch'], [onclick*='applyGamePreset'], [onclick*='openFastFlagEditor']")) return;
+        if (element.matches("input[type=range]") !== (event.type === "change")) return;
+        const now = Date.now();
+        if (now - lastAttempt < 30000 || now - Number(localStorage.getItem("masterstrap_ads_last_interstitial_ms") || 0) < 30000) return;
+        lastAttempt = now;
+        MasterstrapAds.request("interstitial", "interaction_30s", true);
+    }
+    document.addEventListener("click", maybeShow, { passive: true });
+    document.addEventListener("change", maybeShow, { passive: true });
 })();
 
 // VIP Hard-Lock Function
