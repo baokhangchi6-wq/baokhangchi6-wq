@@ -38,7 +38,7 @@ def resolve_font_imports(image):
         if section[8] & 255 not in (6, 7): continue
         address, size, first = section[2], section[3], section[9]
         segment = image.segment_for_va(address)
-        if size % 8 or not segment or segment.is_executable or not segment.is_readable or not segment.max_protection & 2 or first + size // 8 > indcount:
+        if address % 8 or size % 8 or not segment or address + size > segment.end_address or segment.is_executable or not segment.is_readable or not segment.max_protection & 2 or first + size // 8 > indcount:
             raise ValueError('Invalid font import pointer section')
         for j in range(size // 8):
             index = struct.unpack_from('<I', data, indoff + (first + j) * 4)[0]

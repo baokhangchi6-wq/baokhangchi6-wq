@@ -122,6 +122,7 @@ int main(void) { @autoreleasepool {
     if (object) mach_port_deallocate(mach_task_self(), object);
     assert(region.protection == PROT_READ); // restore actual VM permission, not header guesses
     assert(test_font_rebind(page)); assert(munmap(page, pageSize) == 0);
+    assert(!test_font_rebind(NULL)); // reject unmapped input before any pointer read
 } return 0; }
 '''
     with tempfile.TemporaryDirectory() as directory:

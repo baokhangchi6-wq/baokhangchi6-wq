@@ -74,13 +74,13 @@ static int font_open_hook(const char* path, int flags, ...) {
 }
 static bool font_rebind_slot(uintptr_t base, uintptr_t rva, uintptr_t replacement) {
     uintptr_t* slot = (uintptr_t*)(base + rva);
-    if (__atomic_load_n(slot, __ATOMIC_ACQUIRE) == replacement) return true;
     uint64_t address = (uint64_t)slot, size = 0;
     int region[16] = {0}; unsigned int count = 16, object = 0;
     int status = mach_vm_region(mach_task_self_, &address, &size, 9, region, &count, &object);
     if (object) mach_port_deallocate(mach_task_self_, object);
     if (status || count < 2 || (uint64_t)slot < address || (uint64_t)slot + sizeof(*slot) > address + size ||
         !(region[0] & PROT_READ) || (region[0] & PROT_EXEC) || !(region[1] & PROT_WRITE)) return false;
+    if (__atomic_load_n(slot, __ATOMIC_ACQUIRE) == replacement) return true;
     uintptr_t page_size = (uintptr_t)getpagesize();
     if (!page_size || (page_size & (page_size - 1)) || rva % sizeof(*slot)) return false;
     uintptr_t page = (uintptr_t)slot & ~(page_size - 1);
