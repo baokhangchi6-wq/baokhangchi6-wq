@@ -80,11 +80,14 @@ def load_checkpoint(checkpoint_file: Path) -> dict:
 
 def write_checkpoint(checkpoint_file: Path, version: str) -> None:
     """Persist the newly built version to the checkpoint JSON."""
+    import os
     data = {
         "version": version,
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "platform": "ios",
         "channel": "global-appstore",
+        "build_type": os.environ.get("MASTERSTRAP_BUILD_TYPE", "unknown"),
+        "device_verified": False,
     }
     checkpoint_file.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     print(f"[CHECKPOINT] Written -> {checkpoint_file}: {version}")

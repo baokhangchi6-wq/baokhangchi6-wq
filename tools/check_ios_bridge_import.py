@@ -57,6 +57,16 @@ int test_import_url(const char* text) {
 int test_network_count(void) { return test_http_calls; }
 void test_publish_engine_base(void* base) { SESSION_LOCK; g_engine_base = (uintptr_t)base; }
 void test_boot(void* base) { complete_runtime_boot((uintptr_t)base, NULL); }
+int test_direct_boot(void* base) {
+    SESSION_LOCK;
+    apply_baseline_flags((uintptr_t)base);
+    apply_cached_dynamic_flags((uintptr_t)base);
+    return !g_launch_authorized && !g_profile_loaded && !g_session_apply_count &&
+        !fps_runtime_requested() && !test_http_calls &&
+        *(uint8_t*)((uintptr_t)base + 0x20) == 0 &&
+        *(int32_t*)((uintptr_t)base + 0x24) == 0 &&
+        *(int32_t*)((uintptr_t)base + 0x28) == 0;
+}
 char* test_document(const char* name) { SESSION_LOCK; return read_profile_file(name, NULL); }
 int test_session(void* base, unsigned expected) {
     SESSION_LOCK;
@@ -98,6 +108,7 @@ extern int test_import_url(const char*);
 extern int test_network_count(void);
 extern void test_publish_engine_base(void*);
 extern void test_boot(void*);
+extern int test_direct_boot(void*);
 extern char* test_document(const char*);
 extern int test_session(void*, unsigned);
 extern int test_stale_authorization(void);
@@ -111,6 +122,12 @@ int main(int argc, const char* argv[]) {
         void* base = mmap(NULL, 16384, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
         assert(base != MAP_FAILED);
         test_publish_engine_base(base); // engine found does not mean boot completed
+        if (strcmp(argv[7], "direct") == 0) {
+            test_boot(base);
+            assert(test_direct_boot(base));
+            assert(munmap(base, 16384) == 0);
+            return 0;
+        }
         pthread_t worker;
         bool racing = strcmp(argv[7], "race") == 0;
         if (strcmp(argv[7], "before") == 0) test_boot(base);
@@ -168,16 +185,18 @@ int main(int argc, const char* argv[]) {
                         '-o', str(root / 'native.o')], check=True)
         subprocess.run(['xcrun', 'clang', str(root / 'check.m'), str(root / 'native.o'),
                         '-framework', 'Foundation', '-lz', '-o', str(root / 'check')], check=True)
-        for mode in ['before', 'after', 'race']:
+        for mode in ['before', 'after', 'race', 'direct']:
             home = root / mode
             home.mkdir()
             subprocess.run([str(root / 'check'), *cases, str(root / 'expected.json'), mode], check=True,
                            env={**os.environ, 'HOME': str(home)})
+            if mode == 'direct':
+                continue
             assert (home / 'Documents' / 'GlobalBasicSettings_13.xml').read_text() == payload['globalSettings']
             receipt = json.loads((home / 'Documents' / 'MasterstrapRuntimeReceipt.json').read_text())
             assert receipt['profileLoaded'] and receipt['configSource'] == 'BRIDGE_SNAPSHOT'
             assert receipt['applyCount'] == 2 and receipt['request'] == receipt['appliedRequest']
-    print('PASS native importer: boot before/after/concurrent preserves five profiles and user flags; each request applies once; stale auth rejected; zero HTTP')
+    print('PASS native importer: boot before/after/concurrent preserves five profiles and user flags; removed flags restore immediately; direct boot/watchdog stays native; stale auth rejected; zero HTTP')
 
 
 if __name__ == '__main__':

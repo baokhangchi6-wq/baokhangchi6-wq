@@ -209,8 +209,8 @@ jobs:
           retention-days: 7
 
       # ── STEP 7: Advance iOS checkpoint ───────────────────────────────────
-      - name: Advance iOS version checkpoint
-        if: steps.version_gate.outputs.should_build == 'true' && steps.build_ipa.outputs.has_ipa == 'true' && env.MASTERSTRAP_BUILD_TYPE == 'Release'
+      - name: Record iOS build candidate checkpoint (not device approval)
+        if: steps.version_gate.outputs.should_build == 'true' && steps.build_ipa.outputs.has_ipa == 'true'
         shell: bash
         env:
           BUILT_VERSION: ${{ steps.build_ipa.outputs.ipa_version }}
