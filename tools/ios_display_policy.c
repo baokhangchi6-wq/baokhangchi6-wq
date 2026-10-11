@@ -463,6 +463,7 @@ static void ms_probe_attach_presented(id drawable) {
 
 static int g_ms_metal_present_hook_installed;
 static char g_ms_present_request_key;
+static char g_ms_commit_probe_key;
 static void ms_probe_present_request(id drawable) {
     if (!drawable) return;
     os_unfair_lock_lock(&g_frame_probe_lock);
@@ -490,6 +491,11 @@ static void command_present_timed_hook(id self, SEL cmd, id drawable, double tim
     else ((void (*)(id, SEL, id, double))original)(self, cmd, drawable, timing);
 }
 static void command_commit_hook(id self, SEL cmd, IMP original) {
+    os_unfair_lock_lock(&g_frame_probe_lock);
+    bool first = objc_getAssociatedObject(self, &g_ms_commit_probe_key) == NULL;
+    if (first) objc_setAssociatedObject(self, &g_ms_commit_probe_key, (id)1, 0);
+    os_unfair_lock_unlock(&g_frame_probe_lock);
+    if (!first) { ((void (*)(id, SEL))original)(self, cmd); return; }
     ms_probe_record(3, 0);
     SEL add = sel_registerName("addCompletedHandler:");
     if (((unsigned char (*)(id, SEL, SEL))objc_msgSend)(self, sel_registerName("respondsToSelector:"), add))
