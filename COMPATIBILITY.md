@@ -56,6 +56,12 @@ CI phải phát hiện/chặn, không đoán địa chỉ để giữ workflow x
   test hình ảnh, restore, orientation/touch trên iPhone. Không tuyên bố camera
   projection/FOV đã thay đổi chỉ vì resolution thay đổi. Bản compiler đổi luồng
   tính kích thước phải bị từ chối, không dùng RVA cũ.
+- GUI và joystick: build #142 xác nhận framebuffer 3D/UI cùng bị thu chiều ngang.
+  Resolver đã nhận lệnh xen giữa khi dataflow width/height vẫn giữ, nhưng không
+  dùng patch "projection" cũ: site đó thuộc `FastCluster::updateInstanceData`.
+  Cần tách scene target khỏi `Pass2d/PlayerGui` và `Pass2d/CoreGui`, giữ final
+  drawable/UI ở kích thước gốc, xác minh touch và restore trên thiết bị. Nếu
+  compiler đổi graph pass/attachment, gate phải đóng, không lấy tên pass làm ABI.
 - Font sizeStep: contract riêng; family assets remap không chứng minh đổi cỡ chữ.
 - Mọi tính năng mới dùng snapshot năm tài liệu hiện có. Không thêm request riêng
   từng feature, polling bridge hoặc D1 diagnostics; licence vẫn xác minh server.
