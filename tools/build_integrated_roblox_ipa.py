@@ -303,7 +303,7 @@ def fetch_or_load_offsets_map(local_hpp: Path) -> dict:
     return table
 
 
-def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_count: int, offset_entries: list = None, all_flags_table: dict = None, expected_uuid: str = None, font_profile: dict = None) -> str:
+def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_count: int, offset_entries: list = None, all_flags_table: dict = None, expected_uuid: str = None, font_profile: dict = None, pacing_profile: dict = None) -> str:
     import uuid
     uuid_bytes = uuid.UUID(expected_uuid).bytes if expected_uuid else bytes(16)
     if offset_entries is None:
@@ -311,6 +311,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
     if all_flags_table is None:
         all_flags_table = {}
     font_profile = font_profile or {}
+    pacing_profile = pacing_profile or {}
 
     sorted_all_flags = sorted((name, rva) for name, rva in all_flags_table.items()
         if name.startswith(('FFlag', 'DFFlag', 'SFFlag', 'FInt', 'DFInt', 'SFInt')))
@@ -1207,6 +1208,13 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         *[f"    {{0x{slot['rva']:x}, {slot['kind']}}}," for slot in font_profile.get('readerSlots', [])],
         "    {0, 0}};",
         *(ROOT / "tools" / "ios_font_assets.c").read_text(encoding="utf-8").splitlines(),
+        "static const struct { uintptr_t rva; int kind; } kPacingSlots[] = {",
+        *[f"    {{0x{slot['rva']:x}, {slot['kind']}}}," for slot in pacing_profile.get('readerSlots', [])],
+        "    {0, 0}};",
+        "static const struct { uintptr_t call, start, end; } kPacingCallers[] = {",
+        *[f"    {{0x{caller['callRva']:x}, 0x{caller['startRva']:x}, 0x{caller['endRva']:x}}}," for caller in pacing_profile.get('callers', [])],
+        "    {0, 0, 0}};",
+        *(ROOT / "tools" / "ios_pacing_probe.c").read_text(encoding="utf-8").splitlines(),
         "",
         "static void log_runtime_consumer_contract(void) {",
         "    runtime_note(\"[REQUEST][FONT] family=%s sizeStep=%d\", g_font_family, g_font_size_step);",
@@ -1391,6 +1399,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    g_launch_authorized = true;",
         "    apply_font_asset_profile(g_engine_base);",
         "    g_session_apply_count++;",
+        "    ms_install_pacing_probe(g_engine_base, g_session_apply_count);",
         "    install_display_link_policy();",
         "    install_metal_layer_stretch_policy();",
         "    apply_ios_process_policies();",
@@ -1994,6 +2003,8 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
 
 
 def compile_dylib(c_source: str, out_dylib: Path) -> Path:
+    if sys.platform != "darwin":
+        raise RuntimeError("Native iOS pacing module requires Apple SDK; build through macOS Actions")
     work_dir = out_dylib.parent
     work_dir.mkdir(parents=True, exist_ok=True)
     c_file = work_dir / "masterstrap_ios.c"
@@ -2012,6 +2023,9 @@ def compile_dylib(c_source: str, out_dylib: Path) -> Path:
         if not isysroot:
             raise RuntimeError("Apple iphoneos SDK is required")
 
+        pacing_object = work_dir / "pacing.o"
+        subprocess.run(["xcrun", "clang++", "-std=c++17", "-target", "arm64-apple-ios14.0", *native_options,
+                        *isysroot, "-c", str(ROOT / "tools/ios_pacing_probe.cpp"), "-o", str(pacing_object)], check=True)
         compile_cmd = [
             "clang",
             "-target", "arm64-apple-ios14.0",
@@ -2021,8 +2035,10 @@ def compile_dylib(c_source: str, out_dylib: Path) -> Path:
             "-undefined", "dynamic_lookup",
             "-install_name", "@rpath/libmasterstrap.dylib",
             "-lz",
+            "-lc++",
             *isysroot,
             str(c_file),
+            str(pacing_object),
             "-o", str(out_dylib)
         ]
         proc = subprocess.run(compile_cmd, capture_output=True, text=True)
@@ -2373,10 +2389,14 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
             tpath = Path(td)
             dylib_path = tpath / "libmasterstrap.dylib"
             from ios_font_profile import build_font_profile
+            from ios_pacing_profile import build_pacing_profile
             font_profile = build_font_profile(input_ipa, out_dir / "font_asset_profile.json")
+            pacing_profile = build_pacing_profile(input_ipa, out_dir / "pacing_profile.json")
             if font_profile['uuid'] != expected_uuid:
                 raise RuntimeError("Font profile UUID does not match verified engine")
-            c_src = generate_native_hook_source(verified_entries, miss_offsets, len(flags), offsets_entries, all_flags_table=table, expected_uuid=expected_uuid, font_profile=font_profile)
+            if pacing_profile['uuid'] != expected_uuid:
+                raise RuntimeError("Pacing profile UUID does not match verified engine")
+            c_src = generate_native_hook_source(verified_entries, miss_offsets, len(flags), offsets_entries, all_flags_table=table, expected_uuid=expected_uuid, font_profile=font_profile, pacing_profile=pacing_profile)
             compile_dylib(c_src, dylib_path)
             dylib_bytes = dylib_path.read_bytes()
 

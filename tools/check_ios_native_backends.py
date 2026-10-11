@@ -46,6 +46,12 @@ void* test_font_read(const char* path, const char* mode) { return font_fopen_hoo
 int test_font_open(const char* path, int flags) { return font_open_hook(path, flags); }
 void* test_font_slot(void) { return (void*)font_fopen_hook; }
 int test_font_rebind(void* page) { return font_rebind_slot((uintptr_t)page, 8, (uintptr_t)font_fopen_hook); }
+int test_layer_properties(void* layer) {
+    ms_apply_metal_layer_policies(layer);
+    return ms_bool_property(layer, "displaySyncEnabled", "isDisplaySyncEnabled") == 0 &&
+        ms_count_property(layer, "maximumDrawableCount") == 3 && ms_bool_property(layer, "presentsWithTransaction", NULL) == 0;
+}
+int test_missing_layer_property(void* object) { return ms_bool_property(object, "displaySyncEnabled", "isDisplaySyncEnabled"); }
 '''
     harness = r'''
 #import <Foundation/Foundation.h>
@@ -66,6 +72,8 @@ extern void* test_font_read(const char*, const char*);
 extern int test_font_open(const char*, int);
 extern int test_font_rebind(void*);
 extern void* test_font_slot(void);
+extern int test_layer_properties(void*);
+extern int test_missing_layer_property(void*);
 static unsigned rootCalls, childCalls;
 @interface MSBackendRoot : NSObject
 - (void)step;
@@ -113,6 +121,13 @@ static unsigned commits, directPresents, delayedPresents;
 - (id)newCommandQueue { return [MSLateQueue new]; }
 - (id)newCommandQueueWithMaxCommandBufferCount:(unsigned long)count { (void)count; return [MSLateQueue new]; }
 @end
+@interface MSLayerProperties : NSObject
+@property BOOL displaySyncEnabled;
+@property BOOL presentsWithTransaction;
+@property BOOL allowsNextDrawableTimeout;
+@property NSUInteger maximumDrawableCount;
+@end
+@implementation MSLayerProperties @end
 static NSString* makeFile(NSString* root, NSString* name, NSString* value) {
     NSString* path = [root stringByAppendingPathComponent:name];
     assert([value writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:NULL]);
@@ -136,6 +151,8 @@ int main(void) { @autoreleasepool {
     [override step]; assert(rootCalls == 3 && childCalls == 1 && test_hook_count() == 3);
     assert(!test_hook_class([MSBackendRoot class], "wrong")); assert([root wrong] == 42);
     assert(test_range_target(60)); assert(test_range_target(2000));
+    MSLayerProperties* layer = [MSLayerProperties new]; layer.displaySyncEnabled = YES; layer.presentsWithTransaction = YES;
+    assert(test_layer_properties(layer)); assert(test_missing_layer_property(root) == -1); [layer release];
     MSLateDevice* device = [MSLateDevice new]; // no Metal protocols; concrete late discovery must work
     test_observe_device(device);
     assert(commits == 0 && test_pipeline(0, 0, 0)); // bootstrap cannot submit GPU work
@@ -185,7 +202,9 @@ int main(void) { @autoreleasepool {
         (root / 'native.c').write_text(source, encoding='utf-8')
         (root / 'check.m').write_text(harness, encoding='utf-8')
         subprocess.run(['xcrun', 'clang', '-O0', '-fblocks', '-c', str(root / 'native.c'), '-o', str(root / 'native.o')], check=True)
-        subprocess.run(['xcrun', 'clang', str(root / 'check.m'), str(root / 'native.o'), '-framework', 'Foundation', '-lz', '-o', str(root / 'check')], check=True)
+        subprocess.run(['xcrun', 'clang++', '-std=c++17', '-O0', '-c', str(Path(__file__).parent / 'ios_pacing_probe.cpp'),
+                        '-o', str(root / 'pacing.o')], check=True)
+        subprocess.run(['xcrun', 'clang', str(root / 'check.m'), str(root / 'native.o'), str(root / 'pacing.o'), '-framework', 'Foundation', '-lz', '-lc++', '-o', str(root / 'check')], check=True)
         subprocess.run([str(root / 'check')], env={**os.environ, 'HOME': directory}, check=True)
     print('PASS native backends: class-local/inherited/super hooks, ABI rejection, font scope/fallback, read-only import rebinding')
 

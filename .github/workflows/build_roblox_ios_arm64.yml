@@ -65,6 +65,7 @@ jobs:
           python -B tools/check_ios_bridge_budget.py
           python -B tools/check_ios_bridge_import.py
           python -B tools/check_ios_native_backends.py
+          python -B tools/check_ios_pacing_probe.py
           PYTHONPATH=roblox python -B -m unittest discover -s roblox/tests -t roblox
 
       # ── STEP 1: Version Gate (threshold = 0, IMMEDIATE) ──────────────────
@@ -207,6 +208,7 @@ jobs:
             output/bridge_build_identity.json
             output/fps_patch_profile.json
             output/font_asset_profile.json
+            output/pacing_profile.json
           if-no-files-found: error
           retention-days: 7
 

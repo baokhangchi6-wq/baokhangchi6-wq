@@ -53,6 +53,7 @@ static char g_ms_link_request_key;
 typedef struct { long fps; MSFrameRateRange range; int has_range, managed; } MSLinkRequest;
 static void write_runtime_capability_receipt(void);
 static bool bridge_write_document(const char* file_name, const char* content);
+static void ms_pacing_write_receipt(void);
 static bool fps_runtime_requested(void);
 
 typedef unsigned char (*ProcessInfoLowPowerImp)(id, SEL);
@@ -371,6 +372,22 @@ static SetContentsGravityImp g_original_set_contents_gravity = NULL;
 
 static int g_metal_layer_stretch_installed = 0;
 static char g_ms_layer_uncapped_key;
+static int ms_bool_property(id object, const char* primary, const char* alternate) {
+    if (!object) return -1;
+    const char* names[] = {primary, alternate};
+    for (int i = 0; i < 2 && names[i]; i++) {
+        SEL selector = sel_registerName(names[i]);
+        Method method = class_getInstanceMethod(object_getClass(object), selector);
+        if (ms_method_abi_matches(method, "B@:") || ms_method_abi_matches(method, "c@:"))
+            return ((unsigned char (*)(id, SEL))objc_msgSend)(object, selector) != 0;
+    }
+    return -1;
+}
+static long ms_count_property(id object, const char* name) {
+    SEL selector = sel_registerName(name);
+    if (!object || !ms_method_abi_matches(class_getInstanceMethod(object_getClass(object), selector), "Q@:")) return -1;
+    return (long)((unsigned long (*)(id, SEL))objc_msgSend)(object, selector);
+}
 
 static os_unfair_lock g_frame_probe_lock = OS_UNFAIR_LOCK_INIT;
 static int g_probe_hardware, g_probe_power, g_probe_target;
@@ -427,6 +444,7 @@ static void ms_probe_write_main(void* context) {
         time(NULL), sample.request, getpid(), sample.elapsed, sample.target, sample.draws, sample.scheduled, sample.presented, sample.average, sample.maximum, sample.hardware, sample.power ? "true" : "false",
         sample.callbacks, sample.commits, sample.completed, sample.gpu, sample.gpu_samples, sample.completion_wait, sample.scheduling_wait);
     bridge_write_document("MasterstrapFrameReceipt.json", content);
+    ms_pacing_write_receipt();
 }
 static void ms_probe_record(int event, double wait) {
     double now = ms_probe_time();
@@ -631,10 +649,11 @@ static void ms_observe_metal_device(id device) {
 static void ms_apply_metal_layer_policies(id layer) {
     if (!layer) return;
 
-    // 1. Uncap Metal VSync (Allows engine rendering loop to exceed 120Hz up to 10,000 FPS)
+    // Request policy; public API support/readback does not prove display/compositor uncap.
     if (fps_runtime_requested()) {
         SEL sync_sel = sel_registerName("setDisplaySyncEnabled:");
-        if (((bool (*)(id, SEL, SEL))objc_msgSend)(layer, sel_registerName("respondsToSelector:"), sync_sel)) {
+        bool sync_supported = ((unsigned char (*)(id, SEL, SEL))objc_msgSend)(layer, sel_registerName("respondsToSelector:"), sync_sel);
+        if (sync_supported) {
             ((void (*)(id, SEL, bool))objc_msgSend)(layer, sync_sel, false);
         }
         SEL max_sel = sel_registerName("setMaximumDrawableCount:");
@@ -649,6 +668,16 @@ static void ms_apply_metal_layer_policies(id layer) {
         if (((bool (*)(id, SEL, SEL))objc_msgSend)(layer, sel_registerName("respondsToSelector:"), trans_sel)) {
             ((void (*)(id, SEL, bool))objc_msgSend)(layer, trans_sel, false);
         }
+        int sync = ms_bool_property(layer, "displaySyncEnabled", "isDisplaySyncEnabled");
+        int transaction = ms_bool_property(layer, "presentsWithTransaction", NULL);
+        long drawables = ms_count_property(layer, "maximumDrawableCount");
+        runtime_note("[METAL][LAYER] class=%s displaySyncSetter=%d displaySyncReadback=%d presentsWithTransaction=%d maximumDrawables=%ld status=%s",
+            class_getName(object_getClass(layer)), sync_supported, sync, transaction, drawables,
+            sync_supported && sync == 0 ? "REQUEST_READBACK_MATCH" : "UNSUPPORTED_OR_OS_ADJUSTED");
+        char content[768];
+        snprintf(content, sizeof(content), "{\"schema\":1,\"generatedAtUnix\":%ld,\"displaySyncSetterSupported\":%s,\"displaySyncReadback\":%d,\"presentsWithTransaction\":%d,\"maximumDrawables\":%ld,\"runtimeEffectVerified\":false}\n",
+            time(NULL), sync_supported ? "true" : "false", sync, transaction, drawables);
+        bridge_write_document("MasterstrapLayerReceipt.json", content);
     }
 }
 
@@ -661,7 +690,7 @@ static inline void ms_ensure_layer_vsync_uncapped(id layer) {
 
     ms_apply_metal_layer_policies(layer);
     objc_setAssociatedObject(layer, &g_ms_layer_uncapped_key, (id)1, 0); /* OBJC_ASSOCIATION_ASSIGN */
-    runtime_note("[METAL][VSYNC] Uncapped CAMetalLayer %p: displaySyncEnabled=NO maxDrawables=3", layer);
+    runtime_note("[METAL][VSYNC] layer=%p policy=REQUESTED frameEffect=UNVERIFIED", layer);
 }
 
 static void metal_layer_set_display_sync_hook(id self, SEL cmd, bool enabled) {

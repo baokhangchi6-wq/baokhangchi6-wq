@@ -38,6 +38,10 @@ CI phải phát hiện/chặn, không đoán địa chỉ để giữ workflow x
 - FPS: xác nhận queue/commit/completion/GPU coverage trên iPhone; truy vết đúng
   engine step/nguồn overlay, rồi sửa pacing được chứng minh. Display/present rate
   không được đổi nhãn thành engine FPS; `engineFps=null` tới khi có bộ đo đúng.
+- Pacing probe: resolve libc++ wait import và BL caller/function bounds từ binary;
+  observer C++ giữ nguyên lock/deadline/exception, không bỏ fence wait. Caller không
+  nhận diện không được gán nhãn engine step. Layer phải ghi supported/readback,
+  không tuyên bố VSync đã tắt chỉ từ yêu cầu setter.
 - Stretch: backend riêng sau FPS gate; lưu kích thước gốc mỗi layer, restore 100%,
   portrait/landscape, touch. Không nhân tỷ lệ lên kích thước đã stretch.
 - Font sizeStep: contract riêng; family assets remap không chứng minh đổi cỡ chữ.

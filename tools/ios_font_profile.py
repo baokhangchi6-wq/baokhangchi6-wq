@@ -11,7 +11,7 @@ CATALOG = dict(zip(
     ('Minecraft', 'GothamBold', 'Cyberpunk', 'Fredoka', 'AnimeHand', 'ComicBangers', 'Typewriter', 'Creepster', 'Merriweather', 'Highway'),
     ('PressStart2P', 'Montserrat', 'Zekton', 'FredokaOne', 'IndieFlower', 'Bangers', 'SpecialElite', 'Creepster', 'Merriweather', 'HighwayGothic')))
 
-def resolve_font_imports(image):
+def resolve_import_slots(image, wanted):
     data = image.data
     symbols = indirect = None
     sections = []
@@ -49,9 +49,12 @@ def resolve_font_imports(image):
             end = data.find(b'\0', stroff + nameoff, stroff + strsize)
             if end < 0: raise ValueError('Unterminated font symbol name')
             name = data[stroff + nameoff:end]
-            if name in (b'_fopen', b'_open') and kind == 1 and number == 0:
-                slots.append({'symbol': name.decode(), 'rva': image.to_rva(address + j * 8), 'kind': 0 if name == b'_fopen' else 1})
+            if name in wanted and kind == 1 and number == 0:
+                slots.append({'symbol': name.decode(), 'rva': image.to_rva(address + j * 8), 'kind': wanted[name]})
     return slots
+
+def resolve_font_imports(image):
+    return resolve_import_slots(image, {b'_fopen': 0, b'_open': 1})
 
 def build_font_profile(ipa, report):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'roblox'))

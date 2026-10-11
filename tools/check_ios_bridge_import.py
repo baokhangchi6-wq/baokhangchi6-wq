@@ -183,8 +183,10 @@ int main(int argc, const char* argv[]) {
         (root / 'expected.json').write_bytes(serialized)
         subprocess.run(['xcrun', 'clang', '-O0', '-fblocks', '-c', str(root / 'native.c'),
                         '-o', str(root / 'native.o')], check=True)
+        subprocess.run(['xcrun', 'clang++', '-std=c++17', '-O0', '-c', str(Path(__file__).parent / 'ios_pacing_probe.cpp'),
+                        '-o', str(root / 'pacing.o')], check=True)
         subprocess.run(['xcrun', 'clang', str(root / 'check.m'), str(root / 'native.o'),
-                        '-framework', 'Foundation', '-lz', '-o', str(root / 'check')], check=True)
+                        str(root / 'pacing.o'), '-framework', 'Foundation', '-lz', '-lc++', '-o', str(root / 'check')], check=True)
         for mode in ['before', 'after', 'race', 'direct']:
             home = root / mode
             home.mkdir()
