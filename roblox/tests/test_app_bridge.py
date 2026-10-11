@@ -189,7 +189,7 @@ class AppBridgeTests(unittest.TestCase):
         self.assertIn('kFpsRuntimeBackend = "cadisplaylink-range-policy-v2"', hook_source)
         self.assertIn('kFontRuntimeBackend = "engine-import-stock-family-v1"', hook_source)
         self.assertIn('kShaderRuntimeBackend = "guarded-ios-luau-pending"', hook_source)
-        self.assertIn('kStretchRuntimeBackend = "cametallayer-drawable-resize"', hook_source)
+        self.assertIn('kStretchRuntimeBackend = "verified-framebuffer-input"', hook_source)
         self.assertIn("FastFlag Apply Backend: %s", hook_source)
         self.assertIn("[CAPABILITY][FPS]", hook_source)
         self.assertIn("[CAPABILITY][FONT]", hook_source)

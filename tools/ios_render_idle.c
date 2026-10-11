@@ -14,5 +14,5 @@ static void apply_render_idle_policy(uintptr_t base) {
     FFlagPatchEntry entry = {idle->name, idle->rva, 0, 0};
     bool written = SetFastFlag(base, &entry);
     if (written) cache_dynamic_flag(idle, 0, 0);
-    runtime_note("[FPS][RENDER_IDLE] status=%s before=%d after=%d minimumIdleUs=%d requested=%d source=VERIFIED_BINARY_ROLE", written ? "DISABLED_MINIMUM_IDLE" : "WRITE_FAILED", before, *(volatile uint8_t*)(base + idle->rva), microseconds, g_target_fps);
+    runtime_note("[FPS][RENDER_IDLE] status=%s before=%d after=%d minimumIdleUs=%d requested=%d source=VERIFIED_BINARY_ROLE", written ? (before ? "DISABLED_MINIMUM_IDLE" : "ALREADY_DISABLED") : "WRITE_FAILED", before, *(volatile uint8_t*)(base + idle->rva), microseconds, g_target_fps);
 }

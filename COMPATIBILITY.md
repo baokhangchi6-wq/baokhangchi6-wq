@@ -11,7 +11,7 @@ lai giữ nguyên contract.
 | Flag | UUID/hash binary; registration/storage map có loại và bounds | Không ghi slot không được xác minh; báo MISS/UNSUPPORTED |
 | FPS | Patch signature duy nhất trong executable/function bounds; Metal device/queue/buffer thực, selector và ABI | Runtime giữ original IMP khi ABI sai; Release chặn patch thiếu/mơ hồ |
 | Font family | Import symbol table của đúng binary; catalog JSON/TTF stock, canonical path, fallback | Chặn build thiếu reader/Minecraft; runtime quay về reader gốc |
-| Stretch | Chưa bật: cần layer/viewport scope, kích thước gốc, restore/touch | Giữ disabled tới khi gate riêng đạt |
+| Stretch resolution | Anchor create/resize framebuffer; hai lần đọc frame/scale; cùng width/height cho allocator và drawable; UUID + CGRect ABI | Không sửa frame nếu thiếu/mơ hồ; Debug chờ device gate; Release chặn role thiếu |
 
 Metal discovery xử lý từng protocol độc lập và quan sát device sau khi driver
 lazy-load. Queue factory bắt object cụ thể; không khóa vào tên class AGX hoặc
@@ -48,8 +48,14 @@ CI phải phát hiện/chặn, không đoán địa chỉ để giữ workflow x
   không còn yêu cầu sẽ restore giá trị trước Masterstrap. Không đổi minimumIdleUs,
   không bỏ fence/GPU wait. Runtime kiểm tra UUID; Release chặn role chưa xác minh,
   Debug giữ policy tắt khi không resolve được. Profile không thay device gate.
-- Stretch: backend riêng sau FPS gate; lưu kích thước gốc mỗi layer, restore 100%,
-  portrait/landscape, touch. Không nhân tỷ lệ lên kích thước đã stretch.
+- Stretch resolution: thay width trả về chỉ ở lần đọc `UIView.frame` đầu tiên của
+  hai hàm tạo/resize framebuffer được xác minh. Mỗi lần lấy frame gốc mới, không
+  sửa layout/touch hoặc co riêng drawable khác kích thước framebuffer. Portrait,
+  direct launch và 100% dùng frame gốc. Snapshot mới đổi policy; engine resize
+  lần kế tiếp tạo lại framebuffer đồng bộ. Receipt đo số lần đúng callsite; cần
+  test hình ảnh, restore, orientation/touch trên iPhone. Không tuyên bố camera
+  projection/FOV đã thay đổi chỉ vì resolution thay đổi. Bản compiler đổi luồng
+  tính kích thước phải bị từ chối, không dùng RVA cũ.
 - Font sizeStep: contract riêng; family assets remap không chứng minh đổi cỡ chữ.
 - Mọi tính năng mới dùng snapshot năm tài liệu hiện có. Không thêm request riêng
   từng feature, polling bridge hoặc D1 diagnostics; licence vẫn xác minh server.

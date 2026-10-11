@@ -210,6 +210,7 @@ jobs:
             output/font_asset_profile.json
             output/pacing_profile.json
             output/render_idle_profile.json
+            output/stretch_profile.json
           if-no-files-found: error
           retention-days: 7
 

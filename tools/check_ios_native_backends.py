@@ -11,6 +11,7 @@ def main():
     source = generate_native_hook_source([], [], 0,
         all_flags_table={'FFlagMainThreadIdle': 0x100, 'FIntMainThreadMinIdleTimeUs': 0x104},
         expected_uuid='12345678-1234-5678-1234-567812345678',
+        stretch_profile={'verified': True, 'roles': [{'frameReturnRva': 0x300}, {'frameReturnRva': 0x400}]},
         render_idle_profile={'verified': True, 'flagRva': 0x100, 'minimumRva': 0x104}, font_profile={
         'catalog': {'Minecraft': 'PressStart2P.json'},
         'stockFamilies': ['SourceSansPro.json', 'PressStart2P.json', 'NotoSansCJKFallback.json', 'RobloxEmoji.json']})
@@ -60,6 +61,43 @@ void test_drawable_track(void* drawable) {
     ms_track_drawable_lifetime(drawable);
 }
 unsigned long test_drawable_metric(int index) { return g_drawable_metrics[index].count; }
+#if defined(__arm64__)
+__asm__(".text\n.p2align 2\n_test_stretch_call:\n"
+        "stp x29, x30, [sp, #-16]!\nmov x29, sp\nbl _ms_stretch_frame_hook\n"
+        "_test_stretch_call_return:\nldp x29, x30, [sp], #16\nret\n");
+extern MSStretchRect test_stretch_call(id, SEL);
+extern char test_stretch_call_return;
+#endif
+int test_stretch(void* view) {
+    SEL frame = sel_registerName("frame");
+    if (!ms_stretch_frame_abi(class_getInstanceMethod(object_getClass(view), frame))) return 0;
+    if (ms_stretch_frame_abi(class_getInstanceMethod(object_getClass(view), sel_registerName("wrong")))) return 0;
+    g_stretch_original_frame = (void*)method_getImplementation(class_getInstanceMethod(object_getClass(view), frame));
+    g_stretch_base = 0x10000; g_stretch_target = 50;
+    MSStretchRect native = {{10, 20}, {1000, 500}};
+    for (int i = 0; i < 100; i++) {
+        MSStretchRect result = ms_stretch_frame_value(native, 0x10300);
+        if (result.origin.x != 10 || result.origin.y != 20 || result.size.width != 500 || result.size.height != 500) return 0;
+    }
+    if (ms_stretch_frame_value(native, 0x10400).size.width != 500) return 0;
+    if (ms_stretch_frame_value(native, 0x10500).size.width != 1000) return 0;
+    if (ms_stretch_frame_hook(view, frame).size.width != 1000) return 0; // ordinary UIKit caller stays native
+#if defined(__arm64__)
+    g_stretch_base = (uintptr_t)&test_stretch_call_return - 0x300;
+    if (test_stretch_call(view, frame).size.width != 500) return 0; // real ARM64 return-address scope and CGRect ABI
+    g_stretch_base = 0x10000;
+#endif
+    MSStretchRect portrait = {{0, 0}, {500, 1000}};
+    if (ms_stretch_frame_value(portrait, 0x10300).size.width != 500) return 0;
+    g_stretch_target = 75;
+    if (ms_stretch_frame_value(native, 0x10300).size.width != 750) return 0;
+    g_stretch_target = 100;
+    if (ms_stretch_frame_value(native, 0x10300).size.width != 1000) return 0;
+    g_stretch_base = 0; g_stretch_target = 50;
+    if (ms_stretch_frame_value(native, 0x10300).size.width != 1000) return 0;
+    g_stretch_original_frame = NULL; g_stretch_target = 100;
+    return 1;
+}
 void test_refresh_layers(void* layer) { ms_track_metal_layer(layer); ms_refresh_observed_layers(); }
 int test_render_idle(void* allocation) {
     uintptr_t base = (uintptr_t)allocation;
@@ -110,9 +148,18 @@ extern int test_layer_properties(void*);
 extern int test_missing_layer_property(void*);
 extern void test_drawable_track(void*);
 extern unsigned long test_drawable_metric(int);
+extern int test_stretch(void*);
 extern int test_render_idle(void*);
 extern void test_refresh_layers(void*);
 static unsigned rootCalls, childCalls;
+@interface MSStretchView : NSObject
+- (NSRect)frame;
+- (double)wrong;
+@end
+@implementation MSStretchView
+- (NSRect)frame { return NSMakeRect(10, 20, 1000, 500); }
+- (double)wrong { return 0; }
+@end
 @interface MSBackendRoot : NSObject
 - (void)step;
 - (double)wrong;
@@ -194,6 +241,8 @@ int main(void) { @autoreleasepool {
     [override step]; assert(rootCalls == 3 && childCalls == 1 && test_hook_count() == 3);
     assert(!test_hook_class([MSBackendRoot class], "wrong")); assert([root wrong] == 42);
     assert(test_range_target(60)); assert(test_range_target(2000));
+    MSStretchView* stretchView = [MSStretchView new];
+    assert(test_stretch(stretchView)); [stretchView release];
     MSLayerProperties* layer = [MSLayerProperties new]; layer.displaySyncEnabled = YES; layer.presentsWithTransaction = YES;
     assert(test_layer_properties(layer)); assert(test_missing_layer_property(root) == -1);
     layer.displaySyncEnabled = YES; test_refresh_layers(layer); assert(layer.displaySyncEnabled == NO); [layer release];

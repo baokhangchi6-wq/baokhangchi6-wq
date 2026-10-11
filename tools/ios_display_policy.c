@@ -59,6 +59,8 @@ typedef struct { long fps; MSFrameRateRange range; int has_range, managed; } MSL
 static void write_runtime_capability_receipt(void);
 static bool bridge_write_document(const char* file_name, const char* content);
 static void ms_pacing_write_receipt(void);
+static void ms_stretch_write_receipt(void);
+static void ms_stretch_observe_drawable(id drawable);
 static bool fps_runtime_requested(void);
 
 typedef unsigned char (*ProcessInfoLowPowerImp)(id, SEL);
@@ -365,17 +367,6 @@ static SetDisplaySyncImp g_original_set_display_sync = NULL;
 typedef id (*NextDrawableImp)(id, SEL);
 static NextDrawableImp g_original_next_drawable = NULL;
 
-#if defined(__arm64__) || defined(__aarch64__)
-typedef struct { double width; double height; } MSSize;
-#else
-typedef struct { float width; float height; } MSSize;
-#endif
-typedef void (*SetDrawableSizeImp)(id, SEL, MSSize);
-static SetDrawableSizeImp g_original_set_drawable_size = NULL;
-
-typedef void (*SetContentsGravityImp)(id, SEL, id);
-static SetContentsGravityImp g_original_set_contents_gravity = NULL;
-
 static int g_metal_layer_stretch_installed = 0;
 static char g_ms_layer_uncapped_key;
 static char g_ms_layer_weak_key;
@@ -501,6 +492,7 @@ static void ms_probe_write_main(void* context) {
     bridge_write_document("MasterstrapFrameReceipt.json", content);
     ms_pacing_write_receipt();
     ms_write_drawable_receipt();
+    ms_stretch_write_receipt();
 }
 static void ms_probe_record(int event, double wait) {
     double now = ms_probe_time();
@@ -785,6 +777,7 @@ static id metal_layer_next_drawable_hook(id self, SEL cmd) {
     id drawable = g_original_next_drawable ? g_original_next_drawable(self, cmd) : NULL;
     ms_probe_record(0, ms_probe_time() - start);
     if (drawable) {
+        ms_stretch_observe_drawable(drawable);
         ms_track_drawable_lifetime(drawable);
         objc_setAssociatedObject(drawable, &g_ms_present_request_key, NULL, 0);
         ms_probe_attach_presented(drawable);
@@ -800,91 +793,6 @@ static id metal_layer_init_hook(id self, SEL cmd) {
     id res = g_original_metal_layer_init ? g_original_metal_layer_init(self, cmd) : self;
     ms_ensure_layer_vsync_uncapped(res);
     return res;
-}
-
-static inline id get_ca_gravity_resize(void) {
-    static id s_gravity_resize = NULL;
-    if (!s_gravity_resize) {
-        s_gravity_resize = ms_string("resize");
-    }
-    return s_gravity_resize;
-}
-
-static void metal_layer_set_drawable_size_hook(id self, SEL cmd, MSSize size) {
-    if (g_stretch_percent > 0 && g_stretch_percent != 100 && size.width > 0 && size.height > 0) {
-        if (size.width > size.height) { // In-game landscape only
-            double factor = (double)g_stretch_percent / 100.0;
-            size.width = (double)((long long)(size.width * factor + 0.5));
-            if (size.width < 64.0) size.width = 64.0;
-            id gravity = get_ca_gravity_resize();
-            ((void (*)(id, SEL, id))objc_msgSend)(self, sel_registerName("setContentsGravity:"), gravity);
-            static int s_logged_stretch = 0;
-            if (!s_logged_stretch) {
-                s_logged_stretch = 1;
-                runtime_note("[APPLY][STRETCH] CAMetalLayer in-game landscape stretch=%d%% target_width=%.1f contentsGravity=resize",
-                             g_stretch_percent, size.width);
-            }
-        }
-    }
-    if (g_original_set_drawable_size) {
-        g_original_set_drawable_size(self, cmd, size);
-    }
-    ms_apply_metal_layer_policies(self);
-}
-
-static void metal_layer_set_contents_gravity_hook(id self, SEL cmd, id gravity) {
-    if (g_stretch_percent > 0 && g_stretch_percent != 100) {
-        gravity = get_ca_gravity_resize();
-    }
-    if (g_original_set_contents_gravity) {
-        g_original_set_contents_gravity(self, cmd, gravity);
-    }
-}
-
-static void ms_apply_stretch_to_layer_tree(id layer, Class metalClass) {
-    if (!layer || !metalClass) return;
-    if (((bool (*)(id, SEL, id))objc_msgSend)(layer, sel_registerName("isKindOfClass:"), (id)metalClass)) {
-        ms_apply_metal_layer_policies(layer);
-        if (g_stretch_percent > 0 && g_stretch_percent != 100) {
-            MSSize size = ((MSSize (*)(id, SEL))objc_msgSend)(layer, sel_registerName("drawableSize"));
-            if (size.width > size.height && size.height > 0) {
-                double factor = (double)g_stretch_percent / 100.0;
-                size.width = (double)((long long)(size.width * factor + 0.5));
-                if (size.width < 64.0) size.width = 64.0;
-                id gravity = get_ca_gravity_resize();
-                ((void (*)(id, SEL, id))objc_msgSend)(layer, sel_registerName("setContentsGravity:"), gravity);
-                if (g_original_set_drawable_size) {
-                    g_original_set_drawable_size(layer, sel_registerName("setDrawableSize:"), size);
-                }
-            }
-        }
-    }
-    id sublayers = ((id (*)(id, SEL))objc_msgSend)(layer, sel_registerName("sublayers"));
-    if (sublayers) {
-        unsigned long count = ((unsigned long (*)(id, SEL))objc_msgSend)(sublayers, sel_registerName("count"));
-        for (unsigned long i = 0; i < count; i++) {
-            id sub = ((id (*)(id, SEL, unsigned long))objc_msgSend)(sublayers, sel_registerName("objectAtIndex:"), i);
-            ms_apply_stretch_to_layer_tree(sub, metalClass);
-        }
-    }
-}
-
-static void ms_refresh_metal_layers(void) {
-    if (1) return;
-    if (!pthread_main_np()) return;
-    Class metalClass = (Class)objc_getClass("CAMetalLayer");
-    if (!metalClass) return;
-    id app = ((id (*)(id, SEL))objc_msgSend)(objc_getClass("UIApplication"), sel_registerName("sharedApplication"));
-    if (!app) return;
-    id windows = ((id (*)(id, SEL))objc_msgSend)(app, sel_registerName("windows"));
-    if (!windows) return;
-    unsigned long count = ((unsigned long (*)(id, SEL))objc_msgSend)(windows, sel_registerName("count"));
-    for (unsigned long i = 0; i < count; i++) {
-        id win = ((id (*)(id, SEL, unsigned long))objc_msgSend)(windows, sel_registerName("objectAtIndex:"), i);
-        if (!win) continue;
-        id layer = ((id (*)(id, SEL))objc_msgSend)(win, sel_registerName("layer"));
-        ms_apply_stretch_to_layer_tree(layer, metalClass);
-    }
 }
 
 static bool install_metal_layer_stretch_policy(void) {
@@ -907,10 +815,8 @@ static bool install_metal_layer_stretch_policy(void) {
         g_original_metal_layer_init = (MetalLayerInitImp)method_setImplementation(init_m, (IMP)metal_layer_init_hook);
     }
 
-    /* Stretch resolution hooks remain dormant per user phase schedule: FPS uncap only */
-
     g_metal_layer_stretch_installed = (sync_m != NULL || next_m != NULL || init_m != NULL);
-    runtime_note("[CAPABILITY][STRETCH] backend=cametallayer-drawable-resize status=STANDBY_FPS_UNCAP_ONLY hookInstalled=%d metal_vsync_uncap=ACTIVE",
+    runtime_note("[METAL][POLICY] hookInstalled=%d frameEffect=UNVERIFIED",
                  g_metal_layer_stretch_installed);
     return true;
 }
@@ -942,7 +848,7 @@ static void ms_apply_process_main(void* context) {
     runtime_note("[CAPABILITY][TURBO] requested=%d cpuOverclock=UNSUPPORTED gpuOverclock=UNSUPPORTED androidPowerHints=UNSUPPORTED", g_ms_policy.boost);
     ms_update_probe_environment();
     ms_refresh_links("profile-loaded");
-    ms_refresh_metal_layers();
+    ms_stretch_write_receipt();
     write_runtime_capability_receipt();
 }
 static void apply_ios_process_policies(void) {

@@ -6,12 +6,14 @@ on:
     paths:
       - "roblox/**"
       - "tools/ios_render_idle_profile.py"
+      - "tools/ios_stretch_profile.py"
       - ".github/workflows/ios-dumper-validation.yml"
   push:
     branches: [ master, main ]
     paths:
       - "roblox/**"
       - "tools/ios_render_idle_profile.py"
+      - "tools/ios_stretch_profile.py"
       - ".github/workflows/ios-dumper-validation.yml"
 
 permissions:

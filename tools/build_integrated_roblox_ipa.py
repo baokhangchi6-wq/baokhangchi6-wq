@@ -303,7 +303,7 @@ def fetch_or_load_offsets_map(local_hpp: Path) -> dict:
     return table
 
 
-def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_count: int, offset_entries: list = None, all_flags_table: dict = None, expected_uuid: str = None, font_profile: dict = None, pacing_profile: dict = None, render_idle_profile: dict = None) -> str:
+def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_count: int, offset_entries: list = None, all_flags_table: dict = None, expected_uuid: str = None, font_profile: dict = None, pacing_profile: dict = None, render_idle_profile: dict = None, stretch_profile: dict = None) -> str:
     import uuid
     uuid_bytes = uuid.UUID(expected_uuid).bytes if expected_uuid else bytes(16)
     if offset_entries is None:
@@ -313,6 +313,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
     font_profile = font_profile or {}
     pacing_profile = pacing_profile or {}
     render_idle_profile = render_idle_profile or {}
+    stretch_profile = stretch_profile or {}
 
     sorted_all_flags = sorted((name, rva) for name, rva in all_flags_table.items()
         if name.startswith(('FFlag', 'DFFlag', 'SFFlag', 'FInt', 'DFInt', 'SFInt')))
@@ -497,7 +498,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static const char* kFpsRuntimeBackend = \"cadisplaylink-range-policy-v2\";",
         "static const char* kFontRuntimeBackend = \"engine-import-stock-family-v1\";",
         "static const char* kShaderRuntimeBackend = \"guarded-ios-luau-pending\";",
-        "static const char* kStretchRuntimeBackend = \"cametallayer-drawable-resize\";",
+        "static const char* kStretchRuntimeBackend = \"verified-framebuffer-input\";",
         "",
         "static const char* kMissOffsets[] = {"
     ])
@@ -1199,6 +1200,9 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         *(ROOT / "tools" / "ios_bridge_codec.h").read_text(encoding="utf-8").splitlines(),
         *(ROOT / "tools" / "ios_method_hooks.c").read_text(encoding="utf-8").splitlines(),
         *(ROOT / "tools" / "ios_display_policy.c").read_text(encoding="utf-8").splitlines(),
+        f"static const bool kStretchVerified = {'true' if stretch_profile.get('verified') else 'false'};",
+        "static const uintptr_t kStretchFrameReturns[] = {" + ','.join(hex(role['frameReturnRva']) for role in stretch_profile.get('roles', [])) + ("," if stretch_profile.get('roles') else "") + "0};",
+        *(ROOT / "tools" / "ios_stretch.c").read_text(encoding="utf-8").splitlines(),
         "static const struct { const char* name; const char* asset; } kFontCatalog[] = {",
         *[f"    {{{json.dumps(name)}, {json.dumps(asset)}}}," for name, asset in sorted(font_profile.get('catalog', {}).items())],
         "    {NULL, NULL}};",
@@ -1227,7 +1231,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    runtime_note(\"[REQUEST][SHADER] package=%s wetFloor=%d\", g_shader_package, g_shader_wet_floor);",
         "    runtime_note(\"[CAPABILITY][SHADER] backend=%s status=BLOCKED reason=address-probe-only-luau-lifecycle-unverified abiPlausible=%d/%d\", kShaderRuntimeBackend, g_abi_probe_plausible, g_abi_probe_total);",
         "    runtime_note(\"[REQUEST][STRETCH] percent=%d\", g_stretch_percent);",
-        "    runtime_note(\"[CAPABILITY][STRETCH] backend=%s status=STANDBY_FPS_ONLY hookInstalled=%d resolutionHooks=0\", kStretchRuntimeBackend, g_metal_layer_stretch_installed);",
+        "    runtime_note(\"[CAPABILITY][STRETCH] backend=%s hookInstalled=%d binaryVerified=%d deviceEffect=UNVERIFIED\", kStretchRuntimeBackend, g_stretch_original_frame != NULL, kStretchVerified);",
         "    runtime_note(\"[CAPABILITY][RENDERER] requested=%s effective=Metal status=NATIVE_PLATFORM_ONLY\", g_renderer_mode);",
         "}",
         "",
@@ -1238,7 +1242,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    snprintf(path, sizeof(path), \"%s/Documents/MasterstrapRuntimeReceipt.json\", home);",
         "    void* file = fopen(path, \"w\");",
         "    if (!file) return;",
-        "    fprintf(file, \"{\\\"schema\\\":2,\\\"generatedAtUnix\\\":%ld,\\\"profileLoaded\\\":%s,\\\"request\\\":\\\"%s\\\",\\\"appliedRequest\\\":\\\"%s\\\",\\\"configSource\\\":\\\"%s\\\",\\\"applyCount\\\":%u,\\\"abiProbe\\\":{\\\"total\\\":%d,\\\"executable\\\":%d,\\\"plausible\\\":%d,\\\"ambiguousRoles\\\":%d,\\\"callGateOpen\\\":false},\\\"fps\\\":{\\\"backend\\\":\\\"%s\\\",\\\"requested\\\":%d,\\\"screenMaximum\\\":%d,\\\"hookInstalled\\\":%s},\\\"renderer\\\":{\\\"requested\\\":\\\"%s\\\",\\\"effective\\\":\\\"Metal\\\"},\\\"boost\\\":{\\\"enabled\\\":%s,\\\"status\\\":\\\"%s\\\"},\\\"font\\\":{\\\"requested\\\":\\\"%s\\\",\\\"sizeStep\\\":%d,\\\"status\\\":\\\"family_requires_device_readback\\\",\\\"sizeStatus\\\":\\\"unsupported_keep_original\\\"},\\\"shader\\\":{\\\"requested\\\":\\\"%s\\\",\\\"wetFloor\\\":%s,\\\"status\\\":\\\"blocked_abi_lifecycle\\\"},\\\"stretch\\\":{\\\"requestedPercent\\\":%d,\\\"status\\\":\\\"blocked_camera_role\\\"}}\\n\",",
+        "    fprintf(file, \"{\\\"schema\\\":2,\\\"generatedAtUnix\\\":%ld,\\\"profileLoaded\\\":%s,\\\"request\\\":\\\"%s\\\",\\\"appliedRequest\\\":\\\"%s\\\",\\\"configSource\\\":\\\"%s\\\",\\\"applyCount\\\":%u,\\\"abiProbe\\\":{\\\"total\\\":%d,\\\"executable\\\":%d,\\\"plausible\\\":%d,\\\"ambiguousRoles\\\":%d,\\\"callGateOpen\\\":false},\\\"fps\\\":{\\\"backend\\\":\\\"%s\\\",\\\"requested\\\":%d,\\\"screenMaximum\\\":%d,\\\"hookInstalled\\\":%s},\\\"renderer\\\":{\\\"requested\\\":\\\"%s\\\",\\\"effective\\\":\\\"Metal\\\"},\\\"boost\\\":{\\\"enabled\\\":%s,\\\"status\\\":\\\"%s\\\"},\\\"font\\\":{\\\"requested\\\":\\\"%s\\\",\\\"sizeStep\\\":%d,\\\"status\\\":\\\"family_requires_device_readback\\\",\\\"sizeStatus\\\":\\\"unsupported_keep_original\\\"},\\\"shader\\\":{\\\"requested\\\":\\\"%s\\\",\\\"wetFloor\\\":%s,\\\"status\\\":\\\"blocked_abi_lifecycle\\\"},\\\"stretch\\\":{\\\"requestedPercent\\\":%d,\\\"status\\\":\\\"see_stretch_receipt\\\"}}\\n\",",
         "            time(NULL), g_profile_loaded ? \"true\" : \"false\", g_session_request, g_applied_request, g_session_payload ? \"BRIDGE_SNAPSHOT\" : \"BASELINE\", g_session_apply_count,",
         "            g_abi_probe_total, g_abi_probe_executable, g_abi_probe_plausible, g_abi_probe_duplicate_roles,",
         "            kFpsRuntimeBackend, g_target_fps,",
@@ -1403,6 +1407,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    restore_inactive_flags(g_engine_base);",
         "    snprintf(g_applied_request, sizeof(g_applied_request), \"%s\", g_session_request);",
         "    g_launch_authorized = true;",
+        "    ms_configure_stretch(g_engine_base);",
         "    apply_font_asset_profile(g_engine_base);",
         "    g_session_apply_count++;",
         "    ms_install_pacing_probe(g_engine_base, g_session_apply_count);",
@@ -1909,7 +1914,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        fprintf(log_file, \"[FEATURE_07_FONT] status=REQUIRES_DEVICE_READBACK family=%s sizeStep=%d backend=%s sizeEffect=UNSUPPORTED_KEEP_ORIGINAL\\n\",",
         "                g_font_family, g_font_size_step, kFontRuntimeBackend);",
         "        // FEATURE_08: Stretch / Aspect-Ratio",
-        "        fprintf(log_file, \"[FEATURE_08_STRETCH] status=STANDBY stretchPct=%d backend=%s gate=NativePassthrough(1) blockedReason=none\\n\",",
+        "        fprintf(log_file, \"[FEATURE_08_STRETCH] status=REQUIRES_FRAME_READBACK stretchPct=%d backend=%s deviceEffect=UNVERIFIED\\n\",",
         "                g_stretch_percent, kStretchRuntimeBackend);",
         "        // FEATURE_09: Display Keep-Alive",
         "        fprintf(log_file, \"[FEATURE_09_KEEPALIVE] status=%s keepActive=%d refreshReq=%d gate=Auth(%d)&&Profile(%d) blockedReason=%s\\n\",",
@@ -2401,18 +2406,24 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
             from ios_font_profile import build_font_profile
             from ios_pacing_profile import build_pacing_profile
             from ios_render_idle_profile import build_render_idle_profile
+            from ios_stretch_profile import build_stretch_profile
             font_profile = build_font_profile(input_ipa, out_dir / "font_asset_profile.json")
             pacing_profile = build_pacing_profile(input_ipa, out_dir / "pacing_profile.json")
             render_idle_profile = build_render_idle_profile(input_ipa, table, out_dir / "render_idle_profile.json")
+            stretch_profile = build_stretch_profile(input_ipa, out_dir / "stretch_profile.json")
             if font_profile['uuid'] != expected_uuid:
                 raise RuntimeError("Font profile UUID does not match verified engine")
             if pacing_profile['uuid'] != expected_uuid:
                 raise RuntimeError("Pacing profile UUID does not match verified engine")
             if render_idle_profile['uuid'] != expected_uuid:
                 raise RuntimeError("Render-idle profile UUID does not match verified engine")
+            if stretch_profile['uuid'] != expected_uuid:
+                raise RuntimeError("Stretch profile UUID does not match verified engine")
+            if not stretch_profile['verified'] and os.environ.get('MASTERSTRAP_BUILD_TYPE') != 'Debug':
+                raise RuntimeError('Framebuffer size flow unresolved; Release gate rejected')
             if not render_idle_profile['verified'] and os.environ.get('MASTERSTRAP_BUILD_TYPE') != 'Debug':
                 raise RuntimeError('RenderJob minimum-idle role unresolved; Release gate rejected')
-            c_src = generate_native_hook_source(verified_entries, miss_offsets, len(flags), offsets_entries, all_flags_table=table, expected_uuid=expected_uuid, font_profile=font_profile, pacing_profile=pacing_profile, render_idle_profile=render_idle_profile)
+            c_src = generate_native_hook_source(verified_entries, miss_offsets, len(flags), offsets_entries, all_flags_table=table, expected_uuid=expected_uuid, font_profile=font_profile, pacing_profile=pacing_profile, render_idle_profile=render_idle_profile, stretch_profile=stretch_profile)
             compile_dylib(c_src, dylib_path)
             dylib_bytes = dylib_path.read_bytes()
 
