@@ -106,13 +106,14 @@ def resolve_offscreen_roles(image, scanner, decoder):
                 if ref and load.mnemonic=='ldrb' and load.op_str=='w8, [x8]' and compare.mnemonic=='cmp' and compare.op_str=='w8, #1':
                     segment=image.segment_for_va(ref.target_address)
                     if segment and segment.is_writable:async_guards.append(image.to_rva(ref.target_address))
-            if len(later)==1 and len(async_guards)==1:
+            device_registers=[int(ins.op_str.split(', ')[0][1:]) for ins in code[:20] if ins.mnemonic=='mov' and ins.op_str.endswith(', x0')]
+            if len(later)==1 and len(async_guards)==1 and len(device_registers)==1 and 19<=device_registers[0]<=28:
                 branch,texture,fail=later[0]
                 matches.append([
                     {'role':'fps-acquire','rva':image.to_rva(call.address),'before':call.bytes.hex(),'slot':40,'asyncFlagRva':async_guards[0]},
                     {'role':'fps-null','rva':image.to_rva(branch.address),'before':branch.bytes.hex(),'failureRva':image.to_rva(fail),'slot':48},
                     {'role':'fps-texture','rva':image.to_rva(texture.address),'before':texture.bytes.hex(),'slot':56,
-                     'deviceRegister':next((int(ins.op_str.split(', ')[0][1:]) for ins in code[:20] if ins.mnemonic=='mov' and ins.op_str.endswith(', x0')),0),
+                     'deviceRegister':device_registers[0],
                      'contextOffset':buffer_paths[0][0],'commandBufferOffset':buffer_paths[0][1]}])
     return matches[0] if len(matches)==1 else []
 
