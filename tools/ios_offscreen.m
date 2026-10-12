@@ -53,7 +53,6 @@ void ms_offscreen_completion_ready(void *pointer) {
 }
 void ms_offscreen_mark_layer(void *pointer) {
     ms_pool_prepare(); id layer=(__bridge id)pointer;
-    if(!layer) return NULL;
     if (!layer || ![layer respondsToSelector:@selector(device)] || ![layer respondsToSelector:@selector(drawableSize)] || ![layer respondsToSelector:@selector(pixelFormat)]) return;
     @synchronized(MSPoolLock) { if (![MSPools objectForKey:layer] && MSPools.count==0) [MSPools setObject:[MSRenderPool new] forKey:layer]; }
 }
@@ -68,6 +67,7 @@ void ms_offscreen_job_end(void) {
 void ms_offscreen_job_begin(void) { ms_offscreen_job_end(); }
 void *ms_offscreen_acquire(void *pointer,double now,int displayHz,int requested) {
     ms_pool_prepare(); id layer=(__bridge id)pointer;
+    if(!layer) return NULL;
     MSRenderTicket *current=(__bridge MSRenderTicket*)MSTicket;
     if (current.offscreen && current.layer==layer) return NULL;
     MSRenderPool *pool; BOOL eligible;
