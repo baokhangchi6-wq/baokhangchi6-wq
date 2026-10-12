@@ -20,7 +20,7 @@
 @property(weak) id layer;
 @property NSInteger slot;
 @property NSUInteger pending, epoch;
-@property BOOL done, offscreen, submitted, bound;
+@property BOOL done, offscreen, submitted, bound, encoded;
 @end
 @implementation MSRenderTicket @end
 static NSMapTable *MSPools, *MSActiveTickets;
@@ -35,8 +35,8 @@ static void ms_pool_prepare(void) { static dispatch_once_t once; dispatch_once(&
 static void ms_ticket_finish(MSRenderTicket *ticket) {
     if (!ticket.done || ticket.pending || (ticket.offscreen && ticket.bound && !ticket.submitted)) return;
     if (ticket.slot>=0) ticket.pool.busy &= ~(1UL<<ticket.slot);
-    if (ticket.offscreen && ticket.submitted && ticket.epoch==MSEpoch) MSCounts[4]++;
-    ticket.pool.retired=nil;
+    if (ticket.offscreen && ticket.submitted && ticket.encoded && ticket.epoch==MSEpoch) MSCounts[4]++;
+    if(ticket.bound && ticket.submitted) ticket.pool.retired=nil;
     if (ticket.texture && [MSActiveTickets objectForKey:ticket.texture]==ticket) [MSActiveTickets removeObjectForKey:ticket.texture];
     ticket.slot=-1; ticket.offscreen=NO;
 }
@@ -137,6 +137,7 @@ void ms_offscreen_observe_encoder(void *bufferPointer,void *descriptorPointer) {
     if(!texture) return;
     @synchronized(MSPoolLock) {
         MSRenderTicket *ticket=[MSActiveTickets objectForKey:texture];
+        if(ticket) ticket.encoded=YES;
         if(ticket && !objc_getAssociatedObject(buffer,&MSBufferTicketKey)) {
             ticket.pending++;
             objc_setAssociatedObject(buffer,&MSBufferTicketKey,ticket,OBJC_ASSOCIATION_RETAIN_NONATOMIC);

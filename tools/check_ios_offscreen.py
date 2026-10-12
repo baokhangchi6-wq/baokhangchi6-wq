@@ -99,6 +99,33 @@ int main(void) { @autoreleasepool {
     ((MSRenderPool*)[MSPools objectForKey:layer]).due=DBL_MAX;
     ms_offscreen_job_begin();assert(ms_offscreen_acquire((__bridge void*)layer,ms_offscreen_time(),120,2000));ms_offscreen_job_end();
     assert(!ms_offscreen_allows_null(NULL));
+    id<MTLDevice> gpu=MTLCreateSystemDefaultDevice();
+    if(gpu) {
+        @synchronized(MSPoolLock) { MSPools=[NSMapTable weakToStrongObjectsMapTable]; }
+        layer.device=gpu;layer.drawableSize=CGSizeMake(64,64);
+        ms_offscreen_reset(3);ms_offscreen_mark_layer((__bridge void*)layer);
+        id<MTLCommandQueue> queue=[gpu newCommandQueue];
+        id<MTLCommandBuffer> buffer=[queue commandBuffer];
+        ms_offscreen_completion_ready((__bridge void*)[buffer class]);
+        ((MSRenderPool*)[MSPools objectForKey:layer]).due=DBL_MAX;
+        ms_offscreen_job_begin();
+        assert(!ms_offscreen_acquire((__bridge void*)layer,ms_offscreen_time(),120,2000));
+        id<MTLTexture> texture=(__bridge id)ms_offscreen_texture(NULL);
+        assert(texture.width==64 && texture.height==64 && texture.pixelFormat==80);
+        MTLRenderPassDescriptor* pass=[MTLRenderPassDescriptor renderPassDescriptor];
+        pass.colorAttachments[0].texture=texture;pass.colorAttachments[0].loadAction=MTLLoadActionClear;pass.colorAttachments[0].storeAction=MTLStoreActionStore;
+        id<MTLRenderCommandEncoder> encoder=[buffer renderCommandEncoderWithDescriptor:pass];assert(encoder);
+        ms_offscreen_bind_buffer((__bridge void*)buffer);
+        ms_offscreen_observe_encoder((__bridge void*)buffer,(__bridge void*)pass);
+        [encoder endEncoding];ms_offscreen_commit((__bridge void*)buffer);ms_offscreen_job_end();
+        assert(((MSRenderPool*)[MSPools objectForKey:layer]).busy==1);
+        [buffer commit];[buffer waitUntilCompleted];
+        for(int i=0;i<100 && ((MSRenderPool*)[MSPools objectForKey:layer]).busy;i++) [NSThread sleepForTimeInterval:0.001];
+        assert(buffer.status==MTLCommandBufferStatusCompleted);
+        assert(((MSRenderPool*)[MSPools objectForKey:layer]).busy==0);
+        ms_offscreen_counts(counts);assert(counts[4]==1);
+        puts("PASS real Metal render target and GPU completion ownership");
+    } else puts("Real Metal device unavailable; controlled ownership fixture passed");
 } return 0; }
 '''
     with tempfile.TemporaryDirectory() as directory:
