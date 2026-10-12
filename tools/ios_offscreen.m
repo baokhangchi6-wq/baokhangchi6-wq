@@ -47,8 +47,9 @@ void ms_offscreen_completion_ready(void *pointer) {
     ms_pool_prepare(); Class cls=(__bridge Class)pointer;
     Method method=class_getInstanceMethod(cls,@selector(addCompletedHandler:));
     char *type=method ? method_copyArgumentType(method,2) : NULL;
-    BOOL valid=method && method_getNumberOfArguments(method)==3 && type && strcmp(type,"@?")==0;
-    free(type);
+    char *result=method ? method_copyReturnType(method) : NULL;
+    BOOL valid=method && method_getNumberOfArguments(method)==3 && type && strcmp(type,"@?")==0 && result && strcmp(result,"v")==0;
+    free(type);free(result);
     if(valid) @synchronized(MSPoolLock) { MSCompletionReady=YES; }
 }
 void ms_offscreen_mark_layer(void *pointer) {
@@ -136,7 +137,12 @@ void ms_offscreen_observe_encoder(void *bufferPointer,void *descriptorPointer) {
     id texture=descriptor.colorAttachments[0].texture;
     if(!texture) return;
     @synchronized(MSPoolLock) {
-        MSRenderTicket *ticket=[MSActiveTickets objectForKey:texture];
+        MSRenderTicket *ticket=nil;
+        for(int depth=0;texture && depth<4;depth++) {
+            ticket=[MSActiveTickets objectForKey:texture];
+            if(ticket || ![texture respondsToSelector:@selector(parentTexture)]) break;
+            texture=((id (*)(id,SEL))objc_msgSend)(texture,@selector(parentTexture));
+        }
         if(ticket) ticket.encoded=YES;
         if(ticket && !objc_getAssociatedObject(buffer,&MSBufferTicketKey)) {
             ticket.pending++;
