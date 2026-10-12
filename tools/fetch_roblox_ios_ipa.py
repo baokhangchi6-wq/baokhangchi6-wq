@@ -67,6 +67,10 @@ def scrape_delta_direct_url(timeout: int = 30, max_retries: int = 3, expected_ve
                     match = re.search(r'(https?://deltaexecutor\.filesadda\.com/[^\s"\'<>]+\.ipa)', html)
                 if match:
                     url = match.group(1)
+                    named_version=re.search(r'Delta-(\d+(?:\.\d+)+)\.ipa',url)
+                    if expected_version and named_version and named_version[1]!=expected_version:
+                        log(f"Distributor still advertises {named_version[1]}; requested {expected_version}")
+                        continue
                     log(f"Extracted direct IPA URL: {url}")
                     return url
             except Exception as exc:
@@ -155,6 +159,8 @@ def main() -> int:
     ap.add_argument("--output", default="roblox_input/roblox.ipa", help="Destination path")
     ap.add_argument("--expected-version", default="", help="Reject an IPA for a different App Store version")
     args = ap.parse_args()
+    if args.expected_version and not re.fullmatch(r'\d+(\.\d+)+',args.expected_version):
+        ap.error('expected-version must be a numeric dotted version')
 
     out_path = Path(args.output)
     target_url = (

@@ -16,6 +16,8 @@
 4. Build Debug bằng macOS SDK; chạy bridge import/budget, native backend, ARM64 trampoline qua dyld và Metal texture/completion tests. Release cần gate tương tự và kiểm thử thiết bị.
 5. Xuất `compatibility_profile.json`, source identity, reports và IPA. Build thành công là candidate; `deviceVerified=false` cho đến khi thử trên iPhone.
 
+Manual Debug có thể chọn `source_version` chính xác để kiểm thử binary cũ khi nhà phân phối chưa có IPA mới. Bản này giữ đúng nhãn phiên bản và không advance checkpoint App Store; schedule/push vẫn bắt buộc nguồn khớp App Store hiện tại.
+
 2.741 là binary thật đã kiểm tra resolver; fixtures kiểm tra relocation, thay field offsets và từ chối dữ liệu sai. Chưa có binary 2.742 để chứng minh tương thích thực tế. Nếu compiler/ABI thay đổi ngoài contract, cần bổ sung resolver; không cam kết mọi phiên bản tương lai tự hoạt động.
 
 ## Gate iPhone
