@@ -42,7 +42,7 @@ async function msLicenseRequest(key,action) {
         const controller=new AbortController(), timeout=setTimeout(()=>controller.abort(),10000);
         try{
             // Safelisted content type avoids a CORS preflight; body remains JSON.
-            const response=await fetch('https://license.masterstrap.org/api/ios-licenses/'+action,{
+            const response=await fetch('https://license.masterstrap.org/api/ios-licenses/validate'+(action==='status'?'?mode=status':''),{
                 method:'POST',headers:{'Content-Type':'text/plain;charset=UTF-8','Accept':'application/json'},
                 body:JSON.stringify({key,deviceId:msLicenseRecord.deviceId,clientInfo:'masterstrap-ios/1.3'}),signal:controller.signal});
             const data=await response.json();
