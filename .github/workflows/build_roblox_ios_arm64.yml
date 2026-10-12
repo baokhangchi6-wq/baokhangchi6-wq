@@ -67,6 +67,7 @@ jobs:
           python -B tools/check_ios_native_backends.py
           python -B tools/check_ios_pacing_probe.py
           python -B tools/check_ios_render_roles.py
+          python -B tools/check_ios_offscreen.py
           PYTHONPATH=roblox python -B -m unittest discover -s roblox/tests -t roblox
 
       # ── STEP 1: Version Gate (threshold = 0, IMMEDIATE) ──────────────────

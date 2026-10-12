@@ -23,10 +23,10 @@ class RenderRoleTests(unittest.TestCase):
         struct.pack_into('<5I',data,0x480,0xD10503FF,encode_adrp(BASE+0x484,BASE+0x780,8),
                          encode_add(8,8,0x780),0x910503FF,0xD65F03C0)
         if second_return: struct.pack_into('<I',data,0x498,0xD65F03C0)
-        matrix=[0x1E204028,0x1E204009,0x1E201000,0x1E291800,
+        matrix=[0xD10483FF,0x1E204028,0x1E204009,0x1E201000,0x1E291800,
                 0x1E301001,0x1E281825,0xD65F03C0]
-        if wrong_projection: matrix[3]=0x1E281800
-        struct.pack_into('<7I',data,0x500,*matrix)
+        if wrong_projection: matrix[4]=0x1E281800
+        struct.pack_into('<8I',data,0x500,*matrix)
         return data
     def profile(self,data):
         with tempfile.TemporaryDirectory() as directory:

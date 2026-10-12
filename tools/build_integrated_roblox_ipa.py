@@ -1205,6 +1205,9 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static const uintptr_t kStretchFrameReturns[] = {" + ','.join(hex(role['frameReturnRva']) for role in stretch_profile.get('roles', [])) + ("," if stretch_profile.get('roles') else "") + "0};",
         *(ROOT / "tools" / "ios_stretch.c").read_text(encoding="utf-8").splitlines(),
         f"static const uintptr_t kRenderRolesStateRva = 0x{render_roles_profile.get('stateRva', 0):x};",
+        f"static const uintptr_t kRenderOffscreenAsyncRva = 0x{next((h.get('asyncFlagRva',0) for h in render_roles_profile.get('hooks',[]) if h.get('role')=='fps-acquire'),0):x};",
+        f"static const uintptr_t kRenderContextOffset = 0x{next((h.get('contextOffset',0) for h in render_roles_profile.get('hooks',[]) if h.get('role')=='fps-texture'),0):x};",
+        f"static const uintptr_t kRenderBufferOffset = 0x{next((h.get('commandBufferOffset',0) for h in render_roles_profile.get('hooks',[]) if h.get('role')=='fps-texture'),0):x};",
         *(ROOT / "tools" / "ios_render_roles.c").read_text(encoding="utf-8").splitlines(),
         "static const struct { const char* name; const char* asset; } kFontCatalog[] = {",
         *[f"    {{{json.dumps(name)}, {json.dumps(asset)}}}," for name, asset in sorted(font_profile.get('catalog', {}).items())],
@@ -2044,6 +2047,9 @@ def compile_dylib(c_source: str, out_dylib: Path) -> Path:
         drawable_object = work_dir / "drawable.o"
         subprocess.run(["xcrun", "clang", "-fobjc-arc", "-target", "arm64-apple-ios14.0", *native_options,
                         *isysroot, "-c", str(ROOT / "tools/ios_drawable_lifetime.m"), "-o", str(drawable_object)], check=True)
+        offscreen_object = work_dir / "offscreen.o"
+        subprocess.run(["xcrun", "clang", "-fobjc-arc", "-target", "arm64-apple-ios14.0", *native_options,
+                        *isysroot, "-c", str(ROOT / "tools/ios_offscreen.m"), "-o", str(offscreen_object)], check=True)
         compile_cmd = [
             "clang",
             "-target", "arm64-apple-ios14.0",
@@ -2058,6 +2064,8 @@ def compile_dylib(c_source: str, out_dylib: Path) -> Path:
             str(c_file),
             str(pacing_object),
             str(drawable_object),
+            str(offscreen_object),
+            "-framework", "Metal",
             "-o", str(out_dylib)
         ]
         proc = subprocess.run(compile_cmd, capture_output=True, text=True)
@@ -2428,6 +2436,8 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                 (out_dir / 'render_roles_profile.json').write_text(json.dumps(render_roles_profile, indent=2), encoding='utf-8')
             elif os.environ.get('MASTERSTRAP_BUILD_TYPE') != 'Debug':
                 raise RuntimeError('UI projection/RenderJob roles unresolved; Release gate rejected')
+            if not render_roles_profile.get('fpsVerified') and os.environ.get('MASTERSTRAP_BUILD_TYPE') != 'Debug':
+                raise RuntimeError('Offscreen acquire/bind/commit flow unresolved; Release gate rejected')
             if font_profile['uuid'] != expected_uuid:
                 raise RuntimeError("Font profile UUID does not match verified engine")
             if pacing_profile['uuid'] != expected_uuid:

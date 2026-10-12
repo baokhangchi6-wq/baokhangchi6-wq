@@ -80,8 +80,11 @@ int test_stretch(void* view) {
         if (result.origin.x != 10 || result.origin.y != 20 || result.size.width != 500 || result.size.height != 500) return 0;
     }
     g_stretch_content_scale = 3;
-    if (ms_stretch_ui_width(1500) != 3000 || ms_stretch_ui_width(1497) != 1497) return 0;
+    if (ms_stretch_ui_width(1500,1500) != 3000 || ms_stretch_ui_width(1497,1500) != 1497) return 0;
     if (g_stretch_ui_reads != 1) return 0;
+    if (ms_stretch_ui_width(500,500) != 1000 || g_stretch_ui_units != 1) return 0;
+    if (g_stretch_ui_calls != 3) return 0;
+    if (ms_stretch_ui_width(1500,1497) != 1500 || g_stretch_ui_reason != 6) return 0;
     if (ms_stretch_frame_value(native, 0x10400).size.width != 500) return 0;
     if (ms_stretch_frame_value(native, 0x10500).size.width != 1000) return 0;
     if (ms_stretch_frame_hook(view, frame).size.width != 1000) return 0; // ordinary UIKit caller stays native
@@ -96,7 +99,7 @@ int test_stretch(void* view) {
     if (ms_stretch_frame_value(native, 0x10300).size.width != 750) return 0;
     g_stretch_target = 100;
     if (ms_stretch_frame_value(native, 0x10300).size.width != 1000) return 0;
-    if (ms_stretch_ui_width(3000) != 3000) return 0;
+    if (ms_stretch_ui_width(3000,1500) != 3000) return 0;
     g_stretch_base = 0; g_stretch_target = 50;
     if (ms_stretch_frame_value(native, 0x10300).size.width != 1000) return 0;
     g_stretch_original_frame = NULL; g_stretch_target = 100;
@@ -312,7 +315,9 @@ int main(void) { @autoreleasepool {
                         '-o', str(root / 'pacing.o')], check=True)
         subprocess.run(['xcrun', 'clang', '-fobjc-arc', '-O0', '-c', str(Path(__file__).parent / 'ios_drawable_lifetime.m'),
                         '-o', str(root / 'drawable.o')], check=True)
-        subprocess.run(['xcrun', 'clang', str(root / 'check.m'), str(root / 'native.o'), str(root / 'pacing.o'), str(root / 'drawable.o'), '-framework', 'Foundation', '-lz', '-lc++', '-o', str(root / 'check')], check=True)
+        subprocess.run(['xcrun', 'clang', '-fobjc-arc', '-O0', '-c', str(Path(__file__).parent / 'ios_offscreen.m'),
+                        '-o', str(root / 'offscreen.o')], check=True)
+        subprocess.run(['xcrun', 'clang', str(root / 'check.m'), str(root / 'native.o'), str(root / 'pacing.o'), str(root / 'drawable.o'), str(root / 'offscreen.o'), '-framework', 'Foundation', '-framework', 'Metal', '-lz', '-lc++', '-o', str(root / 'check')], check=True)
         subprocess.run([str(root / 'check')], env={**os.environ, 'HOME': directory}, check=True)
     print('PASS native backends: class-local/inherited/super hooks, ABI rejection, font scope/fallback, read-only import rebinding')
 

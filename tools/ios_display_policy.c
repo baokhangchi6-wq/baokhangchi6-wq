@@ -63,6 +63,9 @@ static void ms_stretch_write_receipt(void);
 static void ms_stretch_observe_drawable(id drawable);
 static void ms_render_job_drawable(double seconds);
 static void ms_render_roles_write_receipt(void);
+extern void ms_offscreen_observe_encoder(void*, void*);
+extern void ms_offscreen_completion_ready(void*);
+extern void ms_offscreen_commit(void*);
 static bool fps_runtime_requested(void);
 
 typedef unsigned char (*ProcessInfoLowPowerImp)(id, SEL);
@@ -584,6 +587,7 @@ static void command_commit_hook(id self, SEL cmd, IMP original) {
     if (first) objc_setAssociatedObject(self, &g_ms_commit_probe_key, (id)1, 0);
     os_unfair_lock_unlock(&g_frame_probe_lock);
     if (!first) { ((void (*)(id, SEL))original)(self, cmd); return; }
+    ms_offscreen_commit(self);
     ms_probe_record(3, 0);
     SEL add = sel_registerName("addCompletedHandler:");
     if (((unsigned char (*)(id, SEL, SEL))objc_msgSend)(self, sel_registerName("respondsToSelector:"), add))
@@ -605,6 +609,11 @@ static void command_wait_hook(id self, SEL cmd, IMP original) {
     ((void (*)(id, SEL))original)(self, cmd);
     ms_probe_record(cmd == sel_registerName("waitUntilCompleted") ? 6 : 7, ms_probe_time() - start);
 }
+static id command_render_encoder_hook(id self, SEL cmd, id descriptor, IMP original) {
+    id encoder=((id (*)(id,SEL,id))original)(self,cmd,descriptor);
+    if(encoder) ms_offscreen_observe_encoder(self,descriptor);
+    return encoder;
+}
 static void ms_install_command_buffer_class(Class cls) {
     bool present = ms_hook_instance_method(cls, "presentDrawable:", (IMP)command_present_drawable_hook, "v@:@");
     ms_hook_instance_method(cls, "presentDrawable:atTime:", (IMP)command_present_timed_hook, "v@:@d");
@@ -612,6 +621,8 @@ static void ms_install_command_buffer_class(Class cls) {
     ms_hook_instance_method(cls, "commit", (IMP)command_commit_hook, "v@:");
     ms_hook_instance_method(cls, "waitUntilCompleted", (IMP)command_wait_hook, "v@:");
     ms_hook_instance_method(cls, "waitUntilScheduled", (IMP)command_wait_hook, "v@:");
+    bool render = ms_hook_instance_method(cls, "renderCommandEncoderWithDescriptor:", (IMP)command_render_encoder_hook, "@@:@");
+    if(render) ms_offscreen_completion_ready(cls);
     if (present) g_ms_metal_present_hook_installed = 1;
 }
 static void ms_install_drawable_class(Class cls) {
