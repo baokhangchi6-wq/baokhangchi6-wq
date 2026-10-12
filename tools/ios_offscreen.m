@@ -9,6 +9,7 @@
 @property NSUInteger width, height, format, busy;
 @property double due;
 @property(strong) NSMutableArray *textures;
+@property(strong) MSRenderPool *retired;
 @end
 @implementation MSRenderPool
 - (instancetype)init { if ((self=[super init])) _textures=[NSMutableArray arrayWithObjects:NSNull.null,NSNull.null,NSNull.null,nil]; return self; }
@@ -35,7 +36,8 @@ static void ms_ticket_finish(MSRenderTicket *ticket) {
     if (!ticket.done || ticket.pending || (ticket.offscreen && ticket.bound && !ticket.submitted)) return;
     if (ticket.slot>=0) ticket.pool.busy &= ~(1UL<<ticket.slot);
     if (ticket.offscreen && ticket.submitted && ticket.epoch==MSEpoch) MSCounts[4]++;
-    if ([MSActiveTickets objectForKey:ticket.texture]==ticket) [MSActiveTickets removeObjectForKey:ticket.texture];
+    ticket.pool.retired=nil;
+    if (ticket.texture && [MSActiveTickets objectForKey:ticket.texture]==ticket) [MSActiveTickets removeObjectForKey:ticket.texture];
     ticket.slot=-1; ticket.offscreen=NO;
 }
 void ms_offscreen_reset(unsigned epoch) {
@@ -51,6 +53,7 @@ void ms_offscreen_completion_ready(void *pointer) {
 }
 void ms_offscreen_mark_layer(void *pointer) {
     ms_pool_prepare(); id layer=(__bridge id)pointer;
+    if(!layer) return NULL;
     if (!layer || ![layer respondsToSelector:@selector(device)] || ![layer respondsToSelector:@selector(drawableSize)] || ![layer respondsToSelector:@selector(pixelFormat)]) return;
     @synchronized(MSPoolLock) { if (![MSPools objectForKey:layer] && MSPools.count==0) [MSPools setObject:[MSRenderPool new] forKey:layer]; }
 }
@@ -78,7 +81,7 @@ void *ms_offscreen_acquire(void *pointer,double now,int displayHz,int requested)
             if (device && colorFormat && isfinite(size.width) && isfinite(size.height) && size.width>=64 && size.height>=64 && size.width<=8192 && size.height<=8192 && size.width*size.height<=16000000) {
                 if (pool.width!=(NSUInteger)size.width || pool.height!=(NSUInteger)size.height || pool.format!=format) {
                     if(pool.busy) { MSCounts[2]++; goto real_drawable; }
-                    MSRenderPool *old=pool; pool=[MSRenderPool new];
+                    MSRenderPool *old=pool; pool=[MSRenderPool new];pool.retired=old;
                     pool.width=(NSUInteger)size.width;pool.height=(NSUInteger)size.height;pool.format=format;pool.due=old.due;
                     [MSPools setObject:pool forKey:layer];
                 }
@@ -131,6 +134,7 @@ void ms_offscreen_observe_encoder(void *bufferPointer,void *descriptorPointer) {
     MTLRenderPassDescriptor *descriptor=(__bridge id)descriptorPointer;
     if(!descriptor || ![descriptor respondsToSelector:@selector(colorAttachments)]) return;
     id texture=descriptor.colorAttachments[0].texture;
+    if(!texture) return;
     @synchronized(MSPoolLock) {
         MSRenderTicket *ticket=[MSActiveTickets objectForKey:texture];
         if(ticket && !objc_getAssociatedObject(buffer,&MSBufferTicketKey)) {
