@@ -110,6 +110,7 @@ jobs:
 
           python tools/fetch_roblox_ios_ipa.py \
             $URL_ARG \
+            --expected-version "$STORE_VERSION" \
             --output roblox_input/roblox.ipa
 
       # ── STEP 3: Auto-dump offsets from IPA ───────────────────────────────
@@ -129,11 +130,8 @@ jobs:
             echo "Dumper complete. Checking output..."
             ls -la output/ || true
           else
-            echo "IPA not available; fetching latest verified headers from masterstrap.org CDN..."
-            curl -fsSL "https://masterstrap.org/Data/IOS/IOS_FFlags.hpp" \
-              -o output/FFlags.hpp || true
-            curl -fsSL "https://masterstrap.org/Data/IOS/IOS_Offsets.hpp" \
-              -o output/Offsets.hpp || true
+            echo "Matching IPA unavailable; retain previous candidate and wait for source."
+            exit 1
           fi
 
       # ── STEP 4: Build Masterstrap iOS Native Hook & IPA ──────────────────
@@ -214,6 +212,7 @@ jobs:
             output/render_idle_profile.json
             output/stretch_profile.json
             output/render_roles_profile.json
+            output/compatibility_profile.json
           if-no-files-found: error
           retention-days: 7
 

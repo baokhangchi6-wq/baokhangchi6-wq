@@ -12,6 +12,7 @@ def main():
         all_flags_table={'FFlagMainThreadIdle': 0x100, 'FIntMainThreadMinIdleTimeUs': 0x104},
         expected_uuid='12345678-1234-5678-1234-567812345678',
         stretch_profile={'verified': True, 'roles': [{'frameReturnRva': 0x300}, {'frameReturnRva': 0x400}]},
+        render_roles_profile={'stretchVerified': True},
         render_idle_profile={'verified': True, 'flagRva': 0x100, 'minimumRva': 0x104}, font_profile={
         'catalog': {'Minecraft': 'PressStart2P.json'},
         'stockFamilies': ['SourceSansPro.json', 'PressStart2P.json', 'NotoSansCJKFallback.json', 'RobloxEmoji.json']})
@@ -77,29 +78,27 @@ int test_stretch(void* view) {
     MSStretchRect native = {{10, 20}, {1000, 500}};
     for (int i = 0; i < 100; i++) {
         MSStretchRect result = ms_stretch_frame_value(native, 0x10300);
-        if (result.origin.x != 10 || result.origin.y != 20 || result.size.width != 500 || result.size.height != 500) return 0;
+        if (result.origin.x != 10 || result.origin.y != 20 || result.size.width != 1000 || result.size.height != 500) return 0;
     }
     g_stretch_content_scale = 3;
-    if (ms_stretch_ui_width(1500,1500) != 3000 || ms_stretch_ui_width(1497,1500) != 1497) return 0;
-    if (g_stretch_ui_reads != 1) return 0;
-    if (ms_stretch_ui_width(500,500) != 1000 || g_stretch_ui_units != 1) return 0;
-    if (g_stretch_ui_calls != 3) return 0;
-    if (ms_stretch_ui_width(1500,1497) != 1500 || g_stretch_ui_reason != 6) return 0;
-    if (ms_stretch_frame_value(native, 0x10400).size.width != 500) return 0;
+    if (ms_stretch_scene_aspect(2) != 1 || ms_stretch_scene_aspect(1.5) != 1.5 || g_stretch_scene_reason != 6) return 0;
+    if (g_stretch_scene_reads != 1 || g_stretch_scene_calls != 2) return 0;
+    if (ms_stretch_frame_value(native, 0x10400).size.width != 1000) return 0;
     if (ms_stretch_frame_value(native, 0x10500).size.width != 1000) return 0;
     if (ms_stretch_frame_hook(view, frame).size.width != 1000) return 0; // ordinary UIKit caller stays native
 #if defined(__arm64__)
     g_stretch_base = (uintptr_t)&test_stretch_call_return - 0x300;
-    if (test_stretch_call(view, frame).size.width != 500) return 0; // real ARM64 return-address scope and CGRect ABI
+    if (test_stretch_call(view, frame).size.width != 1000 || g_stretch_native.size.width != 1000) return 0; // real ARM64 return-address scope and CGRect ABI
     g_stretch_base = 0x10000;
 #endif
     MSStretchRect portrait = {{0, 0}, {500, 1000}};
     if (ms_stretch_frame_value(portrait, 0x10300).size.width != 500) return 0;
     g_stretch_target = 75;
-    if (ms_stretch_frame_value(native, 0x10300).size.width != 750) return 0;
+    if (ms_stretch_scene_aspect(0.5) != 0.5 || g_stretch_scene_reason != 3) return 0;
+    if (ms_stretch_frame_value(native, 0x10300).size.width != 1000 || ms_stretch_scene_aspect(2) != 1.5) return 0;
     g_stretch_target = 100;
     if (ms_stretch_frame_value(native, 0x10300).size.width != 1000) return 0;
-    if (ms_stretch_ui_width(3000,1500) != 3000) return 0;
+    if (ms_stretch_scene_aspect(2) != 2) return 0;
     g_stretch_base = 0; g_stretch_target = 50;
     if (ms_stretch_frame_value(native, 0x10300).size.width != 1000) return 0;
     g_stretch_original_frame = NULL; g_stretch_target = 100;

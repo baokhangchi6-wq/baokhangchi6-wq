@@ -84,7 +84,7 @@ static void ms_bind_render_roles(uintptr_t base, unsigned generation) {
     g_render_job_sum = g_render_drawable_sum = 0; g_render_role_started = ms_probe_time();
     __atomic_store_n(&g_render_role_generation, generation, __ATOMIC_RELEASE);
     os_unfair_lock_unlock(&g_render_role_lock);
-    __atomic_store_n(&slots[2], (uintptr_t)ms_stretch_ui_width, __ATOMIC_RELEASE);
+    if(kStretchSceneVerified) __atomic_store_n(&slots[2], (uintptr_t)ms_stretch_scene_aspect, __ATOMIC_RELEASE);
     __atomic_store_n(&slots[3], (uintptr_t)ms_render_job_enter, __ATOMIC_RELEASE);
     __atomic_store_n(&slots[4], (uintptr_t)ms_render_job_exit, __ATOMIC_RELEASE);
     ms_offscreen_reset(generation);
@@ -93,7 +93,7 @@ static void ms_bind_render_roles(uintptr_t base, unsigned generation) {
         __atomic_store_n(&slots[6],(uintptr_t)ms_render_null,__ATOMIC_RELEASE);
         __atomic_store_n(&slots[7],(uintptr_t)ms_render_texture,__ATOMIC_RELEASE);
     }
-    runtime_note("[RENDER][ROLES] uiWidth=BOUND renderJob=BOUND state=RW_DATA executableWrites=0 generation=%u",generation);
+    runtime_note("[RENDER][ROLES] sceneAspect=%s guiProjection=NATIVE renderJob=BOUND state=RW_DATA executableWrites=0 generation=%u",kStretchSceneVerified ? "BOUND" : "BLOCKED",generation);
 }
 static void ms_render_roles_write_receipt(void) {
     os_unfair_lock_lock(&g_render_role_lock);

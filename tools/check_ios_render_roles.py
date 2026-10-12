@@ -27,6 +27,8 @@ void notify(void) { clobber(1); }
         subprocess.run(['xcrun','clang','-O0','-dynamiclib',str(root/'callbacks.c'),'-o',str(root/'callbacks.dylib')],check=True)
         callbacks=ctypes.CDLL(str(root/'callbacks.dylib'))
         (root/'fixture.c').write_text('float fixture_ui(float x, float height) { volatile float y=x; return y; }\nunsigned fixture_job(unsigned x) { volatile unsigned y=x+3; return y; }\n__attribute__((noinline)) void* fixture_original(void*x){return (char*)x+4;}\nvoid* fixture_acquire(void*x){return fixture_original(x);}\nvoid* fixture_texture(void*x){return fixture_original(x);}\n__asm__(".text\\n.p2align 2\\n.globl _fixture_null\\n_fixture_null:\\ncbz x0,1f\\nmov x0,#7\\nret\\n1:mov x0,#0\\nret\\n");\n',encoding='utf-8')
+        with (root/'fixture.c').open('a',encoding='utf-8') as fixture:
+            fixture.write('__asm__(".text\\n.p2align 2\\n.globl _fixture_scene\\n_fixture_scene:\\nfmov s1,s2\\nfadd s0,s0,s1\\nret\\n");\n')
         subprocess.run(['xcrun','clang','-O0','-dynamiclib','-Wl,-headerpad,0x4000',str(root/'fixture.c'),'-o',str(root/'original.dylib')],check=True)
         source=(root/'original.dylib').read_bytes(); image=MachOImage(source,'arm64')
         if image.architecture != 'arm64': raise AssertionError('Fixture must run as arm64')
@@ -45,6 +47,8 @@ void notify(void) { clobber(1); }
         hooks=[{'role':'ui-width','rva':image.to_rva(instruction.address),'before':instruction.bytes.hex(),'slot':16},
                {'role':'render-enter','rva':image.to_rva(job[0].address),'before':job[0].bytes.hex(),'slot':24},
                {'role':'render-exit','rva':image.to_rva(result.address),'before':result.bytes.hex(),'slot':32}]
+        scene=next(ins for code in functions for ins in code if ins.mnemonic=='fmov' and ins.op_str=='s1, s2')
+        hooks.append({'role':'scene-aspect','rva':image.to_rva(scene.address),'before':scene.bytes.hex(),'slot':16})
         call_sites=[ins for code in functions for ins in code if ins.mnemonic=='bl']
         assert len(call_sites)==2
         for role,slot,ins in zip(('fps-acquire','fps-texture'),(40,56),call_sites):
@@ -58,6 +62,7 @@ void notify(void) { clobber(1); }
         subprocess.run(['codesign','--force','--sign','-',str(target)],check=True)
         library=ctypes.CDLL(str(target)); library.fixture_ui.argtypes=[ctypes.c_float,ctypes.c_float];library.fixture_ui.restype=ctypes.c_float
         library.fixture_job.argtypes=[ctypes.c_uint];library.fixture_job.restype=ctypes.c_uint
+        library.fixture_scene.argtypes=[ctypes.c_float]*3; library.fixture_scene.restype=ctypes.c_float
         class Info(ctypes.Structure): _fields_=[('name',ctypes.c_char_p),('base',ctypes.c_void_p),('symbol',ctypes.c_char_p),('address',ctypes.c_void_p)]
         info=Info(); libc=ctypes.CDLL(None)
         libc.dladdr.argtypes=[ctypes.c_void_p,ctypes.POINTER(Info)]
@@ -65,6 +70,7 @@ void notify(void) { clobber(1); }
         slots=(ctypes.c_void_p*8).from_address(info.base+state)
         assert slots[0]==COOKIE
         assert library.fixture_ui(1398,1290)==1398 and library.fixture_job(4)==7
+        assert library.fixture_scene(1,7,4)==5
         calls=[0,0]
         @ctypes.CFUNCTYPE(ctypes.c_float,ctypes.c_float,ctypes.c_float)
         def width(value,height):
@@ -84,8 +90,10 @@ void notify(void) { clobber(1); }
         slots[2]=ctypes.cast(callbacks.clobber,ctypes.c_void_p).value
         slots[3]=slots[4]=ctypes.cast(callbacks.notify,ctypes.c_void_p).value
         assert library.fixture_ui(1398,1290)==2796 and library.fixture_job(40)==43
+        assert library.fixture_scene(1,7,4)==9 # preserve FOV in S0; replace only aspect in S1
         slots[2]=None
         assert library.fixture_ui(1398,1290)==1398
+        assert library.fixture_scene(1,7,4)==5
         library.fixture_acquire.argtypes=library.fixture_texture.argtypes=library.fixture_null.argtypes=[ctypes.c_void_p]
         library.fixture_acquire.restype=library.fixture_texture.restype=ctypes.c_void_p
         library.fixture_null.restype=ctypes.c_size_t

@@ -499,7 +499,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static const char* kFpsRuntimeBackend = \"cadisplaylink-range-policy-v2\";",
         "static const char* kFontRuntimeBackend = \"engine-import-stock-family-v1\";",
         "static const char* kShaderRuntimeBackend = \"guarded-ios-luau-pending\";",
-        "static const char* kStretchRuntimeBackend = \"verified-framebuffer-input\";",
+        "static const char* kStretchRuntimeBackend = \"verified-scene-aspect-native-gui\";",
         "",
         "static const char* kMissOffsets[] = {"
     ])
@@ -1202,6 +1202,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         *(ROOT / "tools" / "ios_method_hooks.c").read_text(encoding="utf-8").splitlines(),
         *(ROOT / "tools" / "ios_display_policy.c").read_text(encoding="utf-8").splitlines(),
         f"static const bool kStretchVerified = {'true' if stretch_profile.get('verified') else 'false'};",
+        f"static const bool kStretchSceneVerified = {'true' if render_roles_profile.get('stretchVerified') else 'false'};",
         "static const uintptr_t kStretchFrameReturns[] = {" + ','.join(hex(role['frameReturnRva']) for role in stretch_profile.get('roles', [])) + ("," if stretch_profile.get('roles') else "") + "0};",
         *(ROOT / "tools" / "ios_stretch.c").read_text(encoding="utf-8").splitlines(),
         f"static const uintptr_t kRenderRolesStateRva = 0x{render_roles_profile.get('stateRva', 0):x};",
@@ -2425,6 +2426,8 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
             render_idle_profile = build_render_idle_profile(input_ipa, table, out_dir / "render_idle_profile.json")
             stretch_profile = build_stretch_profile(input_ipa, out_dir / "stretch_profile.json")
             render_roles_profile = build_render_roles_profile(input_ipa, out_dir / "render_roles_profile.json")
+            if not render_roles_profile.get('stretchVerified'):
+                raise RuntimeError('Main scene aspect unresolved; refusing a stretched GUI candidate')
             if render_roles_profile['uuid'] != expected_uuid:
                 raise RuntimeError('Render roles UUID mismatch')
             prepared_engine = None
@@ -2434,10 +2437,10 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                 prepared_engine, state = patch_render_roles(bytearray(original_engine), render_roles_profile)
                 render_roles_profile['stateRva'] = state
                 (out_dir / 'render_roles_profile.json').write_text(json.dumps(render_roles_profile, indent=2), encoding='utf-8')
-            elif os.environ.get('MASTERSTRAP_BUILD_TYPE') != 'Debug':
-                raise RuntimeError('UI projection/RenderJob roles unresolved; Release gate rejected')
-            if not render_roles_profile.get('fpsVerified') and os.environ.get('MASTERSTRAP_BUILD_TYPE') != 'Debug':
-                raise RuntimeError('Offscreen acquire/bind/commit flow unresolved; Release gate rejected')
+            else:
+                raise RuntimeError('RenderJob roles unresolved; binary gate rejected')
+            if not render_roles_profile.get('fpsVerified'):
+                raise RuntimeError('Offscreen acquire/bind/commit flow unresolved; binary gate rejected')
             if font_profile['uuid'] != expected_uuid:
                 raise RuntimeError("Font profile UUID does not match verified engine")
             if pacing_profile['uuid'] != expected_uuid:
@@ -2446,10 +2449,24 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                 raise RuntimeError("Render-idle profile UUID does not match verified engine")
             if stretch_profile['uuid'] != expected_uuid:
                 raise RuntimeError("Stretch profile UUID does not match verified engine")
-            if not stretch_profile['verified'] and os.environ.get('MASTERSTRAP_BUILD_TYPE') != 'Debug':
-                raise RuntimeError('Framebuffer size flow unresolved; Release gate rejected')
-            if not render_idle_profile['verified'] and os.environ.get('MASTERSTRAP_BUILD_TYPE') != 'Debug':
-                raise RuntimeError('RenderJob minimum-idle role unresolved; Release gate rejected')
+            if not stretch_profile['verified']:
+                raise RuntimeError('Framebuffer observation flow unresolved; binary gate rejected')
+            if not render_idle_profile['verified']:
+                raise RuntimeError('RenderJob minimum-idle role unresolved; binary gate rejected')
+            profiles={'font':font_profile,'pacing':pacing_profile,'renderIdle':render_idle_profile,
+                      'stretch':stretch_profile,'renderRoles':render_roles_profile}
+            if any(p.get('sourceSha256')!=render_roles_profile['sourceSha256'] for p in profiles.values()):
+                raise RuntimeError('Feature profile source SHA256 mismatch')
+            prepared_engine=patch_robloxlib_fps_clamps(prepared_engine,out_dir/'fps_patch_profile.json')
+            fps_patches=json.loads((out_dir/'fps_patch_profile.json').read_text(encoding='utf-8'))
+            if fps_patches['resolved']!=fps_patches['required']:
+                raise RuntimeError('FPS patch roles incomplete; retain previous four-feature candidate')
+            compatibility={'schema':1,'uuid':expected_uuid,'sourceSha256':render_roles_profile['sourceSha256'],
+                           'features':{'flag':bool(table),'fps':True,'stretch':True,'font':True},
+                           'stretchBackend':'verified-scene-aspect-native-gui','pixelReduction':False,
+                           'deviceVerified':False,'status':'STRUCTURAL_GATES_PASSED'}
+            (out_dir/'compatibility_profile.json').write_text(json.dumps(compatibility,indent=2),encoding='utf-8')
+            if not table: raise RuntimeError('Typed flag map empty; binary gate rejected')
             c_src = generate_native_hook_source(verified_entries, miss_offsets, len(flags), offsets_entries, all_flags_table=table, expected_uuid=expected_uuid, font_profile=font_profile, pacing_profile=pacing_profile, render_idle_profile=render_idle_profile, stretch_profile=stretch_profile, render_roles_profile=render_roles_profile)
             compile_dylib(c_src, dylib_path)
             dylib_bytes = dylib_path.read_bytes()
@@ -2520,7 +2537,6 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                                 data = insert_load_dylib(data, "@executable_path/Frameworks/libmasterstrap.dylib")
                         elif name == "Payload/Roblox.app/Frameworks/RobloxLib.framework/RobloxLib":
                             data = remove_load_dylib(bytes(prepared_engine) if prepared_engine is not None else data, ["libgloop", "gloop", "delta", "libmasterstrap"])
-                            data = patch_robloxlib_fps_clamps(bytearray(data), out_dir / "fps_patch_profile.json")
                             data = bytes(data)
                             data = insert_load_dylib(data, "@rpath/libmasterstrap.dylib")
                         elif name.endswith("Roblox.app/Info.plist"):
@@ -2594,6 +2610,7 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                 "platform": sys.platform, "version": roblox_version,
                 "buildType": os.environ.get("MASTERSTRAP_BUILD_TYPE", "Release"),
                 "engineUuid": expected_uuid,
+                "sourceSha256": render_roles_profile['sourceSha256'],
                 "dylibSha256": hashlib.sha256(dylib_bytes).hexdigest(),
                 "ipaSha256": hashlib.sha256(out_ipa.read_bytes()).hexdigest(),
                 "bridge": {"inlineProtocol": 3, "cloudProtocol": 2, "completeProfiles": 5},

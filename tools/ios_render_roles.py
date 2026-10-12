@@ -1,13 +1,108 @@
-"""Resolve UI projection and RenderJob roles; emit guarded calls in unused TEXT padding."""
+"""Resolve main scene aspect and RenderJob roles; leave GUI projection native."""
 import hashlib
 import json
 from pathlib import Path
 import struct
 import sys
 import zipfile
+from bisect import bisect_right
 
 COOKIE = 0x4D53524F4C455331
 RENDER_ANCHOR = '[FLog::SurfaceController] SurfaceController::RenderJob::scheduleRender: No data model. Bind workspace now...'
+
+def resolve_scene_aspect(image, decoder):
+    """Require tan(fov/2), width/height dataflow and the main camera copy.
+
+    No version, field offset or perspective address is borrowed from another IPA.
+    Shadow cameras lack the renderer-size/camera-copy contract and stay untouched.
+    """
+    from ios_font_profile import resolve_import_slots
+    from roblox_ios_dumper.arm64 import decode_address_reference, decode_bl
+    slots = {image.image_base + s['rva'] for s in resolve_import_slots(image, {b'_tanf': 0})}
+    tangent = set()
+    for section in image.sections:
+        if section.name != '__stubs': continue
+        for offset in range(section.file_offset, section.file_offset + section.size - 11, 4):
+            address = section.address + offset - section.file_offset
+            a,b,c = struct.unpack_from('<3I', image.data, offset)
+            ref = decode_address_reference(address,a,b)
+            if ref and ref.target_address in slots and c == 0xD61F0200: tangent.add(address)
+    def calls(targets):
+        for section in image.sections:
+            if section.name != '__text': continue
+            for i,(word,) in enumerate(struct.iter_unpack('<I',image.data[section.file_offset:section.file_offset+section.size])):
+                if word & 0xFC000000 != 0x94000000: continue
+                address = section.address + i*4
+                if decode_bl(word,address) in targets: yield address
+    def body(address):
+        i = bisect_right(image.function_starts,address)-1
+        if i < 0 or i+1 == len(image.function_starts): return []
+        start,end = image.function_starts[i:i+2]; offset = image.virtual_to_file(start)
+        if offset is None or end-start > 8192: return []
+        return list(decoder.disasm(image.data[offset:offset+end-start],start))
+    perspectives = set()
+    for address in calls(tangent):
+        code = body(address)
+        moves = {i.op_str for i in code if i.mnemonic == 'fmov'}
+        aspect = [i.op_str.split(', ')[0] for i in code if i.mnemonic == 'fmov' and i.op_str.endswith(', s1')]
+        divisions = [i.op_str.split(', ') for i in code if i.mnemonic == 'fdiv']
+        if (len(aspect) == 1 and 's1, #0.50000000' in moves and 's1, #1.00000000' in moves
+                and any(x[1:] == ['s1','s0'] for x in divisions)
+                and any(x[0] == 's0' and x[2] == aspect[0] for x in divisions)):
+            perspectives.add(code[0].address)
+    matches = []
+    for address in calls(perspectives):
+        code = body(address); position = next((i for i,x in enumerate(code) if x.address == address),None)
+        if position is None: continue
+        flow = {}; ratios = {}; site = None
+        for ins in code[:position]:
+            operands = ins.operands
+            if ins.mnemonic == 'ldr' and len(operands)==2 and ins.op_str.startswith('s') and operands[1].type==3:
+                flow[ins.op_str.split(', ')[0]] = ('field',ins.reg_name(operands[1].mem.base),operands[1].mem.disp)
+                ratios.pop(ins.op_str.split(', ')[0],None)
+            elif ins.mnemonic == 'fmov':
+                parts = ins.op_str.split(', ')
+                flow[parts[0]] = flow.get(parts[1],('one',) if parts[1]=='#1.00000000' else None)
+                origin=ratios.get(parts[1])
+                ratios.pop(parts[0],None)
+                if origin: ratios[parts[0]]=origin
+                if parts[0]=='s1' and parts[1] in ratios: site,ratio = ins,ratios[parts[1]]
+            elif ins.mnemonic == 'fmaxnm':
+                dest,a,b = ins.op_str.split(', ')
+                flow[dest] = flow.get(a) if flow.get(b)==('one',) else flow.get(b) if flow.get(a)==('one',) else None
+                ratios.pop(dest,None)
+            elif ins.mnemonic == 'fdiv':
+                dest,a,b = ins.op_str.split(', '); width,height = flow.get(a),flow.get(b)
+                ratios.pop(dest,None)
+                if width and height and width[0]==height[0]=='field' and width[1]==height[1] and height[2]==width[2]+4:
+                    ratios[dest]=(width,height)
+                flow[dest] = None
+            else:
+                for reg in ins.regs_access()[1]:
+                    name=ins.reg_name(reg)
+                    flow.pop(name,None); ratios.pop(name,None)
+            if ins.mnemonic in ('bl','blr'):
+                for r in range(8): flow.pop('s'+str(r),None); ratios.pop('s'+str(r),None)
+        if any(x.mnemonic=='b' or x.mnemonic.startswith(('b.','cb','tb')) for x in code[:position]): continue
+        if site is None or any(x.mnemonic in ('bl','blr','b') or x.mnemonic.startswith(('b.','cb','tb')) or
+                               any(x.reg_name(r) in ('s1','d1','q1','v1') for r in x.regs_access()[1])
+                               for x in code[code.index(site)+1:position]): continue
+        width,height = ratio; receiver = width[1]
+        if not any(x.mnemonic=='mov' and x.op_str==receiver+', x0' for x in code[:position]): continue
+        camera = [x.operands[2].imm for x in code[max(0,position-8):position]
+                  if x.mnemonic=='add' and x.op_str.startswith('x0, '+receiver+', #')]
+        if len(camera)!=1: continue
+        # The main scene copies this camera into its second render/culling camera.
+        copies = [i for i in range(position+1,len(code)) if code[i].mnemonic=='mov' and
+                  code[i].op_str.startswith('w2, #') and 64<=code[i].operands[1].imm<=4096 and
+                  i>=2 and code[i-1].mnemonic=='add' and code[i-1].op_str=='x1, '+receiver+', #'+hex(camera[0]) and
+                  i+1<len(code) and code[i+1].mnemonic=='bl']
+        if len(copies)!=1: continue
+        matches.append({'role':'scene-aspect','rva':image.to_rva(site.address),'before':site.bytes.hex(),'slot':16,
+                        'functionRva':image.to_rva(code[0].address),'perspectiveRva':image.to_rva(decode_bl(int.from_bytes(code[position].bytes,'little'),address)),
+                        'widthOffset':width[2],'heightOffset':height[2],'cameraOffset':camera[0],
+                        'evidence':'TAN_FOV_HALF_RENDERER_ASPECT_MAIN_CAMERA_COPY'})
+    return matches if len(matches)==1 else []
 
 def resolve_offscreen_roles(image, scanner, decoder):
     from roblox_ios_dumper.arm64 import decode_address_reference, decode_bl
@@ -125,7 +220,7 @@ def resolve_roles(image):
     from capstone import Cs, CS_ARCH_ARM64, CS_MODE_LITTLE_ENDIAN
     scanner = Arm64Scanner(image)
     decoder = Cs(CS_ARCH_ARM64, CS_MODE_LITTLE_ENDIAN); decoder.detail = True
-    scanner._index_targets({a for value in ('render2D', RENDER_ANCHOR, 'acquireFramebuffer','submitFrame') for a in image.find_cstrings(value)})
+    scanner._index_targets({a for value in (RENDER_ANCHOR, 'acquireFramebuffer','submitFrame') for a in image.find_cstrings(value)})
     def body(anchor):
         starts = {scanner.resolve_function_start(r.instruction_address)[0] for r in scanner.find_string_xrefs(anchor)}
         if len(starts) != 1 or None in starts: return []
@@ -133,35 +228,11 @@ def resolve_roles(image):
         if i + 1 == len(image.function_starts): return []
         end = image.function_starts[i + 1]; offset = image.virtual_to_file(start)
         return list(decoder.disasm(image.data[offset:offset + end - start], start))
-    ui = body('render2D'); render = body(RENDER_ANCHOR)
-    hooks = []
-    for i, ins in enumerate(ui):
-        if ins.mnemonic != 'bl' or i < 3: continue
-        first, second, pointer = ui[i-3:i]
-        if first.mnemonic != 'ucvtf' or not first.op_str.startswith('s1, w') or second.mnemonic != 'ucvtf' or not second.op_str.startswith('s0, w') or pointer.mnemonic != 'add' or not pointer.op_str.startswith('x0, sp,'): continue
-        width, height = second.op_str.split(', ')[1], first.op_str.split(', ')[1]
-        if not any(item.mnemonic == 'mov' and item.op_str == 'x' + width[1:] + ', x2' for item in ui[:i]): continue
-        if not any(item.mnemonic == 'mov' and item.op_str == 'x' + height[1:] + ', x3' for item in ui[:i]): continue
-        target = decode_bl(int.from_bytes(ins.bytes,'little'), ins.address)
-        if target not in image.function_starts: continue
-        j = image.function_starts.index(target)
-        if j + 1 == len(image.function_starts): continue
-        offset = image.virtual_to_file(target); end = image.function_starts[j+1]
-        matrix = list(decoder.disasm(image.data[offset:offset + end - target], target))
-        w = [item.op_str.split(', ')[0] for item in matrix if item.mnemonic == 'fmov' and item.op_str.endswith(', s0')]
-        h = [item.op_str.split(', ')[0] for item in matrix if item.mnemonic == 'fmov' and item.op_str.endswith(', s1')]
-        if len(w) != 1 or len(h) != 1: continue
-        division = [item.op_str for item in matrix if item.mnemonic == 'fdiv']
-        constants = [item.op_str for item in matrix if item.mnemonic == 'fmov']
-        if 's0, s0, ' + w[0] not in division or 's5, s1, ' + h[0] not in division: continue
-        if 's0, #2.00000000' not in constants or 's1, #-2.00000000' not in constants: continue
-        if not matrix or matrix[0].mnemonic!='sub' or not matrix[0].op_str.startswith('sp, sp, #'): continue
-        hooks.append({'role':'ui-width','rva':image.to_rva(matrix[0].address),'before':matrix[0].bytes.hex(),
-                      'functionRva':image.to_rva(ui[0].address),'matrixRva':image.to_rva(target),'slot':16})
-    if len(hooks) != 1: return []
+    render = body(RENDER_ANCHOR)
     if not render or render[0].mnemonic != 'sub' or not render[0].op_str.startswith('sp, sp, #'): return []
     returns = [item for item in render if item.mnemonic == 'ret']
     if len(returns) != 1 or returns[0].op_str: return []
+    hooks = resolve_scene_aspect(image,decoder)
     hooks.extend([
         {'role':'render-enter','rva':image.to_rva(render[0].address),'before':render[0].bytes.hex(),'slot':24},
         {'role':'render-exit','rva':image.to_rva(returns[0].address),'before':returns[0].bytes.hex(),'slot':32}])
@@ -176,9 +247,10 @@ def build_render_roles_profile(ipa, report):
               'verified':False,'deviceVerified':False,'hooks':[],'status':'UNRESOLVED_ROLES'}
     if image.architecture == 'arm64' and not image.is_encrypted and not image.slice.file_offset:
         result['hooks'] = resolve_roles(image)
-        result['verified'] = len(result['hooks']) in (3,6)
-        result['fpsVerified'] = len(result['hooks'])==6
-        if result['verified']: result['status'] = 'VERIFIED_UI_ORTHOGRAPHIC_WIDTH_AND_RENDER_JOB'
+        result['verified'] = len(result['hooks']) in (2,3,5,6)
+        result['fpsVerified'] = sum(h['role'].startswith('fps-') for h in result['hooks'])==3
+        result['stretchVerified'] = any(h['role']=='scene-aspect' for h in result['hooks'])
+        if result['verified']: result['status'] = 'VERIFIED_RENDER_JOB_AND_SCOPED_SCENE_ASPECT'
     report.write_text(json.dumps(result,indent=2),encoding='utf-8')
     return result
 
@@ -213,8 +285,9 @@ def trampoline(start, state, hook):
     emit(0xF9015BF0) # STR X16,[SP,#688] callback readiness, survives its caller-saved registers
     test = len(words); emit(0) # CBZ X16 skips the callback while slots are unbound
     if hook['role']=='fps-texture':emit(0xAA0003E1 | (hook['deviceRegister']<<16)) # MOV X1, verified DeviceMtl register
+    if hook['role']=='scene-aspect':emit(0x1E204020) # FMOV S0,S1; callback modifies only aspect
     emit(0xD63F0200) # BLR X16
-    if hook['role'] == 'ui-width': emit(0xBD02ABE0) # STR S0,[SP,#680]
+    if hook['role'] in ('ui-width','scene-aspect'): emit(0xBD02ABE0) # STR S0,[SP,#680]
     if replacement:emit(0xF90157E0) # callback return X0
     bypass=None
     if hook['role'] in ('fps-acquire','fps-texture'):
@@ -233,11 +306,11 @@ def trampoline(start, state, hook):
     emit(0xF94167F1); emit(0xD51B4431)
     for reg in range(0,32,2):
         emit(0xAD400000 | (((160+reg*16)//16)<<15) | ((reg+1)<<10) | (31<<5) | reg)
-    if hook['role'] == 'ui-width':
+    if hook['role'] in ('ui-width','scene-aspect'):
         # If no callback ran, original S0 is already in the restored Q0.
         emit(0xF9415BF0) # LDR X16,[SP,#688]
         emit(0xB4000050) # CBZ X16 skips reloading S0 when callback is unbound
-        emit(0xBD42ABE0) # LDR S0,[SP,#680]
+        emit(0xBD42ABE1 if hook['role']=='scene-aspect' else 0xBD42ABE0) # replace only the verified float argument
     if hook['role'] in ('fps-acquire','fps-texture'):
         emit(0xF94157E0) # replacement id result
         emit(0xF90003E0) # overwrite saved X0 with callback result

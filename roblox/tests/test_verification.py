@@ -9,9 +9,19 @@ from roblox_ios_dumper.cli import DEFAULT_PATTERNS, main
 from roblox_ios_dumper.verification import verify_dump
 
 from .fixtures import build_ipa
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'tools'))
+from fetch_roblox_ios_ipa import validate_ipa_version
 
 
 class VerificationTests(unittest.TestCase):
+    def test_distributor_version_must_match_requested_version(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            ipa=Path(directory)/'source.ipa'; build_ipa(ipa)
+            self.assertEqual(validate_ipa_version(ipa,'2.735.1138'),'2.735.1138')
+            with self.assertRaisesRegex(ValueError,'differs from requested'):
+                validate_ipa_version(ipa,'2.742.1062')
+
     def test_dump_passes_identity_and_segment_verification(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

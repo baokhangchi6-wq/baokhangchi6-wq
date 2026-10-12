@@ -1,5 +1,5 @@
-/* Alter only the frame value read by verified framebuffer sizing callers.
- * UIKit's stored frame, layout, and touch coordinates remain native. */
+/* Observe verified framebuffer callers; keep both GUI target and UIKit native.
+ * Stretch only the main scene perspective argument resolved from this IPA. */
 typedef struct { double x, y; } MSStretchPoint;
 typedef struct { double width, height; } MSStretchSize;
 typedef struct { MSStretchPoint origin; MSStretchSize size; } MSStretchRect;
@@ -14,12 +14,10 @@ static int g_stretch_last_percent = 100;
 static long g_stretch_texture_width, g_stretch_texture_height;
 static unsigned g_stretch_drawable_samples;
 static double g_stretch_content_scale;
-static unsigned long g_stretch_ui_reads;
-static unsigned long g_stretch_ui_calls, g_stretch_ui_rejected[7];
-static int g_stretch_ui_reason, g_stretch_ui_units;
-static float g_stretch_ui_height;
+static unsigned long g_stretch_scene_reads, g_stretch_scene_calls;
+static int g_stretch_scene_reason;
 extern void ms_offscreen_mark_layer(void*);
-static float g_stretch_ui_input, g_stretch_ui_output;
+static float g_stretch_scene_input, g_stretch_scene_output;
 
 static MSStretchRect ms_stretch_frame_value(MSStretchRect native, uintptr_t caller) {
     if (!__builtin_isfinite(native.size.width) || !__builtin_isfinite(native.size.height)) return native;
@@ -32,18 +30,13 @@ static MSStretchRect ms_stretch_frame_value(MSStretchRect native, uintptr_t call
     if (base != g_stretch_base) { os_unfair_lock_unlock(&g_stretch_lock); return native; }
     MSStretchRect adjusted = native;
     int percent = g_stretch_target;
-    if (allowed && percent >= 25 && percent < 100 && native.size.width > native.size.height &&
-        native.size.height >= 64 && native.size.width <= 16384) {
-        adjusted.size.width = native.size.width * percent / 100.0;
-        if (adjusted.size.width < 64) adjusted.size.width = 64;
-    }
     bool note = allowed && (g_stretch_hits == 0 || g_stretch_last_percent != percent ||
         g_stretch_native.size.width != native.size.width || g_stretch_native.size.height != native.size.height);
     if (allowed) {
         g_stretch_hits++; g_stretch_native = native; g_stretch_adjusted = adjusted; g_stretch_last_percent = percent;
     }
     os_unfair_lock_unlock(&g_stretch_lock);
-    if (note) runtime_note("[STRETCH][FRAMEBUFFER_INPUT] percent=%d native=%.1fx%.1f adjusted=%.1fx%.1f scope=VERIFIED_FRAME_READ layoutChanged=0", percent,
+    if (note) runtime_note("[STRETCH][FRAMEBUFFER_INPUT] percent=%d native=%.1fx%.1f adjusted=%.1fx%.1f scope=NATIVE_GUI_TARGET layoutChanged=0", percent,
         native.size.width, native.size.height, adjusted.size.width, adjusted.size.height);
     return adjusted;
 }
@@ -67,35 +60,26 @@ __attribute__((noinline, used)) static MSStretchRect ms_stretch_frame_hook(id se
     }
     return ms_stretch_frame_value(native, caller);
 }
-static float ms_stretch_ui_width(float input, float height) {
+static float ms_stretch_scene_aspect(float input) {
     os_unfair_lock_lock(&g_stretch_lock);
-    unsigned long call = ++g_stretch_ui_calls;
-    double native = g_stretch_native.size.width * g_stretch_content_scale;
-    double expected = native * g_stretch_target / 100.0;
+    g_stretch_scene_calls++;
     float result = input;
     int reason = !g_stretch_base ? 1 : g_stretch_target < 25 || g_stretch_target >= 100 ? 2 :
         g_stretch_native.size.width <= g_stretch_native.size.height ? 3 :
-        g_stretch_content_scale <= 0 ? 4 :
-        !__builtin_isfinite(input) || !__builtin_isfinite(height) || input <= 0 || height <= 0 ? 5 : 0;
-    g_stretch_ui_input = __builtin_isfinite(input) ? input : 0;
-    g_stretch_ui_height = __builtin_isfinite(height) ? height : 0;
-    g_stretch_ui_reason = reason; g_stretch_ui_units = 0;
-    int units = !reason && __builtin_fabs(input-expected)<=2 && __builtin_fabs(height-g_stretch_native.size.height*g_stretch_content_scale)<=2 ? 2 :
-        !reason && __builtin_fabs(input-g_stretch_adjusted.size.width)<=1 && __builtin_fabs(height-g_stretch_native.size.height)<=1 ? 1 : 0;
-    if (units) {
-        result = (float)(units==2 ? native : g_stretch_native.size.width);
-        bool first = g_stretch_ui_reads++ == 0;
-        g_stretch_ui_input = input; g_stretch_ui_output = result;
-        g_stretch_ui_units = units;
-        os_unfair_lock_unlock(&g_stretch_lock);
-        if (first) runtime_note("[STRETCH][UI_PROJECTION] inputWidth=%.1f logicalWidth=%.1f units=%s scope=VERIFIED_ORTHOGRAPHIC_MATRIX actualTargetWidth=UNCHANGED touchLayout=NATIVE", input, result, units==2 ? "PIXELS" : "POINTS");
-        return result;
+        g_stretch_native.size.height < 64 || g_stretch_native.size.width > 16384 ? 4 :
+        !__builtin_isfinite(input) || input <= 0 ? 5 : 0;
+    if (!reason && __builtin_fabs(input-g_stretch_native.size.width/g_stretch_native.size.height)>0.01) reason=6;
+    bool first=false;
+    if (!reason) {
+        result=input*g_stretch_target/100.0f;
+        first=g_stretch_scene_reads++==0;
     }
-    if (!reason) reason = 6;
-    bool first_rejection = g_stretch_ui_rejected[reason]==0;
-    g_stretch_ui_reason = reason; g_stretch_ui_rejected[reason]++;
+    g_stretch_scene_reason=reason;
+    g_stretch_scene_input=__builtin_isfinite(input) ? input : 0;
+    g_stretch_scene_output=__builtin_isfinite(result) ? result : 0;
     os_unfair_lock_unlock(&g_stretch_lock);
-    if (call <= 4 || first_rejection) runtime_note("[STRETCH][UI_PROBE] call=%lu input=%.1fx%.1f expectedWidth=%.1f nativeWidth=%.1f rejectedReason=%d", call, input, height, expected, native, reason);
+    if (first) runtime_note("[STRETCH][SCENE_ASPECT] input=%.5f output=%.5f scope=VERIFIED_MAIN_CAMERA guiTarget=NATIVE touchLayout=NATIVE",input,result);
+    // ponytail: native target preserves GUI; lower scene pixels need a verified scene-only upscale pass.
     return result;
 }
 static bool ms_stretch_frame_abi(Method method) {
@@ -108,7 +92,7 @@ static bool ms_stretch_frame_abi(Method method) {
     free(result); free(self); free(selector); return valid;
 }
 static void ms_configure_stretch(uintptr_t base) {
-    bool verified = kStretchVerified && base && engine_identity_matches(base);
+    bool verified = kStretchVerified && kStretchSceneVerified && base && engine_identity_matches(base);
     if (verified && !g_stretch_original_frame) {
         Method method = class_getInstanceMethod(objc_getClass("UIView"), sel_registerName("frame"));
         if (ms_stretch_frame_abi(method)) {
@@ -120,15 +104,12 @@ static void ms_configure_stretch(uintptr_t base) {
     __atomic_store_n(&g_stretch_base, verified && g_stretch_original_frame ? base : 0, __ATOMIC_RELEASE);
     g_stretch_target = g_profile_loaded && g_launch_authorized && g_stretch_percent >= 25 && g_stretch_percent <= 100 ? g_stretch_percent : 100;
     g_stretch_hits = 0;
-    g_stretch_native = g_stretch_adjusted = (MSStretchRect){0};
     g_stretch_texture_width = g_stretch_texture_height = 0;
     g_stretch_drawable_samples = 0;
-    g_stretch_content_scale = 0; g_stretch_ui_reads = 0;
-    g_stretch_ui_calls = 0; g_stretch_ui_reason = g_stretch_ui_units = 0; g_stretch_ui_height = 0;
-    for (int i=0;i<7;i++) g_stretch_ui_rejected[i]=0;
-    g_stretch_ui_input = g_stretch_ui_output = 0;
+    g_stretch_scene_calls = g_stretch_scene_reads = 0; g_stretch_scene_reason = 0;
+    g_stretch_scene_input = g_stretch_scene_output = 0;
     os_unfair_lock_unlock(&g_stretch_lock);
-    runtime_note("[CAPABILITY][STRETCH] status=%s percent=%d backend=verified-framebuffer-input deviceEffect=UNVERIFIED",
+    runtime_note("[CAPABILITY][STRETCH] status=%s percent=%d backend=verified-scene-aspect-native-gui deviceEffect=UNVERIFIED",
         g_stretch_base ? "READY" : "BLOCKED_BINARY_OR_UIKIT_ABI", g_stretch_target);
 }
 static void ms_stretch_observe_drawable(id drawable) {
@@ -151,16 +132,14 @@ static void ms_stretch_write_receipt(void) {
     MSStretchRect native = g_stretch_native, adjusted = g_stretch_adjusted;
     int percent = g_stretch_target; bool enabled = g_stretch_base != 0;
     long width = g_stretch_texture_width, height = g_stretch_texture_height;
-    unsigned long ui = g_stretch_ui_reads, ui_calls = g_stretch_ui_calls;
-    int ui_reason = g_stretch_ui_reason, ui_units = g_stretch_ui_units;
-    unsigned long rejected[7]; for (int i=0;i<7;i++) rejected[i]=g_stretch_ui_rejected[i];
-    float ui_height = g_stretch_ui_height;
+    unsigned long scene = g_stretch_scene_reads, scene_calls = g_stretch_scene_calls;
+    int scene_reason = g_stretch_scene_reason;
     double scale = g_stretch_content_scale;
-    float ui_input = g_stretch_ui_input, ui_output = g_stretch_ui_output;
+    float scene_input = g_stretch_scene_input, scene_output = g_stretch_scene_output;
     os_unfair_lock_unlock(&g_stretch_lock);
     char content[1536];
-    snprintf(content, sizeof(content), "{\"schema\":3,\"request\":\"%s\",\"pid\":%d,\"gateOpen\":%s,\"percent\":%d,\"frameReads\":%lu,\"nativeWidth\":%.3f,\"nativeHeight\":%.3f,\"framebufferInputWidth\":%.3f,\"framebufferInputHeight\":%.3f,\"observedDrawableWidth\":%ld,\"observedDrawableHeight\":%ld,\"uiProjectionCalls\":%lu,\"uiProjectionReads\":%lu,\"uiInputWidth\":%.3f,\"uiInputHeight\":%.3f,\"contentScale\":%.3f,\"uiLogicalWidth\":%.3f,\"uiUnits\":%d,\"uiRejectedReason\":%d,\"uiRejectedCounts\":[%lu,%lu,%lu,%lu,%lu,%lu],\"layoutChanged\":false,\"deviceVerified\":false}\n",
-        g_applied_request, getpid(), enabled ? "true" : "false", percent, hits, native.size.width, native.size.height, adjusted.size.width, adjusted.size.height, width, height, ui_calls, ui, ui_input, ui_height, scale, ui_output, ui_units, ui_reason, rejected[1],rejected[2],rejected[3],rejected[4],rejected[5],rejected[6]);
+    snprintf(content, sizeof(content), "{\"schema\":4,\"request\":\"%s\",\"pid\":%d,\"gateOpen\":%s,\"percent\":%d,\"frameReads\":%lu,\"nativeWidth\":%.3f,\"nativeHeight\":%.3f,\"framebufferInputWidth\":%.3f,\"framebufferInputHeight\":%.3f,\"observedDrawableWidth\":%ld,\"observedDrawableHeight\":%ld,\"contentScale\":%.3f,\"sceneAspectCalls\":%lu,\"sceneAspectReads\":%lu,\"sceneInputAspect\":%.5f,\"sceneOutputAspect\":%.5f,\"sceneRejectedReason\":%d,\"guiTarget\":\"NATIVE\",\"pixelReduction\":false,\"layoutChanged\":false,\"deviceVerified\":false}\n",
+        g_applied_request, getpid(), enabled ? "true" : "false", percent, hits, native.size.width, native.size.height, adjusted.size.width, adjusted.size.height, width, height, scale, scene_calls, scene, scene_input, scene_output, scene_reason);
     bridge_write_document("MasterstrapStretchReceipt.json", content);
     char archive[160];
     char request[96]; size_t i=0;
