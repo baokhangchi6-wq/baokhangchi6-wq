@@ -17,7 +17,7 @@ def main():
 @implementation MSFixtureDevice
 - (id)newTextureWithDescriptor:(MTLTextureDescriptor*)descriptor {
     assert(descriptor.storageMode==MTLStorageModePrivate);
-    assert(descriptor.usage==(MTLTextureUsageRenderTarget|MTLTextureUsageShaderRead));
+    assert(descriptor.usage==(MTLTextureUsageRenderTarget|MTLTextureUsageShaderRead|MTLTextureUsagePixelFormatView));
     return [MSFixtureTexture new];
 }
 @end
@@ -113,7 +113,8 @@ int main(void) { @autoreleasepool {
         id<MTLTexture> texture=(__bridge id)ms_offscreen_texture(NULL);
         assert(texture.width==64 && texture.height==64 && texture.pixelFormat==80);
         MTLRenderPassDescriptor* pass=[MTLRenderPassDescriptor renderPassDescriptor];
-        pass.colorAttachments[0].texture=texture;pass.colorAttachments[0].loadAction=MTLLoadActionClear;pass.colorAttachments[0].storeAction=MTLStoreActionStore;
+        id<MTLTexture> view=[texture newTextureViewWithPixelFormat:MTLPixelFormatBGRA8Unorm_sRGB];assert(view);
+        pass.colorAttachments[0].texture=view;pass.colorAttachments[0].loadAction=MTLLoadActionClear;pass.colorAttachments[0].storeAction=MTLStoreActionStore;
         id<MTLRenderCommandEncoder> encoder=[buffer renderCommandEncoderWithDescriptor:pass];assert(encoder);
         ms_offscreen_bind_buffer((__bridge void*)buffer);
         ms_offscreen_observe_encoder((__bridge void*)buffer,(__bridge void*)pass);

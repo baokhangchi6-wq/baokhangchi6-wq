@@ -18,7 +18,7 @@ def resolve_offscreen_roles(image, scanner, decoder):
             address=section.address+offset-section.file_offset
             a,b,c,d,e=struct.unpack_from('<5I',image.data,offset)
             ref=decode_address_reference(address,a,b)
-            if not ref or a&31!=1 or b&0xFFC003FF!=0xF9400021 or e!=0xD61F0200: continue
+            if not ref or a&31!=1 or b&0xFFC003FF!=0xF9400021 or c&31!=16 or d&0xFFC003FF!=0xF9400210 or e!=0xD61F0200: continue
             pointer=image.read_u64(ref.target_address)
             if pointer is None: continue
             file=image.virtual_to_file(pointer)
@@ -34,7 +34,8 @@ def resolve_offscreen_roles(image, scanner, decoder):
         if idx+1<len(image.function_starts):
             finish=image.function_starts[idx+1];file=image.virtual_to_file(entry)
             submit_code=list(decoder.disasm(image.data[file:file+finish-entry],entry))
-            roots=[ins.reg_name(ins.operands[0].reg) for ins in submit_code[:20] if ins.mnemonic=='mov' and ins.op_str.endswith(', x0')]
+            prologue=submit_code[:next((k for k,x in enumerate(submit_code) if x.mnemonic in ('bl','blr')),len(submit_code))]
+            roots=[ins.reg_name(ins.operands[0].reg) for ins in prologue if ins.mnemonic=='mov' and ins.op_str.endswith(', x0')]
             if len(roots)==1:
                 for k,ins in enumerate(submit_code[:-2]):
                     if ins.mnemonic!='ldr' or ins.reg_name(ins.operands[1].mem.base)!=roots[0]:continue
@@ -106,7 +107,8 @@ def resolve_offscreen_roles(image, scanner, decoder):
                 if ref and load.mnemonic=='ldrb' and load.op_str=='w8, [x8]' and compare.mnemonic=='cmp' and compare.op_str=='w8, #1':
                     segment=image.segment_for_va(ref.target_address)
                     if segment and segment.is_writable:async_guards.append(image.to_rva(ref.target_address))
-            device_registers=[int(ins.op_str.split(', ')[0][1:]) for ins in code[:20] if ins.mnemonic=='mov' and ins.op_str.endswith(', x0')]
+            prologue=code[:next((k for k,x in enumerate(code) if x.mnemonic in ('bl','blr')),len(code))]
+            device_registers=[int(ins.op_str.split(', ')[0][1:]) for ins in prologue if ins.mnemonic=='mov' and ins.op_str.endswith(', x0')]
             if len(later)==1 and len(async_guards)==1 and len(device_registers)==1 and 19<=device_registers[0]<=28:
                 branch,texture,fail=later[0]
                 matches.append([

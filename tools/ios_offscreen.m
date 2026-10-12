@@ -91,7 +91,7 @@ void *ms_offscreen_acquire(void *pointer,double now,int displayHz,int requested)
                     id texture=pool.textures[slot];
                     if (texture==NSNull.null) {
                         MTLTextureDescriptor *descriptor=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format width:pool.width height:pool.height mipmapped:NO];
-                        descriptor.storageMode=MTLStorageModePrivate;descriptor.usage=MTLTextureUsageRenderTarget|MTLTextureUsageShaderRead;
+                        descriptor.storageMode=MTLStorageModePrivate;descriptor.usage=MTLTextureUsageRenderTarget|MTLTextureUsageShaderRead|MTLTextureUsagePixelFormatView;
                         texture=[device newTextureWithDescriptor:descriptor];
                         if (!texture) { MSCounts[3]++;break; }
                         pool.textures[slot]=texture;
