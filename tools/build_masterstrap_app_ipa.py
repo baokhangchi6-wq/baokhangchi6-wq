@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import plistlib
+import re
 import shutil
 import struct
 import subprocess
@@ -127,6 +128,13 @@ static int g_bridge_inline_protocol = 1;
 static bool g_launch_in_flight = false;
 static id g_root_view_controller = NULL;
 static id g_web_view = NULL;
+extern void ms_install_license_store(id controller);
+static id nsstr(const char* s);
+static void appDelegate_willEnterForeground(id self, SEL command, id app) {
+    if (g_web_view) ((void (*)(id, SEL, id, void*))objc_msgSend)(g_web_view,
+        sel_registerName("evaluateJavaScript:completionHandler:"),
+        nsstr("if (window.msLicenseForeground) window.msLicenseForeground();"), NULL);
+}
 
 typedef void (*MSLevelPlayConfigureFn)(void*, void*);
 typedef void (*MSLevelPlayRequestFn)(const char*, const char*);
@@ -719,6 +727,7 @@ static void viewController_loadView(id self, SEL _cmd) {
 
     id WKUserContentController = objc_getClass("WKUserContentController");
     id ucc = ((id (*)(id, SEL))objc_msgSend)(WKUserContentController, sel_registerName("new"));
+    ms_install_license_store(ucc);
 
     id handlerCls = objc_getClass("MasterstrapScriptHandler");
     id handler = ((id (*)(id, SEL))objc_msgSend)(handlerCls, sel_registerName("new"));
@@ -862,6 +871,7 @@ int main(int argc, char *argv[]) {
     class_addMethod(appDelegateCls, sel_registerName("window"), (void(*)(void))appDelegate_window, "@@:");
     class_addMethod(appDelegateCls, sel_registerName("setWindow:"), (void(*)(void))appDelegate_setWindow, "v@:@");
     class_addMethod(appDelegateCls, sel_registerName("application:didFinishLaunchingWithOptions:"), (void(*)(void))appDelegate_didFinishLaunching, "B@:@@");
+    class_addMethod(appDelegateCls, sel_registerName("applicationWillEnterForeground:"), (void(*)(void))appDelegate_willEnterForeground, "v@:@");
     objc_registerClassPair(appDelegateCls);
 
     int ret = UIApplicationMain(argc, argv, NULL, nsstr("MasterstrapAppDelegate"));
@@ -899,7 +909,11 @@ def compile_native_executable(
         if proc.returncode != 0:
             raise RuntimeError(f"Compilation failed:\n{proc.stderr}")
 
-        objects = [str(obj_file)]
+        license_obj = work_dir / "ios_license_store.o"
+        subprocess.run(["xcrun", "clang", "-target", "arm64-apple-ios14.0", "-isysroot", sdk_path,
+                        "-fobjc-arc", "-fblocks", *native_options, "-c", str(ROOT / "tools/ios_license_store.m"),
+                        "-o", str(license_obj)], check=True)
+        objects = [str(obj_file), str(license_obj)]
         framework_flags: list[str] = []
         if levelplay_framework is not None:
             headers = levelplay_framework / "Headers"
@@ -1445,14 +1459,12 @@ function onFpsInputChange(el) {
     }'''
     desync_and_faster_speed_new = '''    const isFreePlanFlags = (typeof MasterstrapAds !== "undefined" && MasterstrapAds.isFree) ? MasterstrapAds.isFree() : (!["PLUS", "MAX"].includes((localStorage.getItem("masterstrap_license_plan") || "FREE").toUpperCase()));
 
+    // Retire only the old generated Desync bundle; custom editor input is merged separately.
+    for (const flag of ["DFFlagClampIncomingReplicationLag", "DFIntReplicationLagCompensation",
+        "DFIntClientPacketMaxDelayMs", "DFIntNetworkLatencyTolerance", "DFIntDataSenderRate", "DFIntDataSenderMaxBandwidthBps"])
+        delete activeFlags[flag];
     if (document.getElementById("sw-ffs-desync").checked && !isFreePlanFlags) {
-        activeFlags["DFFlagClampIncomingReplicationLag"] = "true";
-        activeFlags["DFIntReplicationLagCompensation"] = "1";
-        activeFlags["DFIntClientPacketMaxDelayMs"] = "1";
-        activeFlags["DFIntNetworkLatencyTolerance"] = "1";
-        activeFlags["DFIntDataSenderRate"] = "38760";
         activeFlags["DFIntS2PhysicsSenderRate"] = "38760";
-        activeFlags["DFIntDataSenderMaxBandwidthBps"] = "100000000";
     } else {
         delete activeFlags["DFFlagClampIncomingReplicationLag"];
         delete activeFlags["DFIntReplicationLagCompensation"];
@@ -2032,7 +2044,24 @@ function confirmClearAllFlags() {
             "msg_feature_requires_plus_max": "此功能需要 Plus 或 Max 方案。"
         }
     }
+    desync_descriptions = {
+        'vi':'Điều chỉnh tần suất gửi dữ liệu vật lý. Hiệu quả phụ thuộc vào game và kết nối.',
+        'en':'Adjusts the physics data send rate. Results depend on the game and connection.',
+        'es':'Ajusta la frecuencia de envío de datos físicos. Los resultados dependen del juego y la conexión.',
+        'pt':'Ajusta a frequência de envio de dados de física. Os resultados dependem do jogo e da conexão.',
+        'ru':'Настраивает частоту отправки данных физики. Результат зависит от игры и соединения.',
+        'ja':'物理データの送信頻度を調整します。効果はゲームと接続環境によって異なります。',
+        'ko':'물리 데이터 전송 빈도를 조절합니다. 효과는 게임과 연결 상태에 따라 달라집니다.',
+        'zh':'调整物理数据发送频率。效果取决于游戏和网络连接。'}
+    descriptions=iter(desync_descriptions.values())
+    html,count=re.subn(r'("ffs_desync_desc":\s*)"[^"\n]*"',
+        lambda match:match[1]+json.dumps(next(descriptions),ensure_ascii=False),html)
+    if count!=8:raise RuntimeError('Desync translation coverage changed')
+    replace_required('showToast("Desync 38760 Hz Physics Mode Enabled!");',
+        'showToast(getI18nText("msg_desync_enabled"));','Desync message')
     for lang, kvs in translations.items():
+        kvs['msg_desync_enabled']={'vi':'Đã bật Desync.','en':'Desync enabled.','es':'Desync activado.',
+            'pt':'Desync ativado.','ru':'Desync включён.','ja':'Desync を有効にしました。','ko':'Desync가 활성화되었습니다.','zh':'已启用 Desync。'}[lang]
         kvs["msg_license_retry"] = {'vi': 'Máy chủ giấy phép tạm thời không khả dụng. Giữ key đã lưu; thử lại sau.', 'en': 'License service temporarily unavailable. Saved key retained; retry later.', 'es': 'El servicio de licencias no está disponible temporalmente. La clave guardada se conserva; inténtalo más tarde.', 'pt': 'O serviço de licenças está temporariamente indisponível. A chave salva foi mantida; tente mais tarde.', 'ru': 'Сервис лицензий временно недоступен. Сохранённый ключ оставлен; повторите попытку позже.', 'ja': 'ライセンスサービスを一時的に利用できません。保存済みキーは保持されます。後で再試行してください。', 'ko': '라이선스 서비스를 일시적으로 사용할 수 없습니다. 저장된 키는 유지됩니다. 나중에 다시 시도하세요.', 'zh': '许可证服务暂时不可用。已保留保存的密钥；请稍后重试。'}[lang]
         kvs["msg_launch_failed"] = {'vi': 'Không thể mở Roblox đã sửa hoặc chuyển đủ cấu hình. Kiểm tra cài đặt và mạng rồi thử lại.', 'en': 'Could not open patched Roblox or transfer the complete configuration. Check installation and network, then retry.', 'es': 'No se pudo abrir Roblox modificado o transferir toda la configuración. Revisa la instalación y la red e inténtalo de nuevo.', 'pt': 'Não foi possível abrir o Roblox modificado ou transferir toda a configuração. Verifique a instalação e a rede e tente novamente.', 'ru': 'Не удалось открыть изменённый Roblox или передать всю конфигурацию. Проверьте установку и сеть и повторите попытку.', 'ja': '変更済みRobloxを開くか、設定全体を転送できませんでした。インストールとネットワークを確認して再試行してください。', 'ko': '수정된 Roblox를 열거나 전체 설정을 전송할 수 없습니다. 설치 및 네트워크를 확인하고 다시 시도하세요.', 'zh': '无法打开修改版 Roblox 或传输完整配置。请检查安装和网络后重试。'}[lang]
         lang_marker = f'"{lang}": {{\n'
@@ -2058,17 +2087,12 @@ function confirmClearAllFlags() {
     // Trigger Full-Screen Rocket Space Launch Animation''',
         "profile request log",
     )
-    replace_required('async function activateLicenseKey() {',
-        'let msLicenseCheckInFlight = false;\nasync function activateLicenseKey() {\n    if (msLicenseCheckInFlight) return;',
-        "license single-flight guard")
-    replace_required('    if (activateBtn) activateBtn.disabled = true;',
-        '    msLicenseCheckInFlight = true;\n    if (activateBtn) activateBtn.disabled = true;', "license begin")
-    replace_required('    } finally {\n        if (activateBtn) activateBtn.disabled = false;',
-        '    } finally {\n        msLicenseCheckInFlight = false;\n        if (activateBtn) activateBtn.disabled = false;', "license finish")
-    replace_required('        if (res.ok && data && data.isValid) {',
-        '        if (res.status === 429 || res.status >= 500 || !data) {\n'
-        '            showToast(getI18nText("msg_license_retry"));\n            return;\n        }\n'
-        '        if (res.ok && data && data.isValid) {', "license transient failure")
+    begin=html.index('function checkLicenseExpired(')
+    end=html.index('\nfunction updateLicenseUI(',begin)
+    html=html[:begin]+html[end:]
+    replace_required('if (isLicActive && checkLicenseExpired(licPlan, licExpiry))',
+        'if (!window.msLicenseUnknown && isLicActive && checkLicenseExpired(licPlan, licExpiry))',
+        'keep credentials during transient verification failure')
     ad_runtime = r'''
 // Native LevelPlay parity contract. Rewarded actions fail closed; the optional
 // editor interstitial fails open, matching the Android policy.
@@ -2079,7 +2103,7 @@ window.MasterstrapAds = (() => {
     const interstitialCooldownMs = 30 * 1000;
     const interstitialLastShownKey = "masterstrap_ads_last_interstitial_ms";
     let sequence = 0;
-    const plan = () => (localStorage.getItem("masterstrap_license_plan") || "FREE").toUpperCase();
+    const plan = () => window.msLicenseAuthorized ? (localStorage.getItem("masterstrap_license_plan") || "FREE").toUpperCase() : "FREE";
     const isFree = () => plan() !== "PLUS" && plan() !== "MAX";
     const needsFpsReward = () => false;
 
@@ -2217,6 +2241,7 @@ window.MasterstrapAds = (() => {
 
 // VIP Hard-Lock Function
 function updateVipLocks() {
+    if (window.msLicensePending || window.msLicenseUnknown) return;
     const isFree = window.MasterstrapAds ? window.MasterstrapAds.isFree() : (!["PLUS", "MAX"].includes((localStorage.getItem("masterstrap_license_plan") || "FREE").toUpperCase()));
 
     // 1. Stretch Resolution Hard-Lock
@@ -2393,6 +2418,7 @@ window.msLaunchFinished = function(opened) {
     if (!opened) showToast(getI18nText("msg_launch_failed"));
 };
 saveAndLaunch = function() {
+    if (window.msLicensePending || window.msLicenseUnknown) { showToast(getI18nText("msg_license_retry")); return; }
     if (msLaunchInFlight) return;
     msLaunchInFlight = true;
     if (!MasterstrapAds.isFree()) {
@@ -2449,6 +2475,7 @@ closeFullscreenSettings = function() {
 // =========================================================================
 let syncTimer = null;
 function syncConfigToNative() {
+    if (window.msLicensePending || window.msLicenseUnknown) return;
     clearTimeout(syncTimer);
     syncTimer = setTimeout(() => {
         if (!window.webkit?.messageHandlers?.saveConfig) return;
@@ -2574,7 +2601,7 @@ window.SettingsPersistence = (() => {
         localStorage.setItem("masterstrap_license_key", key);
     }
     function loadLicenseKey() {
-        return localStorage.getItem("masterstrap_license_key") || "";
+        return msLicenseKey();
     }
     function saveLicensePlan(plan) {
         localStorage.setItem("masterstrap_license_plan", plan);
@@ -2602,7 +2629,7 @@ window.SettingsPersistence = (() => {
     }
 
     function restoreAllUI() {
-        const isFree = window.MasterstrapAds ? window.MasterstrapAds.isFree() : (!["PLUS", "MAX"].includes((localStorage.getItem("masterstrap_license_plan") || "FREE").toUpperCase()));
+        const isFree = !window.msLicenseUnknown && (window.MasterstrapAds ? window.MasterstrapAds.isFree() : (!["PLUS", "MAX"].includes((localStorage.getItem("masterstrap_license_plan") || "FREE").toUpperCase())));
         
         // 1. Restore all checkboxes (matches Android SettingsPersistence.loadToggle)
         document.querySelectorAll('input[type="checkbox"][id]').forEach(cb => {
@@ -3241,7 +3268,8 @@ function dismissSplashScreen() {
 
     replace_required(
         "initAppSettings();\nupdateFlagState();",
-        splash_js + "\n" + ad_runtime + "\ninitAppSettings();\nupdateFlagState();\nplaySplashScreenIntro();",
+        splash_js + "\n" + ad_runtime + "\n" + (ROOT / "tools/ios_license.js").read_text(encoding="utf-8") +
+        "\nmsLicenseBoot().then(() => { if (!window.msLicenseUnknown) { initAppSettings(); updateFlagState(); } msLicenseShow(); });\nplaySplashScreenIntro();",
         "LevelPlay and Splash Intro policy",
     )
     had_trailing_newline = html.endswith("\n")

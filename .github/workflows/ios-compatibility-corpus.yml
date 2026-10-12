@@ -1,0 +1,42 @@
+name: Validate Roblox binary corpus
+on:
+  workflow_dispatch:
+    inputs:
+      ipa_urls:
+        description: 'HTTPS source IPA URLs, one per line; scan profiles only, no IPA build'
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install capstone pyyaml Pillow
+      - name: Download sources and validate four feature contracts
+        env:
+          IPA_URLS: ${{ inputs.ipa_urls }}
+        run: |
+          set -euo pipefail
+          mkdir -p corpus evidence
+          i=0
+          while IFS= read -r url || [ -n "$url" ]; do
+            [ -z "$url" ] && continue
+            case "$url" in https://*) ;; *) echo "HTTPS required"; exit 1 ;; esac
+            [ "$i" -lt 8 ] || { echo "At most eight binaries per scan"; exit 1; }
+            curl --fail --location --proto '=https' --proto-redir '=https' "$url" -o "corpus/$i.ipa"
+            i=$((i+1))
+          done <<< "$IPA_URLS"
+          [ "$i" -gt 0 ]
+          python -B tools/check_ios_compatibility.py corpus/*.ipa --out-dir evidence
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: roblox-compatibility-evidence-${{ github.run_number }}
+          path: evidence/
+          retention-days: 7

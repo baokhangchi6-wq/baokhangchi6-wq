@@ -1260,6 +1260,12 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    fflush(file);",
         "    fclose(file);",
         "    runtime_note(\"[RECEIPT] file=MasterstrapRuntimeReceipt.json status=WRITTEN\");",
+        '    snprintf(path, sizeof(path), "%s/Documents/MasterstrapBuildReceipt.json", home);',
+        '    file = fopen(path, "w");',
+        '    if (file) { fputs(' + json.dumps(json.dumps({
+            'commit': os.environ.get('GITHUB_SHA','local'), 'runId': os.environ.get('GITHUB_RUN_ID','local'),
+            'engineUuid': expected_uuid, 'sourceSha256':render_roles_profile.get('sourceSha256'),
+            'stretchBackend':'verified-scene-aspect-native-gui', 'deviceVerified':False})) + ', file); fclose(file); }',
         "}",
         "",
         "static const char* bridge_utf8(id value) {",

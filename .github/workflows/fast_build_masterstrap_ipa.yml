@@ -6,6 +6,8 @@ on:
     paths:
       - 'tools/build_masterstrap_app_ipa.py'
       - 'tools/ios_bridge_codec.h'
+      - 'tools/ios_license*'
+      - 'tools/check_ios_license*'
       - 'tools/check_ios_bridge_budget.py'
       - 'tools/ios_levelplay_bridge.m'
       - 'tools/embed_swift_runtime_in_ipa.sh'
@@ -42,6 +44,7 @@ jobs:
         run: |
           python -B tools/check_ios_bridge_budget.py
           python -B tools/check_ios_bridge_import.py
+          python -B tools/check_ios_license.py
 
       - name: Cache LevelPlay & UnityAds SDKs
         id: cache-sdks

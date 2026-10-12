@@ -20,6 +20,12 @@ Manual Debug có thể chọn `source_version` chính xác để kiểm thử bi
 
 2.741 là binary thật đã kiểm tra resolver; fixtures kiểm tra relocation, thay field offsets và từ chối dữ liệu sai. Chưa có binary 2.742 để chứng minh tương thích thực tế. Nếu compiler/ABI thay đổi ngoài contract, cần bổ sung resolver; không cam kết mọi phiên bản tương lai tự hoạt động.
 
+Workflow `ios-compatibility-corpus.yml` nhận tối đa tám URL IPA HTTPS, chạy dumper/gate đủ bốn tính năng trên Linux và lưu evidence; không build IPA. `tools/check_ios_compatibility.py` cũng nhận nhiều IPA local. Khi có binary mới, chạy cùng các nguồn cũ làm mốc. Các report phải trùng UUID/SHA256; FPS thiếu bất kỳ patch/ownership role nào phải bị chặn.
+
+Runtime xuất `MasterstrapBuildReceipt.json` chứa commit/run/source hash/backend để đối chiếu đúng artifact. Bản sửa chỉ Masterstrap dùng commit marker `[masterstrap-only]`; workflow Roblox bỏ build cho push này, schedule vẫn hoạt động độc lập.
+
+Thứ tự mở rộng resolver: các variation về relocation/field offset/register đã nhận diện bằng dataflow; tiếp theo thay tám FPS signature bằng contract scheduler/presentation có CFG và ABI rõ ràng. Mỗi variation cần binary thật hoặc fixture âm/dương và hồi quy nguồn cũ. Không bật patch khi chỉ khớp tên hàm/chuỗi. Chưa có phép chứng minh cho engine/ABI hoàn toàn mới; fail closed giữ artifact tốt.
+
 ## Gate iPhone
 
 So sánh 100%/75%/50%: cảnh kéo đúng; menu, joystick, chữ, clipping và thao tác chạm không lệch. Thử cold launch qua Masterstrap, warm update, mở Roblox trực tiếp, xoay màn hình, điện năng yếu bật/tắt và resize khi GPU đang bận. Flag/font/FPS cần tiếp tục hoạt động; đối chiếu frame GPU hoàn tất, không dùng riêng overlay FPS.
