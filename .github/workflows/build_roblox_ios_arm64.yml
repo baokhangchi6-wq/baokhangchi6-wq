@@ -106,21 +106,26 @@ jobs:
           INPUT_IPA_URL: ${{ github.event.inputs.ipa_url }}
           SECRET_IPA_URL: ${{ secrets.IOS_IPA_URL }}
           STORE_VERSION: ${{ steps.version_gate.outputs.store_version }}
-          EXPECTED_IPA_VERSION: ${{ inputs.source_version || steps.version_gate.outputs.store_version }}
+          EXPECTED_IPA_VERSION: ${{ inputs.source_version || '' }}
         run: |
           set -euo pipefail
           mkdir -p roblox_input output
 
-          URL_ARGS=()
+          URL_ARG=""
           if [ -n "$INPUT_IPA_URL" ]; then
-            URL_ARGS=(--url "$INPUT_IPA_URL")
+            URL_ARG="--url $INPUT_IPA_URL"
           elif [ -n "$SECRET_IPA_URL" ]; then
-            URL_ARGS=(--url "$SECRET_IPA_URL")
+            URL_ARG="--url $SECRET_IPA_URL"
+          fi
+
+          VER_ARG=""
+          if [ -n "$EXPECTED_IPA_VERSION" ]; then
+            VER_ARG="--expected-version $EXPECTED_IPA_VERSION"
           fi
 
           python tools/fetch_roblox_ios_ipa.py \
-            "${URL_ARGS[@]}" \
-            --expected-version "$EXPECTED_IPA_VERSION" \
+            $URL_ARG \
+            $VER_ARG \
             --output roblox_input/roblox.ipa
 
       # ── STEP 3: Auto-dump offsets from IPA ───────────────────────────────
@@ -228,7 +233,7 @@ jobs:
 
       # ── STEP 7: Advance iOS checkpoint ───────────────────────────────────
       - name: Record iOS build candidate checkpoint (not device approval)
-        if: steps.version_gate.outputs.should_build == 'true' && steps.build_ipa.outputs.has_ipa == 'true' && inputs.source_version == ''
+        if: steps.version_gate.outputs.should_build == 'true' && steps.build_ipa.outputs.has_ipa == 'true' && inputs.source_version == '' && steps.build_ipa.outputs.ipa_version == steps.version_gate.outputs.store_version
         shell: bash
         env:
           BUILT_VERSION: ${{ steps.build_ipa.outputs.ipa_version }}

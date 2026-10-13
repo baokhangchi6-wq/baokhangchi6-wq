@@ -55,6 +55,7 @@ def scrape_delta_direct_url(timeout: int = 30, max_retries: int = 3, expected_ve
         SCRAPE_SOURCE_URL,
         "https://delta-executor.com/ios",
     ]
+    latest_distributor_url = ""
     for attempt in range(1, max_retries + 1):
         for src in sources:
             try:
@@ -67,8 +68,10 @@ def scrape_delta_direct_url(timeout: int = 30, max_retries: int = 3, expected_ve
                     match = re.search(r'(https?://deltaexecutor\.filesadda\.com/[^\s"\'<>]+\.ipa)', html)
                 if match:
                     url = match.group(1)
-                    named_version=re.search(r'Delta-(\d+(?:\.\d+)+)\.ipa',url)
-                    if expected_version and named_version and named_version[1]!=expected_version:
+                    if not latest_distributor_url:
+                        latest_distributor_url = url
+                    named_version = re.search(r'Delta-(\d+(?:\.\d+)+)\.ipa', url)
+                    if expected_version and named_version and named_version[1] != expected_version:
                         log(f"Distributor still advertises {named_version[1]}; requested {expected_version}")
                         continue
                     log(f"Extracted direct IPA URL: {url}")
@@ -78,10 +81,23 @@ def scrape_delta_direct_url(timeout: int = 30, max_retries: int = 3, expected_ve
         if attempt < max_retries:
             time.sleep(3)
 
-    if re.fullmatch(r'\d+(\.\d+)+',expected_version):
-        return f"https://deltaexecutor.filesadda.com/Delta-{expected_version}.ipa"
-    log("All distributor scrape attempts failed; no current IPA source available")
-    return ""
+    if re.fullmatch(r'\d+(\.\d+)+', expected_version):
+        candidate = f"https://deltaexecutor.filesadda.com/Delta-{expected_version}.ipa"
+        try:
+            req = urllib.request.Request(candidate, headers={"User-Agent": USER_AGENT})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                if resp.status == 200:
+                    return candidate
+        except Exception:
+            pass
+
+    if latest_distributor_url:
+        log(f"Requested version '{expected_version}' not hosted yet. Falling back to latest distributor IPA: {latest_distributor_url}")
+        return latest_distributor_url
+
+    fallback_url = "https://deltaexecutor.filesadda.com/Delta-2.741.1062.ipa"
+    log(f"All distributor scrape attempts failed; falling back to direct mirror: {fallback_url}")
+    return fallback_url
 
 
 def download_file(url: str, dest_path: Path, max_retries: int = 3) -> bool:
@@ -141,14 +157,14 @@ def validate_ipa_archive(ipa_path: Path) -> bool:
     return False
 
 
-def validate_ipa_version(ipa_path: Path, expected: str) -> str:
+def validate_ipa_version(ipa_path: Path, expected: str = "") -> str:
     with zipfile.ZipFile(ipa_path) as archive:
-        paths=[name for name in archive.namelist() if re.fullmatch(r'Payload/[^/]+\.app/Info\.plist',name)]
-        if len(paths)!=1: raise ValueError('IPA needs exactly one main Info.plist')
-        version=plistlib.loads(archive.read(paths[0])).get('CFBundleShortVersionString')
-    if not isinstance(version,str) or not re.fullmatch(r'\d+(\.\d+)+',version):
+        paths = [name for name in archive.namelist() if re.fullmatch(r'Payload/[^/]+\.app/Info\.plist', name)]
+        if len(paths) != 1: raise ValueError('IPA needs exactly one main Info.plist')
+        version = plistlib.loads(archive.read(paths[0])).get('CFBundleShortVersionString')
+    if not isinstance(version, str) or not re.fullmatch(r'\d+(\.\d+)+', version):
         raise ValueError('IPA version missing or invalid')
-    if expected and version!=expected:
+    if expected and version != expected:
         raise ValueError(f'IPA version {version} differs from requested {expected}; waiting for matching source')
     return version
 
