@@ -35,6 +35,90 @@ KNOWN_PREFIXES = (
     "FCString",
 )
 
+# Reference patterns from Android ARM64 builds. Used to discover candidates for
+# finding equivalent iOS functions after string anchors disappear, but remain
+# candidate-only until iOS-specific boundary and call-graph checks pass.
+REFERENCE_HEX_PATTERNS = {
+    "taskschedulertargetfps": (
+        "fd 7b bd a9 ?? 0b 00 f9 ?? 4f ?? a9 fd 03 00 91 "
+        "?? ?? ?? 90 ?? ?? ?? 91 ?? ?? ?? ?? ?? ?? ?? 91 "
+        "?? ?? ?? ?? ?? ?? ?? 91 ?? ?? ?? a9"
+    ),
+    "lua_gettop": "?? ?? ?? A9 08 01 09 CB 00 FD 44 D3 C0 03 5F D6",
+    "lua_settop": (
+        "29 51 34 8B 1F 01 09 EB 22 01 00 54 0A 41 00 91 "
+        "1F 0D 00 B9 5F 01 09 EB E8 03 0A AA 83 FF FF 54"
+    ),
+    "lua_getfield": (
+        "fd 7b bc a9 f7 0b 00 f9 f6 57 02 a9 f4 4f 03 a9 "
+        "fd 03 00 91 f4 03 02 aa 3f 04 00 71 f3 03 00 aa "
+        "2b 01 00 54 69 a2 43 a9 08 51 21 8b 08 41 00 d1"
+    ),
+    "lua_setfield": (
+        "fd 7b bc a9 f7 0b 00 f9 f6 57 02 a9 f4 4f 03 a9 "
+        "fd 03 00 91 f4 03 03 2a f5 03 02 aa 3f 04 00 71 "
+        "f3 03 00 aa 2b 01 00 54 69 a2 43 a9 08 51 21 8b "
+        "08 41 00 d1"
+    ),
+    "lua_pushstring": (
+        "fd 7b ?? a9 f4 4f 01 a9 fd 03 00 91 f4 03 00 aa "
+        "?? ?? 00 b4 e0 03 01 aa f3 03 01 aa ?? ?? ?? 94 "
+        "e2 03 00 aa e0 03 14 aa e1 03 13 aa"
+    ),
+    "lua_pushlstring": (
+        "fd 7b bd a9 f6 57 01 a9 f4 4f 02 a9 fd 03 00 91 "
+        "?? ?? ?? ?? f4 03 02 aa f3 03 00 aa f5 03 01 aa "
+        "?? ?? ?? ?? 3f 01 08 eb 83 00 00 54 e0 03 13 aa"
+    ),
+    "lua_checkstack": (
+        "08 e8 83 52 3f 00 08 6b 6d 00 00 54 00 00 80 52 "
+        "c0 03 5f d6 ff c3 00 d1 f4 4f 01 a9 fd 7b 02 a9"
+    ),
+    "lua_xmove": (
+        "f6 57 bd a9 f4 4f 01 a9 fd 7b 02 a9 fd 83 00 91 "
+        "1f 00 01 eb 80 04 00 54 f5 03 02 aa f4 03 01 aa"
+    ),
+    "luaD_rawrunprotected": (
+        "f6 57 bd a9 f4 4f 01 a9 fd 7b 02 a9 fd 83 00 91 "
+        "e8 03 01 aa f5 03 00 aa e1 03 02 aa 00 01 3f d6"
+    ),
+    "lua_resume": (
+        "f6 57 bd a9 f4 4f 01 a9 fd 7b 02 a9 fd 83 00 91 "
+        "f4 03 02 aa f3 03 00 aa 20 00 00 94 f5 03 00 aa"
+    ),
+    "luau_bytecodeload": (
+        "ff 03 02 d1 fd 7b 05 a9 f6 57 06 a9 f4 4f 07 a9 "
+        "fd 43 01 91 ?? ?? ?? ?? 08 00 80 12 f4 03 00 aa"
+    ),
+    # iOS equivalents are evidence only. Promotion requires the resume call
+    # chain and Luau layout checks in audit_ios_luau.py.
+    "luaU_undump": (
+        "fd 7b bd a9 f6 57 01 a9 f4 4f 02 a9 fd 03 00 91 "
+        "f4 03 00 aa f5 03 01 aa ?? ?? ?? ?? 3f 00 00 71"
+    ),
+    "luaV_execute_dispatch": (
+        "fd 7b bc a9 f7 0b 00 f9 f6 57 02 a9 f4 4f 03 a9 "
+        "fd 03 00 91 f4 03 00 aa 08 01 40 f9"
+    ),
+    "resume_start": (
+        "fd 7b bf a9 fd 03 00 91 08 0c 40 39 1f 19 00 71 "
+        "04 19 41 7a 21 01 00 54 41 02 00 b4 28 60 40 79"
+    ),
+    "resume_finish": (
+        "f8 5f bc a9 f6 57 01 a9 f4 4f 02 a9 fd 7b 03 a9 "
+        "fd c3 00 91 f4 03 02 aa f3 03 00 aa 01 04 00 34"
+    ),
+    "lua_newthread": (
+        "f4 4f be a9 fd 7b 01 a9 fd 43 00 91 f3 03 00 aa "
+        "08 24 40 f9 08 a5 43 a9 3f 01 08 eb 83 00 00 54"
+    ),
+    "luaD_precall": (
+        "fd 7b bc a9 f7 0b 00 f9 f6 57 02 a9 f4 4f 03 a9 "
+        "fd 03 00 91 28 0c 40 b9 f4 03 02 2a f6 03 01 aa "
+        "f3 03 00 aa 1f 21 00 71 ?? ?? ?? 54 e0 03 13 aa"
+    ),
+}
+
 
 @dataclass(frozen=True)
 class StringXref:
@@ -362,6 +446,23 @@ class Arm64Scanner:
             )
         return results
 
+    def scan_reference_patterns(self) -> list[dict[str, object]]:
+        rows: list[dict[str, object]] = []
+        for name, pattern in REFERENCE_HEX_PATTERNS.items():
+            for row in self.scan_relaxed_hex_candidates(
+                name,
+                pattern,
+                minimum_score=0.70,
+                maximum_candidates=8,
+            ):
+                row["method"] = "android-reference-pattern"
+                row["evidence"] = list(row.get("evidence", ())) + [
+                    "source:android-arm64-reference",
+                    "candidate-only:not-emitted-to-Offsets.hpp",
+                ]
+                rows.append(row)
+        return rows
+
     def scan_offsets(self, patterns: list[dict[str, object]]) -> list[OffsetResult]:
         self.offset_candidates = []
         string_addresses: dict[str, list[int]] = {}
@@ -384,10 +485,21 @@ class Arm64Scanner:
                 address, matches, evidence = self.scan_hex_pattern(
                     hex_pat.strip(), offset_val
                 )
+                # Lua patterns often match an instruction in the body. Only
+                # LC_FUNCTION_STARTS can turn such a hit into an entry point.
+                if address is not None and name.startswith("lua"):
+                    entries = set()
+                    for match in matches:
+                        entry, boundary = self.resolve_function_start(match - offset_val)
+                        if boundary == "lc-function-starts" and entry is not None:
+                            entries.add(entry)
+                    address = next(iter(entries)) if len(entries) == 1 else None
+                    evidence.append(f"lua-function-boundaries:{len(entries)}")
+                    evidence.append("callable-abi:not-verified")
                 confidence = (
                     "high"
-                    if len(matches) == 1
-                    else ("medium" if len(matches) > 1 else "missing")
+                    if address is not None and len(matches) == 1
+                    else ("medium" if address is not None else "missing")
                 )
                 if address is None:
                     self.offset_candidates.extend(
@@ -491,6 +603,7 @@ class Arm64Scanner:
                     evidence=tuple(evidence),
                 )
             )
+        self.offset_candidates.extend(self.scan_reference_patterns())
         return results
 
     def _first_bl_after(self, xref: int, limit: int = 40) -> int | None:

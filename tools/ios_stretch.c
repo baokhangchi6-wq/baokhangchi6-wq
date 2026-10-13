@@ -93,15 +93,11 @@ static bool ms_stretch_frame_abi(Method method) {
 }
 static void ms_configure_stretch(uintptr_t base) {
     bool verified = kStretchVerified && kStretchSceneVerified && base && engine_identity_matches(base);
-    if (verified && !g_stretch_original_frame) {
-        Method method = class_getInstanceMethod(objc_getClass("UIView"), sel_registerName("frame"));
-        if (ms_stretch_frame_abi(method)) {
-            g_stretch_original_frame = (void*)method_getImplementation(method);
-            method_setImplementation(method, (IMP)ms_stretch_frame_hook);
-        }
-    }
+    // UIKit [UIView frame] swizzling disabled: prevents GUI distortion and crashes;
+    // Stretch resolution runs safely through Luau VM camera aspect stream.
+    g_stretch_original_frame = NULL;
     os_unfair_lock_lock(&g_stretch_lock);
-    __atomic_store_n(&g_stretch_base, verified && g_stretch_original_frame ? base : 0, __ATOMIC_RELEASE);
+    __atomic_store_n(&g_stretch_base, verified ? base : 0, __ATOMIC_RELEASE);
     g_stretch_target = g_profile_loaded && g_launch_authorized && g_stretch_percent >= 25 && g_stretch_percent <= 100 ? g_stretch_percent : 100;
     g_stretch_hits = 0;
     g_stretch_texture_width = g_stretch_texture_height = 0;
