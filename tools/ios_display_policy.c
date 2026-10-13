@@ -113,10 +113,8 @@ static int ms_thermal(void) {
     return (int)((long (*)(id, SEL))objc_msgSend)(ms_process_info(), sel_registerName("thermalState"));
 }
 static bool fps_runtime_requested(void) {
-    if (g_target_fps > 60) return true;
-    if (g_ms_policy.loaded && (g_ms_policy.refresh || g_ms_policy.target > 60)) return true;
-    if (g_launch_authorized) return true;
-    return false;
+    return g_launch_authorized && g_profile_loaded &&
+        (g_target_fps > 60 || (g_ms_policy.loaded && (g_ms_policy.refresh || g_ms_policy.target > 60)));
 }
 static long fps_runtime_target(void) {
     int target = g_target_fps > 0 ? g_target_fps : g_ms_policy.target;
