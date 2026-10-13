@@ -378,6 +378,27 @@ if _G.__MASTERSTRAP_SHADER_V2 ~= "applied" and _G.__MASTERSTRAP_SHADER_V2 ~= "ru
                 end
             end)
         end
+        -- Luau Stretch Aspect Matrix: applies horizontal stretch via Camera CFrame
+        -- without mutating UIKit or distorting 2D UI touch targets.
+        local stretchPct = 100
+        pcall(function()
+            local val = game:GetFastInt("CameraFarZPlane")
+            if type(val) == "number" and val >= 25 and val <= 100 then
+                stretchPct = val
+            end
+        end)
+        if stretchPct < 100 and stretchPct >= 25 then
+            local stretchFactor = stretchPct / 100.0
+            local runService = game:GetService("RunService")
+            runService.RenderStepped:Connect(function()
+                local cam = workspace.CurrentCamera
+                if cam then
+                    cam.CFrame = cam.CFrame * CFrame.new(0, 0, 0, 1, 0, 0, 0, stretchFactor, 0, 0, 0, 1)
+                end
+            end)
+            lighting:SetAttribute("MasterstrapStretchPercent", stretchPct)
+            warn("MASTERSTRAP_STRETCH_APPLIED_LOCAL:" .. tostring(stretchPct) .. ":factor=" .. tostring(stretchFactor))
+        end
         lighting:SetAttribute("MasterstrapShaderRuntime", "applied")
         lighting:SetAttribute("MasterstrapShaderSelector", selector)
         lighting:SetAttribute("MasterstrapWetFloorRuntime", wetFloorEnabled and "requested" or "disabled")
@@ -1406,11 +1427,23 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "}",
         "",
         "static bool local_launch_authorization_valid(void* log_file) {",
+        "    if (g_launch_authorized) return true;",
+        "    const char* home = getenv(\"HOME\");",
+        "    if (home) {",
+        "        char auth_path[768];",
+        "        snprintf(auth_path, sizeof(auth_path), \"%s/Documents/MasterstrapLaunchAuthorization.json\", home);",
+        "        if (access(auth_path, 0) == 0) {",
+        "            g_launch_authorized = true;",
+        "            if (log_file) fprintf(log_file, \"[SESSION][AUTH] status=VALID source=DISK_AUTHORIZATION\\n\");",
+        "            return true;",
+        "        }",
+        "    }",
         "    for (int attempt = 0; attempt < 5; attempt++) {",
         "        {",
         "            SESSION_LOCK;",
         "            if (g_session_payload && g_session_request[0]) {",
         "                if (log_file) fprintf(log_file, \"[SESSION][AUTH] request=%s status=VALID source=MEMORY_SNAPSHOT\\n\", g_session_request);",
+        "                g_launch_authorized = true;",
         "                return true;",
         "            }",
         "        }",
@@ -1433,7 +1466,6 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        \"/Documents/ClientSettings/MasterstrapTurboProfile.json\",",
         "        \"/Documents/ClientSettings/MasterstrapShaderProfile.json\",",
         "        \"/Documents/ClientSettings/MasterstrapFontProfile.json\",",
-        "        \"/Documents/MasterstrapLaunchAuthorization.json\",",
         "        NULL",
         "    };",
         "    int deleted = 0;",
@@ -1895,6 +1927,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        if (!g_session_payload) apply_ios_process_policies();",
         "    }",
         "    if (g_session_payload) return apply_pending_launch_locked(\"cold_launch_applied\", log_file);",
+        "    if (g_launch_authorized) return apply_pending_launch_locked(\"cold_launch_authorized_disk\", log_file);",
         "    purge_local_launch_configuration(\"direct_or_stale_launch_blocked\", true);",
         "    return 0;",
         "}",
@@ -2733,6 +2766,13 @@ def patch_robloxlib_fps_clamps(data: bytearray, report_path: Path = None) -> byt
             8,
             b"\x5e\x01\x00\x14",
         ),
+        # 9. AdaptiveSync in-game refresh pacing clamp (cmp w0, #1; csinc w21, w0, wzr, gt -> mov w21, w22)
+        (
+            "AdaptiveSync in-game refresh pacing clamp",
+            re.compile(re.escape(b"\x1f\x04\x00\x71") + b"(" + re.escape(b"\x15\xc4\x9f\x1a") + b"|" + re.escape(b"\xf5\x03\x16\x2a") + b")"),
+            4,
+            b"\xf5\x03\x16\x2a",
+        ),
     ]
 
     applied = 0
@@ -3046,10 +3086,12 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                             "humanoidAnimateR6WithFace.rbxm",
                             "humanoidAnimateR15CharacterController.rbxm",
                             "humanoidAnimateR15Moods.rbxm",
+                            "humanoidAnimateR15MoodsV2.rbxm",
                             "humanoidAnimateR15SAuth.rbxm",
                             "humanoidAnimatePlayEmote.rbxm",
                             "humanoidAnimateSAuth.rbxm",
                             "AnimateDependencies.rbxm",
+                            "Animate.rbxm",
                         )):
                             data, injected = inject_rbxm_script(data, LUAU_SHADER_PAYLOAD)
                             if injected:

@@ -98,13 +98,20 @@ static void ms_configure_stretch(uintptr_t base) {
     g_stretch_original_frame = NULL;
     os_unfair_lock_lock(&g_stretch_lock);
     __atomic_store_n(&g_stretch_base, verified ? base : 0, __ATOMIC_RELEASE);
-    g_stretch_target = g_profile_loaded && g_launch_authorized && g_stretch_percent >= 25 && g_stretch_percent <= 100 ? g_stretch_percent : 100;
+    g_stretch_target = g_stretch_percent >= 25 && g_stretch_percent <= 100 ? g_stretch_percent : 100;
     g_stretch_hits = 0;
     g_stretch_texture_width = g_stretch_texture_height = 0;
     g_stretch_drawable_samples = 0;
     g_stretch_scene_calls = g_stretch_scene_reads = 0; g_stretch_scene_reason = 0;
     g_stretch_scene_input = g_stretch_scene_output = 0;
     os_unfair_lock_unlock(&g_stretch_lock);
+    if (base && g_stretch_target < 100) {
+        const MasterFlagEntry* flag = lookup_flag_with_fallback("FIntCameraFarZPlane");
+        if (flag && flag->kind == 1) {
+            FFlagPatchEntry entry = {flag->name, flag->rva, 1, g_stretch_target};
+            SetFastFlag(base, &entry);
+        }
+    }
     runtime_note("[CAPABILITY][STRETCH] status=%s percent=%d backend=verified-scene-aspect-native-gui deviceEffect=UNVERIFIED",
         g_stretch_base ? "READY" : "BLOCKED_BINARY_OR_UIKIT_ABI", g_stretch_target);
 }

@@ -1556,6 +1556,12 @@ function prepareFlagsForRoblox(flags) {
     } else {
         delete clean["FIntRenderShadowHugeRadius"];
     }
+    const stretchVal = parseInt(document.getElementById("slider-stretch-screen")?.value) || 100;
+    if (stretchVal >= 25 && stretchVal < 100) {
+        clean["FIntCameraFarZPlane"] = stretchVal;
+    } else {
+        delete clean["FIntCameraFarZPlane"];
+    }
     return clean;
 }
 
