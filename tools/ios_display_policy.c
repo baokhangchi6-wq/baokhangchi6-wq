@@ -154,6 +154,7 @@ static inline MSFrameRateRange sanitize_frame_rate_range(MSFrameRateRange range)
     if (range.preferred > range.maximum) range.preferred = range.maximum;
     return range;
 }
+static int ms_hardware_maximum_fps(void);
 static MSFrameRateRange ms_target_range(void) {
     int hw_rate = ms_hardware_maximum_fps();
     if (hw_rate <= 0) hw_rate = 60;
