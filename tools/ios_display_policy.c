@@ -32,6 +32,8 @@ static unsigned g_ms_generation;
 static void ms_update_probe_environment(void);
 static void ms_probe_record(int event, double wait);
 static double ms_probe_time(void);
+static bool fps_runtime_requested(void);
+static void ms_refresh_observed_layers(void);
 extern void ms_track_drawable_lifetime(void*);
 extern int ms_drawable_sample(void*, double*, unsigned*);
 extern void ms_mark_drawable_present(void*);
@@ -88,7 +90,6 @@ static void ms_render_roles_write_receipt(void);
 extern void ms_offscreen_observe_encoder(void*, void*);
 extern void ms_offscreen_completion_ready(void*);
 extern void ms_offscreen_commit(void*);
-static bool fps_runtime_requested(void);
 
 typedef unsigned char (*ProcessInfoLowPowerImp)(id, SEL);
 static ProcessInfoLowPowerImp g_original_is_low_power = NULL;
