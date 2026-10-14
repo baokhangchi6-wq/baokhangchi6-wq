@@ -189,22 +189,8 @@ if _G.__MASTERSTRAP_CORE_APPLIED ~= "applied" and _G.__MASTERSTRAP_CORE_APPLIED 
 
     local applied = false
     local ok, errorMessage = pcall(function()
-        if not game:IsLoaded() then game.Loaded:Wait() end
-        local placeReady = (game.PlaceId and game.PlaceId > 0)
-        for _ = 1, 40 do
-            if placeReady then break end
-            task.wait(0.25)
-            placeReady = (game.PlaceId and game.PlaceId > 0)
-        end
-        if not placeReady and game.PlaceId == 0 then
-            if workspace:FindFirstChildOfClass("Terrain") or #workspace:GetChildren() > 2 then
-                placeReady = true
-            end
-        end
-        if not placeReady then
-            _G.__MASTERSTRAP_CORE_APPLIED = nil
-            warn("MASTERSTRAP_CORE_WAITING_FOR_PLACE")
-            return
+        if not game:IsLoaded() then
+            pcall(function() game.Loaded:Wait() end)
         end
 
         local lighting = game:GetService("Lighting")
@@ -900,6 +886,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "extern long ftell(void *stream);",
         "extern size_t fread(void *ptr, size_t size, size_t count, void *stream);",
         "extern int fprintf(void *stream, const char *format, ...) __attribute__((format(printf, 2, 3)));",
+        "extern int vfprintf(void *stream, const char *format, __builtin_va_list ap);",
         "extern int fclose(void *stream);",
         "extern int fflush(void *stream);",
         "extern int unlink(const char *path);",
@@ -2339,6 +2326,24 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "",
         "static uintptr_t g_last_injected_global = 0;",
         "",
+        "static void hook_runtime_log(const char* fmt, ...) {",
+        "    char log_path[512] = {0};",
+        "    const char* home = getenv(\"HOME\");",
+        "    if (home) {",
+        "        snprintf(log_path, sizeof(log_path), \"%s/Documents/masterstrap_ios.log\", home);",
+        "    } else {",
+        "        snprintf(log_path, sizeof(log_path), \"/tmp/masterstrap_ios.log\");",
+        "    }",
+        "    void* file = fopen(log_path, \"a+\");",
+        "    if (!file) return;",
+        "    __builtin_va_list args;",
+        "    __builtin_va_start(args, fmt);",
+        "    vfprintf(file, fmt, args);",
+        "    __builtin_va_end(args);",
+        "    fflush(file);",
+        "    fclose(file);",
+        "}",
+        "",
         "__attribute__((visibility(\"default\"))) int hooked_task_spawn(void* L) {",
         "    if (!L) return 0;",
         "    uintptr_t base = g_engine_base;",
@@ -2350,35 +2355,52 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "",
         "    uintptr_t global = *(uintptr_t*)((char*)L + 0x68);",
         "    if (global != 0 && global != g_last_injected_global && sizeof(kMasterstrapBytecode) > 0) {",
+        "        hook_runtime_log(\"[LUAU_HOOK] task.spawn called L=%p global=0x%lx bytecode_size=%zu\\n\",",
+        "                         L, (unsigned long)global, sizeof(kMasterstrapBytecode));",
         "        typedef void* (*newthread_fn)(void*);",
         "        typedef int (*luau_load_fn)(void*, void*);",
+        "        typedef int (*lua_resume_fn)(void*, void*, int);",
         "        newthread_fn p_newthread = (newthread_fn)(base + 0x4219018);",
         "        luau_load_fn p_luau_load = (luau_load_fn)(base + 0x4246884);",
+        "        lua_resume_fn p_lua_resume = (lua_resume_fn)(base + 0x42266e0);",
         "",
         "        void* th = p_newthread(L);",
         "        if (th) {",
         "            typedef struct {",
-        "                char pad[0x30];",
+        "                void* th;",
+        "                void* buffer;",
+        "                size_t buffer_size;",
+        "                char pad1[0x18];",
         "                const char* chunkname;",
         "                const char* data;",
         "                size_t size;",
         "                int env;",
+        "                int status;",
+        "                char pad2[0x40];",
         "            } LuauChunkDesc;",
         "            LuauChunkDesc chunk;",
         "            __builtin_memset(&chunk, 0, sizeof(chunk));",
+        "            chunk.th = th;",
         "            chunk.chunkname = \"=MasterstrapShader\";",
         "            chunk.data = (const char*)kMasterstrapBytecode;",
         "            chunk.size = sizeof(kMasterstrapBytecode);",
         "            chunk.env = 0;",
+        "            chunk.status = -1;",
         "",
-        "            int load_res = p_luau_load(th, &chunk);",
-        "            if (load_res == 0) {",
-        "                orig_task_spawn(th);",
+        "            p_luau_load(th, &chunk);",
+        "            hook_runtime_log(\"[LUAU_HOOK] luau_load result chunk.status=%d\\n\", chunk.status);",
+        "            if (chunk.status == 0) {",
+        "                int resume_res = p_lua_resume(L, th, 0);",
         "                g_last_injected_global = global;",
-        "                syslog(LOG_NOTICE, \"[Masterstrap-iOS] Luau engine injected into global 0x%lx!\", (unsigned long)global);",
+        "                hook_runtime_log(\"[LUAU_HOOK] lua_resume executed res=%d global=0x%lx INJECTED SUCCESS!\\n\",",
+        "                                 resume_res, (unsigned long)global);",
+        "                syslog(LOG_NOTICE, \"[Masterstrap-iOS] Luau engine injected into global 0x%lx, resume_res=%d\", (unsigned long)global, resume_res);",
         "            } else {",
-        "                syslog(LOG_ERR, \"[Masterstrap-iOS] luau_load error: %d\", load_res);",
+        "                hook_runtime_log(\"[LUAU_HOOK] luau_load error status=%d\\n\", chunk.status);",
+        "                syslog(LOG_ERR, \"[Masterstrap-iOS] luau_load error: %d\", chunk.status);",
         "            }",
+        "        } else {",
+        "            hook_runtime_log(\"[LUAU_HOOK] lua_newthread failed (returned NULL)\\n\");",
         "        }",
         "    }",
         "    return res;",

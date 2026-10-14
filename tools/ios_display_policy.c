@@ -155,8 +155,16 @@ static inline MSFrameRateRange sanitize_frame_rate_range(MSFrameRateRange range)
     return range;
 }
 static MSFrameRateRange ms_target_range(void) {
-    float max_limit = (float)fps_runtime_target();
-    return sanitize_frame_rate_range((MSFrameRateRange){max_limit, max_limit, max_limit});
+    int hw_rate = ms_hardware_maximum_fps();
+    if (hw_rate <= 0) hw_rate = 60;
+    int target = g_target_fps > 0 ? g_target_fps : g_ms_policy.target;
+    if (target <= 0) target = hw_rate;
+    float max_limit = (float)(hw_rate >= 120 ? 120 : (hw_rate > 60 ? hw_rate : 60));
+    float pref_limit = (float)target;
+    if (pref_limit > max_limit) pref_limit = max_limit;
+    if (pref_limit < 30.0f) pref_limit = 30.0f;
+    float min_limit = pref_limit >= 120.0f ? 60.0f : (pref_limit > 30.0f ? 30.0f : 15.0f);
+    return sanitize_frame_rate_range((MSFrameRateRange){min_limit, max_limit, pref_limit});
 }
 static bool ms_get_link_request(id link, MSLinkRequest* request) {
     id value = objc_getAssociatedObject(link, &g_ms_link_request_key);
@@ -203,9 +211,9 @@ static void apply_display_link_policy(id link, const char* source) {
     MSLinkRequest state;
     if (ms_get_link_request(link, &state)) { state.managed = 1; ms_store_link_request(link, &state); }
     g_ms_applying = 1;
-    long target = fps_runtime_target();
+    MSFrameRateRange range = ms_target_range();
+    long target = (long)range.preferred;
     if (g_original_display_link_set_range) {
-        MSFrameRateRange range = ms_target_range();
         g_original_display_link_set_range(link, sel_registerName("setPreferredFrameRateRange:"), range);
         if (g_display_link_rewrite_count < 16) {
             MSFrameRateRange actual = ((MSFrameRateRange (*)(id, SEL))objc_msgSend)(link, sel_registerName("preferredFrameRateRange"));
@@ -234,7 +242,8 @@ static void display_link_set_fps_hook(id self, SEL cmd, long requested) {
         if (ms_get_link_request(self, &state)) { state.fps = requested; ms_store_link_request(self, &state); }
     }
     if (fps_runtime_requested()) {
-        requested = fps_runtime_target();
+        MSFrameRateRange range = ms_target_range();
+        requested = (long)range.preferred;
     }
     if (g_original_display_link_set_fps) g_original_display_link_set_fps(self, cmd, requested);
     if (!pthread_main_np() || g_ms_applying) {
