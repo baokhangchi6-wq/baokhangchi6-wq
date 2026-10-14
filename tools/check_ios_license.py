@@ -51,11 +51,16 @@ context.window.msLicenseForeground();finish({ok:true,json:async()=>({isValid:tru
 assert.equal(context.window.msLicenseAuthorized,false);assert.equal(stored.key,'VALID-TEST-KEY');
 context.window.msLicenseForeground();finish({ok:true,json:async()=>({isValid:true,plan:'Max',expirationDate:null,serverTime:new Date().toISOString(),bindingVerified:true})});await wait();
 assert.equal(context.window.msLicenseAuthorized,true);
+context.document.getElementById=()=>({value:''});await context.activateLicenseKey();
+assert.equal(stored.key,'');assert.equal(context.window.msLicenseAuthorized,false);
+context.document.getElementById=()=>({value:'INVALID-25-CHAR-KEY-LONG-EX'});
+const inv=context.activateLicenseKey();assert.equal(requests,8);finish({ok:true,json:async()=>({isValid:false,errorCode:'InvalidKey'})});await inv;
+assert.equal(stored.key,'');assert.equal(context.window.msLicenseAuthorized,false);
 context.window.msLicenseForeground();finish({ok:true,json:async()=>({isValid:false,errorCode:'LicenseExpired'})});await wait();
 assert.equal(stored.key,'');assert.equal(context.window.msLicenseAuthorized,false);
 assert.equal(vm.runInContext("checkLicenseExpired('Plus','bad')",context),true);
 assert.equal(vm.runInContext("checkLicenseExpired('Max','')",context),false);
-console.log('PASS: single Desync flag; Keychain migration keeps binding; one status request; reset revokes; 503 keeps key; CHECK coalesces');
+console.log('PASS: single Desync flag; Keychain migration keeps binding; one status request; reset revokes; 503 keeps key; CHECK coalesces; empty/invalid resets to Free');
 '''.replace('__DESYNC__',json.dumps(desync)).replace('__LICENSE__',json.dumps(license_source))
 with tempfile.TemporaryDirectory() as directory:
     path=Path(directory)/'license.mjs';path.write_text(script,encoding='utf-8')

@@ -187,20 +187,36 @@ if _G.__MASTERSTRAP_CORE_APPLIED ~= "applied" and _G.__MASTERSTRAP_CORE_APPLIED 
     warn("MASTERSTRAP_CORE_STARTED")
     task.defer(function()
 
-    local applied = false
-    local ok, errorMessage = pcall(function()
-        if not game:IsLoaded() then
-            pcall(function() game.Loaded:Wait() end)
+    local function runCoreEngine()
+        local placeId = game.PlaceId
+        if not placeId or placeId == 0 then
+            _G.__MASTERSTRAP_CORE_APPLIED = nil
+            warn("MASTERSTRAP_CORE_IDLE_MENU")
+            local conn
+            conn = game:GetPropertyChangedSignal("PlaceId"):Connect(function()
+                if game.PlaceId and game.PlaceId > 0 then
+                    conn:Disconnect()
+                    task.defer(runCoreEngine)
+                end
+            end)
+            return
         end
 
-        local lighting = game:GetService("Lighting")
-        local runService = game:GetService("RunService")
-        local s = shared
+        _G.__MASTERSTRAP_CORE_APPLIED = "running"
+        local applied = false
+        local ok, errorMessage = pcall(function()
+            if not game:IsLoaded() then
+                pcall(function() game.Loaded:Wait() end)
+            end
 
-        -- -------------------------------------------------------------
-        -- FEATURE 1: STRETCH RESOLUTION (Android stretch.luau parity)
-        -- -------------------------------------------------------------
-        local stretchPct = s.MS_StretchPercent or 80
+            local lighting = game:GetService("Lighting")
+            local runService = game:GetService("RunService")
+            local s = shared
+
+            -- -------------------------------------------------------------
+            -- FEATURE 1: STRETCH RESOLUTION (Android stretch.luau parity)
+            -- -------------------------------------------------------------
+            local stretchPct = s.MS_StretchPercent or 100
         pcall(function()
             local attr = lighting and lighting:GetAttribute("MasterstrapStretchPercent")
             if type(attr) == "number" and attr >= 25 and attr <= 100 then
@@ -462,6 +478,9 @@ if _G.__MASTERSTRAP_CORE_APPLIED ~= "applied" and _G.__MASTERSTRAP_CORE_APPLIED 
         _G.__MASTERSTRAP_CORE_APPLIED = nil
         warn("MASTERSTRAP_CORE_DEFERRED")
     end
+    end
+
+    runCoreEngine()
     end)
 end
 """
@@ -1536,7 +1555,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static void load_and_apply_runtime_profiles(void* log_file) {",
         "    // Every new request replaces the previous profile, including missing fields.",
         "    g_profile_loaded = g_game_mode_enabled = g_refresh_requested = g_keep_display_active = false;",
-        "    g_target_fps = 10000; g_stretch_percent = 80; g_shader_wet_floor = false; g_font_size_step = 0; g_font_enabled = false;",
+        "    g_target_fps = 10000; g_stretch_percent = 100; g_shader_wet_floor = false; g_font_size_step = 0; g_font_enabled = false;",
         "    snprintf(g_renderer_mode, sizeof(g_renderer_mode), \"Automatic\");",
         "    snprintf(g_shader_package, sizeof(g_shader_package), \"none\");",
         "    snprintf(g_font_family, sizeof(g_font_family), \"Default\");",
@@ -1554,7 +1573,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        g_refresh_requested = profile_read_bool(turbo, \"displayRefreshContract\", \"turbo_refresh_contract\", false);",
         "        g_keep_display_active = profile_read_bool(turbo, \"keepDisplayActive\", \"keep_display_active\", false);",
         "        g_target_fps = profile_read_int(turbo, \"targetFrameRate\", \"targetFps\", 10000);",
-        "        g_stretch_percent = profile_read_int(turbo, \"stretchScreenPercent\", \"display_stretch_screen\", 80);",
+        "        g_stretch_percent = profile_read_int(turbo, \"stretchScreenPercent\", \"display_stretch_screen\", 100);",
         "        profile_read_string(turbo, \"rendererMode\", \"display_renderer_mode\", g_renderer_mode, sizeof(g_renderer_mode));",
         "        if (log_file) fprintf(log_file, \"[PROFILE][TURBO] status=LOADED bytes=%ld enabled=%d targetFps=%d refresh=%d keepDisplay=%d stretch=%d renderer=%s\\n\", turbo_size, g_game_mode_enabled, g_target_fps, g_refresh_requested, g_keep_display_active, g_stretch_percent, g_renderer_mode);",
         "        runtime_note(\"[PROFILE][TURBO] status=LOADED bytes=%ld enabled=%d targetFps=%d refresh=%d keepDisplay=%d stretch=%d renderer=%s\", turbo_size, g_game_mode_enabled, g_target_fps, g_refresh_requested, g_keep_display_active, g_stretch_percent, g_renderer_mode);",

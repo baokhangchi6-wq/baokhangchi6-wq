@@ -50,8 +50,9 @@ async function msLicenseRequest(key,action) {
             if(generation!==msLicenseGeneration)return;
             if(!response.ok||typeof data?.isValid!=='boolean')throw new Error('License unconfirmed');
             if(!data.isValid){
-                if(key===msLicenseKey())await clearLicenseStorage();
+                await clearLicenseStorage();
                 window.msLicenseUnknown=false;
+                msLicenseRetry();
                 return;
             }
             const plan=String(data.plan), expiry=data.expirationDate||'';
@@ -102,7 +103,13 @@ async function msLicenseRequest(key,action) {
 async function activateLicenseKey() {
     if(msLicenseFlight||window.msLicensePending)return;
     const field=document.getElementById('license-key-input'), key=String(field?.value||'').trim().toUpperCase();
-    if(!/^[A-Z0-9-]{8,64}$/.test(key)){msLicenseRetry();return;}
+    if(!/^[A-Z0-9-]{8,64}$/.test(key)){
+        await clearLicenseStorage();
+        msLicenseShow();
+        if(typeof syncConfigToNative==='function')syncConfigToNative();
+        msLicenseRetry();
+        return;
+    }
     const button=document.querySelector('.license-activate-btn');if(button)button.disabled=true;
     try{await msLicenseRequest(key,'validate');}finally{if(button)button.disabled=false;}
 }

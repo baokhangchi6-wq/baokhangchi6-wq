@@ -224,3 +224,4 @@ void MSAppodealRequest(const char* format_cstr, const char* request_id_cstr) {
         MSAppodealPendingFormat = nil;
     }
 }
+
