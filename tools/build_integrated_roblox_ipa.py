@@ -212,31 +212,37 @@ if _G.__MASTERSTRAP_CORE_APPLIED ~= "applied" and _G.__MASTERSTRAP_CORE_APPLIED 
             -- -------------------------------------------------------------
             -- FEATURE 1: STRETCH RESOLUTION (Android stretch.luau parity)
             -- -------------------------------------------------------------
-            local stretchPct = s.MS_StretchPercent or 100
-        pcall(function()
-            local attr = lighting and lighting:GetAttribute("MasterstrapStretchPercent")
-            if type(attr) == "number" and attr >= 25 and attr <= 100 then
-                stretchPct = attr
-            end
-        end)
-        local res = stretchPct / 100
-        s.MS_StretchRes = res
-
-        if s.MS_StretchConn then
-            s.MS_StretchConn:Disconnect()
-            s.MS_StretchConn = nil
-        end
-
-        if res < 0.99 or res > 1.01 then
-            s.MS_StretchConn = runService.RenderStepped:Connect(function()
-                local cam = workspace.CurrentCamera
-                if cam then
-                    local r = shared.MS_StretchRes or res
-                    cam.CFrame = cam.CFrame * CFrame.new(0, 0, 0, 1, 0, 0, 0, r, 0, 0, 0, 1)
+            local stretchPct = s.MS_StretchPercent or 75
+            pcall(function()
+                local attr = lighting and lighting:GetAttribute("MasterstrapStretchPercent")
+                if type(attr) == "number" and attr >= 25 and attr <= 100 then
+                    stretchPct = attr
                 end
             end)
-            warn("MASTERSTRAP_STRETCH_APPLIED_LOCAL:" .. tostring(stretchPct) .. ":factor=" .. tostring(res))
-        end
+            local function applyStretch(pct)
+                stretchPct = pct
+                local res = stretchPct / 100
+                s.MS_StretchPercent = stretchPct
+                s.MS_StretchRes = res
+                if s.MS_StretchConn then
+                    s.MS_StretchConn:Disconnect()
+                    s.MS_StretchConn = nil
+                end
+                if res < 0.99 or res > 1.01 then
+                    s.MS_StretchConn = runService.RenderStepped:Connect(function()
+                        local cam = workspace.CurrentCamera
+                        if cam then
+                            local r = shared.MS_StretchRes or res
+                            cam.CFrame = cam.CFrame * CFrame.new(0, 0, 0, 1, 0, 0, 0, r, 0, 0, 0, 1)
+                        end
+                    end)
+                end
+                if lighting then
+                    pcall(function() lighting:SetAttribute("MasterstrapStretchPercent", stretchPct) end)
+                end
+                warn("MASTERSTRAP_STRETCH_APPLIED_LOCAL:" .. tostring(stretchPct) .. ":factor=" .. tostring(res))
+            end
+            applyStretch(stretchPct)
 
         -- -------------------------------------------------------------
         -- FEATURE 2: SHADERS ENGINE
@@ -361,6 +367,28 @@ if _G.__MASTERSTRAP_CORE_APPLIED ~= "applied" and _G.__MASTERSTRAP_CORE_APPLIED 
             end
             applyLightingEffects()
 
+            local function applyPreset(sel)
+                selector = sel
+                s.MS_ShaderSelector = selector
+                local prof = androidProfiles[selector] or androidProfiles[2002] or {}
+                profile = prof
+                if prof.sky then
+                    skyIds = prof.sky
+                end
+                reapplySkybox()
+                applyLightingEffects()
+                if wetFloorEnabled and wetFloor then
+                    wetFloor("preset_change")
+                end
+                if lighting then
+                    pcall(function()
+                        lighting:SetAttribute("MasterstrapShaderSelector", selector)
+                        lighting:SetAttribute("MasterstrapShaderPackage", tostring(selector))
+                    end)
+                end
+                warn("MASTERSTRAP_SHADER_APPLIED_LOCAL:" .. tostring(selector) .. ":wetfloor=" .. tostring(wetFloorEnabled))
+            end
+
             lighting.ChildAdded:Connect(function(child)
                 if child:IsA("Sky") then task.defer(reapplySkybox)
                 elseif child:IsA("PostEffect") or child:IsA("Atmosphere") then task.defer(applyLightingEffects) end
@@ -431,6 +459,22 @@ if _G.__MASTERSTRAP_CORE_APPLIED ~= "applied" and _G.__MASTERSTRAP_CORE_APPLIED 
             if not okWetFloor then warn("MASTERSTRAP_WETFLOOR_FAILED:" .. tostring(wetFloorError)) end
         end
 
+        local function applyWet(enabled)
+            wetFloorEnabled = enabled
+            s.MS_WetFloor = wetFloorEnabled
+            if lighting then
+                pcall(function()
+                    lighting:SetAttribute("MasterstrapWetFloor", wetFloorEnabled)
+                    lighting:SetAttribute("MasterstrapWetFloorRuntime", wetFloorEnabled and "requested" or "disabled")
+                end)
+            end
+            if wetFloorEnabled then
+                wetFloor("toggle")
+            else
+                warn("MASTERSTRAP_WETFLOOR_READBACK:disabled:changed=0:verified=0")
+            end
+        end
+
         if wetFloorEnabled then
             wetFloor("initial")
             pcall(function()
@@ -455,6 +499,231 @@ if _G.__MASTERSTRAP_CORE_APPLIED ~= "applied" and _G.__MASTERSTRAP_CORE_APPLIED 
             end)
         end
 
+        local function createFloatingUI()
+            pcall(function()
+                local parent = nil
+                pcall(function()
+                    local probe = Instance.new("Folder")
+                    probe.Parent = game:GetService("CoreGui")
+                    probe:Destroy()
+                    parent = game:GetService("CoreGui")
+                end)
+                if not parent then
+                    local lp = game:GetService("Players").LocalPlayer
+                    if lp then
+                        parent = lp:FindFirstChildOfClass("PlayerGui") or lp:FindFirstChild("PlayerGui")
+                        if not parent then
+                            pcall(function() parent = lp:WaitForChild("PlayerGui", 5) end)
+                        end
+                    end
+                end
+                if not parent then return end
+
+                local oldUI = parent:FindFirstChild("Masterstrap_FloatingUI")
+                if oldUI then oldUI:Destroy() end
+
+                local sg = Instance.new("ScreenGui")
+                sg.Name = "Masterstrap_FloatingUI"
+                sg.ResetOnSpawn = false
+                sg.DisplayOrder = 99999
+                sg.Parent = parent
+
+                local function corner(p, r)
+                    local c = Instance.new("UICorner")
+                    c.CornerRadius = UDim.new(0, r or 6)
+                    c.Parent = p
+                end
+
+                local pill = Instance.new("TextButton")
+                pill.Name = "MasterstrapPill"
+                pill.Size = UDim2.new(0, 130, 0, 30)
+                pill.Position = UDim2.new(0.5, -65, 0, 10)
+                pill.BackgroundColor3 = Color3.fromRGB(18, 20, 28)
+                pill.Text = "★ Masterstrap"
+                pill.TextColor3 = Color3.fromRGB(140, 200, 255)
+                pill.Font = Enum.Font.GothamBold
+                pill.TextSize = 12
+                corner(pill, 15)
+                pill.Parent = sg
+
+                local card = Instance.new("Frame")
+                card.Name = "MasterstrapCard"
+                card.Size = UDim2.new(0, 260, 0, 250)
+                card.Position = UDim2.new(0.5, -130, 0, 46)
+                card.BackgroundColor3 = Color3.fromRGB(15, 17, 24)
+                card.Visible = false
+                corner(card, 10)
+                card.Parent = sg
+
+                local title = Instance.new("TextLabel")
+                title.Size = UDim2.new(1, 0, 0, 24)
+                title.BackgroundTransparency = 1
+                title.Text = "MASTERSTRAP SUITE (iOS)"
+                title.TextColor3 = Color3.fromRGB(220, 235, 255)
+                title.Font = Enum.Font.GothamBold
+                title.TextSize = 11
+                title.Parent = card
+
+                local drag = false
+                local dStart, sPos
+                pill.InputBegan:Connect(function(i)
+                    if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+                        drag = true
+                        dStart = i.Position
+                        sPos = pill.Position
+                        i.Changed:Connect(function()
+                            if i.UserInputState == Enum.UserInputState.End then drag = false end
+                        end)
+                    end
+                end)
+                game:GetService("UserInputService").InputChanged:Connect(function(i)
+                    if drag and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+                        local d = i.Position - dStart
+                        pill.Position = UDim2.new(sPos.X.Scale, sPos.X.Offset + d.X, sPos.Y.Scale, sPos.Y.Offset + d.Y)
+                        card.Position = UDim2.new(pill.Position.X.Scale, pill.Position.X.Offset - 65, pill.Position.Y.Scale, pill.Position.Y.Offset + 36)
+                    end
+                end)
+                pill.MouseButton1Click:Connect(function()
+                    card.Visible = not card.Visible
+                end)
+
+                local grid = Instance.new("Frame")
+                grid.Size = UDim2.new(1, -12, 0, 60)
+                grid.Position = UDim2.new(0, 6, 0, 26)
+                grid.BackgroundTransparency = 1
+                grid.Parent = card
+
+                local uig = Instance.new("UIGridLayout")
+                uig.CellSize = UDim2.new(0, 78, 0, 24)
+                uig.CellPadding = UDim2.new(0, 5, 0, 4)
+                uig.Parent = grid
+
+                local presetList = {
+                    {"RTX Ultra", 2002},
+                    {"Daytime 4K", 2001},
+                    {"Sunset", 2003},
+                    {"Cyberpunk", 2009},
+                    {"Galaxy", 2004},
+                    {"Blood Moon", 2008},
+                }
+                local pBtns = {}
+                for _, p in ipairs(presetList) do
+                    local name, selId = p[1], p[2]
+                    local b = Instance.new("TextButton")
+                    b.Text = name
+                    b.TextColor3 = Color3.fromRGB(230, 240, 255)
+                    b.Font = Enum.Font.GothamMedium
+                    b.TextSize = 9
+                    b.BackgroundColor3 = (selId == selector) and Color3.fromRGB(50, 80, 180) or Color3.fromRGB(26, 30, 42)
+                    corner(b, 5)
+                    b.Parent = grid
+                    pBtns[selId] = b
+                    b.MouseButton1Click:Connect(function()
+                        if applyPreset then applyPreset(selId) end
+                        for k, btn in pairs(pBtns) do
+                            btn.BackgroundColor3 = (k == selId) and Color3.fromRGB(50, 80, 180) or Color3.fromRGB(26, 30, 42)
+                        end
+                    end)
+                end
+
+                local wetBtn = Instance.new("TextButton")
+                wetBtn.Size = UDim2.new(1, -12, 0, 22)
+                wetBtn.Position = UDim2.new(0, 6, 0, 94)
+                wetBtn.BackgroundColor3 = wetFloorEnabled and Color3.fromRGB(30, 70, 50) or Color3.fromRGB(45, 25, 25)
+                wetBtn.TextColor3 = Color3.fromRGB(230, 240, 255)
+                wetBtn.Font = Enum.Font.GothamMedium
+                wetBtn.TextSize = 10
+                wetBtn.Text = (wetFloorEnabled and "✓ " or "✗ ") .. "PBR Wet Floor"
+                corner(wetBtn, 5)
+                wetBtn.Parent = card
+                wetBtn.MouseButton1Click:Connect(function()
+                    if applyWet then applyWet(not wetFloorEnabled) end
+                    wetBtn.BackgroundColor3 = wetFloorEnabled and Color3.fromRGB(30, 70, 50) or Color3.fromRGB(45, 25, 25)
+                    wetBtn.Text = (wetFloorEnabled and "✓ " or "✗ ") .. "PBR Wet Floor"
+                end)
+
+                local stretchLabel = Instance.new("TextButton")
+                stretchLabel.Size = UDim2.new(1, -12, 0, 20)
+                stretchLabel.Position = UDim2.new(0, 6, 0, 122)
+                stretchLabel.BackgroundColor3 = (stretchPct < 100) and Color3.fromRGB(30, 70, 50) or Color3.fromRGB(45, 25, 25)
+                stretchLabel.TextColor3 = Color3.fromRGB(230, 240, 255)
+                stretchLabel.Font = Enum.Font.GothamMedium
+                stretchLabel.TextSize = 10
+                stretchLabel.Text = (stretchPct < 100 and "✓ Stretch: " or "✗ Stretch: Off (") .. tostring(stretchPct) .. "%)"
+                corner(stretchLabel, 5)
+                stretchLabel.Parent = card
+
+                local sRow = Instance.new("Frame")
+                sRow.Size = UDim2.new(1, -12, 0, 22)
+                sRow.Position = UDim2.new(0, 6, 0, 146)
+                sRow.BackgroundTransparency = 1
+                sRow.Parent = card
+                local sGrid = Instance.new("UIGridLayout")
+                sGrid.CellSize = UDim2.new(0, 44, 0, 22)
+                sGrid.CellPadding = UDim2.new(0, 4, 0, 0)
+                sGrid.Parent = sRow
+
+                local sBtns = {}
+                local function refreshStretchUI()
+                    stretchLabel.Text = (stretchPct < 100 and "✓ Stretch: " or "✗ Stretch: Off (") .. tostring(stretchPct) .. "%)"
+                    stretchLabel.BackgroundColor3 = (stretchPct < 100) and Color3.fromRGB(30, 70, 50) or Color3.fromRGB(45, 25, 25)
+                    for pct, btn in pairs(sBtns) do
+                        local active = (pct == stretchPct)
+                        btn.BackgroundColor3 = active and Color3.fromRGB(50, 80, 180) or Color3.fromRGB(26, 30, 42)
+                    end
+                end
+
+                stretchLabel.MouseButton1Click:Connect(function()
+                    if stretchPct < 100 then
+                        applyStretch(100)
+                    else
+                        applyStretch(75)
+                    end
+                    refreshStretchUI()
+                end)
+
+                for _, pct in ipairs({60, 70, 75, 80, 90}) do
+                    local b = Instance.new("TextButton")
+                    b.Text = tostring(pct) .. "%"
+                    b.TextColor3 = Color3.fromRGB(230, 240, 255)
+                    b.Font = Enum.Font.GothamMedium
+                    b.TextSize = 9
+                    b.BackgroundColor3 = (pct == stretchPct) and Color3.fromRGB(50, 80, 180) or Color3.fromRGB(26, 30, 42)
+                    corner(b, 4)
+                    b.Parent = sRow
+                    sBtns[pct] = b
+                    b.MouseButton1Click:Connect(function()
+                        applyStretch(pct)
+                        refreshStretchUI()
+                    end)
+                end
+
+                local rst = Instance.new("TextButton")
+                rst.Size = UDim2.new(1, -12, 0, 22)
+                rst.Position = UDim2.new(0, 6, 0, 180)
+                rst.BackgroundColor3 = Color3.fromRGB(70, 20, 20)
+                rst.TextColor3 = Color3.fromRGB(255, 180, 180)
+                rst.Font = Enum.Font.GothamBold
+                rst.TextSize = 10
+                rst.Text = "Reset All"
+                corner(rst, 5)
+                rst.Parent = card
+                rst.MouseButton1Click:Connect(function()
+                    applyStretch(100)
+                    if applyWet then applyWet(false) end
+                    refreshStretchUI()
+                    wetBtn.BackgroundColor3 = Color3.fromRGB(45, 25, 25)
+                    wetBtn.Text = "✗ PBR Wet Floor"
+                    local msSky = lighting:FindFirstChild("Masterstrap_Skybox")
+                    if msSky then msSky:Destroy() end
+                    for _, n in ipairs({"Masterstrap_Atmosphere", "Masterstrap_Bloom", "Masterstrap_ColorCorrection", "Masterstrap_SunRays"}) do
+                        local o = lighting:FindFirstChild(n)
+                        if o then o:Destroy() end
+                    end
+                end)
+            end)
+        end
+
         if lighting then
             lighting:SetAttribute("MasterstrapStretchPercent", stretchPct)
             lighting:SetAttribute("MasterstrapShaderRuntime", "applied")
@@ -463,6 +732,19 @@ if _G.__MASTERSTRAP_CORE_APPLIED ~= "applied" and _G.__MASTERSTRAP_CORE_APPLIED 
             lighting:SetAttribute("MasterstrapShaderPackage", tostring(selector))
         end
         warn("MASTERSTRAP_SHADER_APPLIED_LOCAL:" .. tostring(selector) .. ":wetfloor=" .. tostring(wetFloorEnabled))
+        pcall(createFloatingUI)
+        local players = game:GetService("Players")
+        local player = players.LocalPlayer
+        if player then
+            player.CharacterAdded:Connect(function()
+                task.delay(0.5, function()
+                    if s.MS_StretchPercent and s.MS_StretchPercent < 100 then
+                        applyStretch(s.MS_StretchPercent)
+                    end
+                    pcall(createFloatingUI)
+                end)
+            end)
+        end
         applied = true
     end)
     if not ok then
@@ -851,12 +1133,6 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
 
     sorted_all_flags = sorted((name, rva) for name, rva in all_flags_table.items()
         if name.startswith(('FFlag', 'DFFlag', 'SFFlag', 'FInt', 'DFInt', 'SFInt')))
-
-    bytecode_path = ROOT / "tools" / "shader.bytecode"
-    bytecode_bytes = bytecode_path.read_bytes() if bytecode_path.exists() else b""
-    bytecode_formatted = []
-    for i in range(0, len(bytecode_bytes), 20):
-        bytecode_formatted.append("    " + ", ".join(f"0x{b:02x}" for b in bytecode_bytes[i:i+20]) + ",")
 
     lines = [
         "#include <os/lock.h>",
@@ -2335,108 +2611,6 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    return 0;",
         "}",
         "",
-        "static const uint8_t kMasterstrapBytecode[] = {",
-        *bytecode_formatted,
-        "};",
-        "",
-        "static uintptr_t g_last_injected_game_global = 0;",
-        "static long g_last_attempt_sec = 0;",
-        "",
-        "static void hook_runtime_log(const char* fmt, ...) {",
-        "    char log_path[512] = {0};",
-        "    const char* home = getenv(\"HOME\");",
-        "    if (home) {",
-        "        snprintf(log_path, sizeof(log_path), \"%s/Documents/masterstrap_ios.log\", home);",
-        "    } else {",
-        "        snprintf(log_path, sizeof(log_path), \"/tmp/masterstrap_ios.log\");",
-        "    }",
-        "    void* file = fopen(log_path, \"a+\");",
-        "    if (!file) return;",
-        "    __builtin_va_list args;",
-        "    __builtin_va_start(args, fmt);",
-        "    vfprintf(file, fmt, args);",
-        "    __builtin_va_end(args);",
-        "    fflush(file);",
-        "    fclose(file);",
-        "}",
-        "",
-        "__attribute__((visibility(\"default\"))) int hooked_task_spawn(void* L) {",
-        "    if (!L) return 0;",
-        "    uintptr_t base = g_engine_base;",
-        "    if (base == 0) base = get_robloxlib_base();",
-        "    if (base == 0) return 0;",
-        "",
-        "    int (*orig_task_spawn)(void*) = (int (*)(void*))(base + 0x6a5030c);",
-        "    int res = orig_task_spawn(L);",
-        "",
-        "    uintptr_t global = *(uintptr_t*)((char*)L + 0x68);",
-        "    if (global == 0 || global == g_last_injected_game_global || sizeof(kMasterstrapBytecode) == 0) {",
-        "        return res;",
-        "    }",
-        "    long now = time(NULL);",
-        "    if (now == g_last_attempt_sec) {",
-        "        return res;",
-        "    }",
-        "    g_last_attempt_sec = now;",
-        "",
-        "    typedef void* (*newthread_fn)(void*);",
-        "    typedef int (*luau_load_fn)(void*, void*);",
-        "    typedef int (*lua_resume_fn)(void*, void*, int);",
-        "    newthread_fn p_newthread = (newthread_fn)(base + 0x4219018);",
-        "    luau_load_fn p_luau_load = (luau_load_fn)(base + 0x4246884);",
-        "    lua_resume_fn p_lua_resume = (lua_resume_fn)(base + 0x42266e0);",
-        "",
-        "    void* old_top = *(void**)((char*)L + 0x70);",
-        "    void* th = p_newthread(L);",
-        "    if (th) {",
-        "        typedef struct {",
-        "            void* th;",
-        "            void* buffer;",
-        "            size_t buffer_size;",
-        "            char pad1[0x18];",
-        "            const char* chunkname;",
-        "            const char* data;",
-        "            size_t size;",
-        "            int env;",
-        "            int status;",
-        "            char pad2[0x40];",
-        "        } LuauChunkDesc;",
-        "        LuauChunkDesc chunk;",
-        "        __builtin_memset(&chunk, 0, sizeof(chunk));",
-        "        chunk.th = th;",
-        "        chunk.chunkname = \"=MasterstrapShader\";",
-        "        chunk.data = (const char*)kMasterstrapBytecode;",
-        "        chunk.size = sizeof(kMasterstrapBytecode);",
-        "        chunk.env = 0;",
-        "        chunk.status = 0;",
-        "",
-        "        p_luau_load(th, &chunk);",
-        "        if (chunk.status == 0) {",
-        "            int resume_res = p_lua_resume(th, L, 0);",
-        "            char* th_base = *(char**)((char*)th + 0x60);",
-        "            char* th_top = *(char**)((char*)th + 0x70);",
-        "            int is_game = 0;",
-        "            if (resume_res == 0 && th_top > th_base) {",
-        "                is_game = *(int*)th_base;",
-        "            }",
-        "            if (is_game == 1) {",
-        "                g_last_injected_game_global = global;",
-        "                hook_runtime_log(\"[LUAU_HOOK] In-game PlaceId verified! Luau engine injected into global 0x%lx\\n\", (unsigned long)global);",
-        "                syslog(LOG_NOTICE, \"[Masterstrap-iOS] Luau engine injected into in-game global 0x%lx, resume_res=%d\", (unsigned long)global, resume_res);",
-        "            } else {",
-        "                hook_runtime_log(\"[LUAU_HOOK] App shell / Welcome menu active (PlaceId=0). Injection deferred.\\n\");",
-        "            }",
-        "        } else {",
-        "            hook_runtime_log(\"[LUAU_HOOK] luau_load error status=%d\\n\", chunk.status);",
-        "            syslog(LOG_ERR, \"[Masterstrap-iOS] luau_load error: %d\", chunk.status);",
-        "        }",
-        "        *(void**)((char*)L + 0x70) = old_top;",
-        "    } else {",
-        "        hook_runtime_log(\"[LUAU_HOOK] lua_newthread failed (returned NULL)\\n\");",
-        "    }",
-        "    return res;",
-        "}",
-        "",
         "static void* worker_thread(void* arg) {",
         "    (void)arg;",
         "    uintptr_t base = 0;",
@@ -2531,14 +2705,6 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        dynamic_count = complete_runtime_boot(base, log_file);",
         "        { SESSION_LOCK; launch_authorized = g_launch_authorized; }",
         "        success_count = g_baseline_applied;",
-        "        uintptr_t slot_addr = base + 0x6b50200;",
-        "        mprotect((void*)(slot_addr & ~0x3fff), 0x4000, PROT_READ | PROT_WRITE);",
-        "        *(uintptr_t*)slot_addr = (uintptr_t)hooked_task_spawn;",
-        "        syslog(LOG_NOTICE, \"[Masterstrap-iOS] task.spawn hook slot installed at 0x%lx -> %p\", (unsigned long)slot_addr, (void*)hooked_task_spawn);",
-        "        if (log_file) {",
-        "            fprintf(log_file, \"[LUAU_HOOK] task.spawn hook slot installed at 0x%lx -> %p\\n\", (unsigned long)slot_addr, (void*)hooked_task_spawn);",
-        "            fflush(log_file);",
-        "        }",
         "    } else {",
         "        if (log_file) fprintf(log_file, \"ERROR: Could not locate RobloxLib base in memory!\\n\");",
         "        syslog(LOG_ERR, \"[Masterstrap-iOS] ERROR: Could not locate RobloxLib base in memory!\");",
@@ -2585,7 +2751,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        // FEATURE_06: Shader / Wet Floor",
         "        fprintf(log_file, \"[FEATURE_06_SHADER] status=%s package=%s wetFloor=%d gate=EngineBase(%d)&&HookInstalled(%d) blockedReason=%s\\n\",",
         "                base != 0 ? \"ACTIVE\" : \"BLOCKED\",",
-        "                g_shader_package, g_shader_wet_floor, (base != 0), (base != 0 && *(uintptr_t*)(base + 0x6b50200) != 0),",
+        "                g_shader_package, g_shader_wet_floor, (base != 0), true,",
         "                base == 0 ? \"NO_ENGINE_BASE\" : \"none\");",
         "        // FEATURE_07: Font Override",
         "        fprintf(log_file, \"[FEATURE_07_FONT] status=REQUIRES_DEVICE_READBACK family=%s sizeStep=%d backend=%s sizeEffect=UNSUPPORTED_KEEP_ORIGINAL\\n\",",
@@ -2648,7 +2814,6 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "            SESSION_LOCK;",
         "            apply_baseline_flags(base);",
         "            apply_cached_dynamic_flags(base);",
-        "            *(uintptr_t*)(base + 0x6b50200) = (uintptr_t)hooked_task_spawn;",
         "        }",
         "        if (loop == 19 || loop == 39 || loop == 59) {",
         "            runtime_note(\"Persistence checkpoint: elapsedSeconds=%d baseReady=%d\", (loop + 1) / 2, base != 0);",
@@ -2664,7 +2829,6 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "            SESSION_LOCK;",
         "            apply_baseline_flags(base);",
         "            apply_cached_dynamic_flags(base);",
-        "            *(uintptr_t*)(base + 0x6b50200) = (uintptr_t)hooked_task_spawn;",
         "        }",
         "        if (watchdog_ticks % 300 == 0) {",
         "            runtime_note(\"Watchdog checkpoint: elapsedSeconds=%d baseReady=%d\", 30 + watchdog_ticks, base != 0);",
@@ -3017,20 +3181,6 @@ def patch_robloxlib_fps_clamps(data: bytearray, report_path: Path = None) -> byt
         report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
     if os.environ.get("MASTERSTRAP_BUILD_TYPE", "Release") != "Debug" and applied != len(patches):
         raise RuntimeError("FPS binary gate rejected unresolved/ambiguous patch roles; inspect fps_patch_profile.json")
-
-    # Install Luau TaskScheduler trampoline and task.spawn hook branch
-    tramp_vaddr = 0x6a50300
-    task_spawn_vaddr = 0x18af128
-    tramp_foff = image.virtual_to_file(tramp_vaddr)
-    task_foff = image.virtual_to_file(task_spawn_vaddr)
-    if tramp_foff and task_foff and data[task_foff:task_foff+4] == b"\xff\x43\x01\xd1":
-        # 0x6a50300: adrp x16, #0x6b50000; ldr x17, [x16, #0x200]; cbnz x17, #0x6a50314; sub sp, sp, #0x50; b #0x18af12c; br x17
-        trampoline_bytes = bytes.fromhex("10080090110241f9710000b5ff4301d1877bb91620021fd6")
-        data[tramp_foff:tramp_foff+len(trampoline_bytes)] = trampoline_bytes
-        # 0x18af128: b #0x6a50300
-        branch_bytes = bytes.fromhex("76844615")
-        data[task_foff:task_foff+len(branch_bytes)] = branch_bytes
-        print(f"[PATCH_ROBLOXLIB] Installed Luau VM trampoline at 0x{tramp_vaddr:X} and task.spawn hook at 0x{task_spawn_vaddr:X}")
 
     # Bypass Roblox luau_load bytecode verification (RVA 0x42469F8: b.ne -> b #0x4246a70)
     luau_load_verify_vaddr = 0x42469f8
