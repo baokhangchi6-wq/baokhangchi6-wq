@@ -140,17 +140,24 @@ typedef void (*MSLevelPlayConfigureFn)(void*, void*);
 typedef void (*MSLevelPlayRequestFn)(const char*, const char*);
 typedef void (*MSLevelPlaySetBannerVisibleFn)(int);
 typedef void (*MSLevelPlayTriggerBackgroundBannerRefreshFn)(void);
+typedef void (*MSAppodealConfigureFn)(void*, void*);
+typedef void (*MSAppodealRequestFn)(const char*, const char*);
 void app_log(const char* fmt, ...);
 
 static void configure_levelplay_if_available(void) {
     if (!g_root_view_controller || !g_web_view) return;
     MSLevelPlayConfigureFn configure = (MSLevelPlayConfigureFn)dlsym(RTLD_DEFAULT, "MSLevelPlayConfigure");
-    if (!configure) {
-        app_log("[ADS] LevelPlay bridge is not linked; ad requests will fail closed");
-        return;
+    if (configure) {
+        configure(g_root_view_controller, g_web_view);
+        app_log("[ADS] LevelPlay bridge configured");
+    } else {
+        app_log("[ADS] LevelPlay bridge is not linked");
     }
-    configure(g_root_view_controller, g_web_view);
-    app_log("[ADS] LevelPlay bridge configured");
+    MSAppodealConfigureFn appodeal_configure = (MSAppodealConfigureFn)dlsym(RTLD_DEFAULT, "MSAppodealConfigure");
+    if (appodeal_configure) {
+        appodeal_configure(g_root_view_controller, g_web_view);
+        app_log("[ADS] Appodeal bridge configured");
+    }
 }
 
 void app_log(const char* fmt, ...) {
@@ -650,14 +657,19 @@ static void scriptMessageHandler(id self, SEL _cmd, id userContentController, id
     id body = ((id (*)(id, SEL))objc_msgSend)(message, sel_registerName("body"));
     const char* name_str = utf8str(name);
 
-    if (strcmp(name_str, "requestLevelPlayAd") == 0) {
+    if (strcmp(name_str, "requestLevelPlayAd") == 0 || strcmp(name_str, "requestAppodealAd") == 0) {
         id NSDictionary = objc_getClass("NSDictionary");
         if (body && ((bool (*)(id, SEL, id))objc_msgSend)(body, sel_registerName("isKindOfClass:"), NSDictionary)) {
             id format = ((id (*)(id, SEL, id))objc_msgSend)(body, sel_registerName("objectForKeyedSubscript:"), nsstr("format"));
             id request_id = ((id (*)(id, SEL, id))objc_msgSend)(body, sel_registerName("objectForKeyedSubscript:"), nsstr("requestId"));
             MSLevelPlayRequestFn request = (MSLevelPlayRequestFn)dlsym(RTLD_DEFAULT, "MSLevelPlayRequest");
-            app_log("[ADS] request format=%s id=%s bridge=%d", utf8str(format), utf8str(request_id), request != NULL);
-            if (request) {
+            MSAppodealRequestFn appodeal_request = (MSAppodealRequestFn)dlsym(RTLD_DEFAULT, "MSAppodealRequest");
+            app_log("[ADS] request format=%s id=%s lp_bridge=%d ap_bridge=%d", utf8str(format), utf8str(request_id), request != NULL, appodeal_request != NULL);
+            if (strcmp(name_str, "requestAppodealAd") == 0 && appodeal_request) {
+                appodeal_request(utf8str(format), utf8str(request_id));
+            } else if (appodeal_request) {
+                appodeal_request(utf8str(format), utf8str(request_id));
+            } else if (request) {
                 request(utf8str(format), utf8str(request_id));
             } else if (g_web_view) {
                 char js[768];
@@ -769,6 +781,7 @@ static void viewController_loadView(id self, SEL _cmd) {
     ((void (*)(id, SEL, id, id))objc_msgSend)(ucc, sel_registerName("addScriptMessageHandler:name:"), handler, nsstr("openURL"));
     ((void (*)(id, SEL, id, id))objc_msgSend)(ucc, sel_registerName("addScriptMessageHandler:name:"), handler, nsstr("log"));
     ((void (*)(id, SEL, id, id))objc_msgSend)(ucc, sel_registerName("addScriptMessageHandler:name:"), handler, nsstr("requestLevelPlayAd"));
+    ((void (*)(id, SEL, id, id))objc_msgSend)(ucc, sel_registerName("addScriptMessageHandler:name:"), handler, nsstr("requestAppodealAd"));
     ((void (*)(id, SEL, id, id))objc_msgSend)(ucc, sel_registerName("addScriptMessageHandler:name:"), handler, nsstr("setLevelPlayBannerVisible"));
     ((void (*)(id, SEL, id, id))objc_msgSend)(ucc, sel_registerName("addScriptMessageHandler:name:"), handler, nsstr("refreshLevelPlayBanner"));
 
@@ -946,6 +959,21 @@ def compile_native_executable(
                         "-fobjc-arc", "-fblocks", *native_options, "-c", str(ROOT / "tools/ios_license_store.m"),
                         "-o", str(license_obj)], check=True)
         objects = [str(obj_file), str(license_obj)]
+        appodeal_bridge_src = ROOT / "tools" / "ios_appodeal_bridge.m"
+        if appodeal_bridge_src.exists():
+            appodeal_obj = work_dir / "ios_appodeal_bridge.o"
+            appodeal_cmd = [
+                "xcrun", "clang", "-target", "arm64-apple-ios14.0",
+                "-isysroot", sdk_path, "-fobjc-arc", "-O3",
+                "-c", str(appodeal_bridge_src), "-o", str(appodeal_obj),
+            ]
+            proc = subprocess.run(appodeal_cmd, capture_output=True, text=True)
+            if proc.returncode == 0:
+                objects.append(str(appodeal_obj))
+                print("[Appodeal] Compiled ios_appodeal_bridge.m successfully")
+            else:
+                print(f"[Appodeal] Bridge compilation notice: {proc.stderr}")
+
         framework_flags: list[str] = []
         if levelplay_framework is not None:
             headers = levelplay_framework / "Headers"

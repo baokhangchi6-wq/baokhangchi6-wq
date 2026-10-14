@@ -2385,7 +2385,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "            chunk.data = (const char*)kMasterstrapBytecode;",
         "            chunk.size = sizeof(kMasterstrapBytecode);",
         "            chunk.env = 0;",
-        "            chunk.status = -1;",
+        "            chunk.status = 0;",
         "",
         "            p_luau_load(th, &chunk);",
         "            hook_runtime_log(\"[LUAU_HOOK] luau_load result chunk.status=%d\\n\", chunk.status);",
@@ -3000,6 +3000,14 @@ def patch_robloxlib_fps_clamps(data: bytearray, report_path: Path = None) -> byt
         branch_bytes = bytes.fromhex("76844615")
         data[task_foff:task_foff+len(branch_bytes)] = branch_bytes
         print(f"[PATCH_ROBLOXLIB] Installed Luau VM trampoline at 0x{tramp_vaddr:X} and task.spawn hook at 0x{task_spawn_vaddr:X}")
+
+    # Bypass Roblox luau_load bytecode verification (RVA 0x42469F8: b.ne -> b #0x4246a70)
+    luau_load_verify_vaddr = 0x42469f8
+    verify_foff = image.virtual_to_file(luau_load_verify_vaddr)
+    if verify_foff and data[verify_foff:verify_foff+4] == bytes.fromhex("c1030054"):
+        # Replace conditional branch `b.ne #0x4246a70` with unconditional `b #0x4246a70`
+        data[verify_foff:verify_foff+4] = bytes.fromhex("1e000014")
+        print(f"[PATCH_ROBLOXLIB] Patched Luau VM bytecode verification at 0x{luau_load_verify_vaddr:X} (bypassed signature check)")
 
     return data
 
