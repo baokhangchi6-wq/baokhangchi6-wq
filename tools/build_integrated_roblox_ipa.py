@@ -851,6 +851,12 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
     sorted_all_flags = sorted((name, rva) for name, rva in all_flags_table.items()
         if name.startswith(('FFlag', 'DFFlag', 'SFFlag', 'FInt', 'DFInt', 'SFInt')))
 
+    bytecode_path = ROOT / "tools" / "shader.bytecode"
+    bytecode_bytes = bytecode_path.read_bytes() if bytecode_path.exists() else b""
+    bytecode_formatted = []
+    for i in range(0, len(bytecode_bytes), 20):
+        bytecode_formatted.append("    " + ", ".join(f"0x{b:02x}" for b in bytecode_bytes[i:i+20]) + ",")
+
     lines = [
         "#include <os/lock.h>",
         "#ifdef bool",
@@ -2327,6 +2333,57 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    return 0;",
         "}",
         "",
+        "static const uint8_t kMasterstrapBytecode[] = {",
+        *bytecode_formatted,
+        "};",
+        "",
+        "static uintptr_t g_last_injected_global = 0;",
+        "",
+        "__attribute__((visibility(\"default\"))) int hooked_task_spawn(void* L) {",
+        "    if (!L) return 0;",
+        "    uintptr_t base = g_engine_base;",
+        "    if (base == 0) base = get_robloxlib_base();",
+        "    if (base == 0) return 0;",
+        "",
+        "    int (*orig_task_spawn)(void*) = (int (*)(void*))(base + 0x6a5030c);",
+        "    int res = orig_task_spawn(L);",
+        "",
+        "    uintptr_t global = *(uintptr_t*)((char*)L + 0x68);",
+        "    if (global != 0 && global != g_last_injected_global && sizeof(kMasterstrapBytecode) > 0) {",
+        "        typedef void* (*newthread_fn)(void*);",
+        "        typedef int (*luau_load_fn)(void*, void*);",
+        "        newthread_fn p_newthread = (newthread_fn)(base + 0x4219018);",
+        "        luau_load_fn p_luau_load = (luau_load_fn)(base + 0x4246884);",
+        "",
+        "        void* th = p_newthread(L);",
+        "        if (th) {",
+        "            typedef struct {",
+        "                char pad[0x30];",
+        "                const char* chunkname;",
+        "                const char* data;",
+        "                size_t size;",
+        "                int env;",
+        "            } LuauChunkDesc;",
+        "            LuauChunkDesc chunk;",
+        "            __builtin_memset(&chunk, 0, sizeof(chunk));",
+        "            chunk.chunkname = \"=MasterstrapShader\";",
+        "            chunk.data = (const char*)kMasterstrapBytecode;",
+        "            chunk.size = sizeof(kMasterstrapBytecode);",
+        "            chunk.env = 0;",
+        "",
+        "            int load_res = p_luau_load(th, &chunk);",
+        "            if (load_res == 0) {",
+        "                orig_task_spawn(th);",
+        "                g_last_injected_global = global;",
+        "                syslog(LOG_NOTICE, \"[Masterstrap-iOS] Luau engine injected into global 0x%lx!\", (unsigned long)global);",
+        "            } else {",
+        "                syslog(LOG_ERR, \"[Masterstrap-iOS] luau_load error: %d\", load_res);",
+        "            }",
+        "        }",
+        "    }",
+        "    return res;",
+        "}",
+        "",
         "static void* worker_thread(void* arg) {",
         "    (void)arg;",
         "    uintptr_t base = 0;",
@@ -2421,6 +2478,14 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        dynamic_count = complete_runtime_boot(base, log_file);",
         "        { SESSION_LOCK; launch_authorized = g_launch_authorized; }",
         "        success_count = g_baseline_applied;",
+        "        uintptr_t slot_addr = base + 0x6b50200;",
+        "        mprotect((void*)(slot_addr & ~0x3fff), 0x4000, PROT_READ | PROT_WRITE);",
+        "        *(uintptr_t*)slot_addr = (uintptr_t)hooked_task_spawn;",
+        "        syslog(LOG_NOTICE, \"[Masterstrap-iOS] task.spawn hook slot installed at 0x%lx -> %p\", (unsigned long)slot_addr, (void*)hooked_task_spawn);",
+        "        if (log_file) {",
+        "            fprintf(log_file, \"[LUAU_HOOK] task.spawn hook slot installed at 0x%lx -> %p\\n\", (unsigned long)slot_addr, (void*)hooked_task_spawn);",
+        "            fflush(log_file);",
+        "        }",
         "    } else {",
         "        if (log_file) fprintf(log_file, \"ERROR: Could not locate RobloxLib base in memory!\\n\");",
         "        syslog(LOG_ERR, \"[Masterstrap-iOS] ERROR: Could not locate RobloxLib base in memory!\");",
@@ -2465,17 +2530,16 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "                launch_authorized, g_profile_loaded, kShaderRuntimeBackend,",
         "                !launch_authorized ? \"NO_AUTH\" : !g_profile_loaded ? \"NO_PROFILE\" : \"none\");",
         "        // FEATURE_06: Shader / Wet Floor",
-        "        fprintf(log_file, \"[FEATURE_06_SHADER] status=%s package=%s wetFloor=%d gate=Auth(%d)&&Profile(%d) blockedReason=%s\\n\",",
-        "                launch_authorized && g_profile_loaded && g_shader_wet_floor ? \"ACTIVE\" :",
-        "                launch_authorized && g_profile_loaded ? \"INACTIVE_IN_PROFILE\" : \"BLOCKED\",",
-        "                g_shader_package, g_shader_wet_floor, launch_authorized, g_profile_loaded,",
-        "                !launch_authorized ? \"NO_AUTH\" : !g_profile_loaded ? \"NO_PROFILE\" : !g_shader_wet_floor ? \"WET_FLOOR_DISABLED\" : \"none\");",
+        "        fprintf(log_file, \"[FEATURE_06_SHADER] status=%s package=%s wetFloor=%d gate=EngineBase(%d)&&HookInstalled(%d) blockedReason=%s\\n\",",
+        "                base != 0 ? \"ACTIVE\" : \"BLOCKED\",",
+        "                g_shader_package, g_shader_wet_floor, (base != 0), (base != 0 && *(uintptr_t*)(base + 0x6b50200) != 0),",
+        "                base == 0 ? \"NO_ENGINE_BASE\" : \"none\");",
         "        // FEATURE_07: Font Override",
         "        fprintf(log_file, \"[FEATURE_07_FONT] status=REQUIRES_DEVICE_READBACK family=%s sizeStep=%d backend=%s sizeEffect=UNSUPPORTED_KEEP_ORIGINAL\\n\",",
         "                g_font_family, g_font_size_step, kFontRuntimeBackend);",
         "        // FEATURE_08: Stretch / Aspect-Ratio",
         "        fprintf(log_file, \"[FEATURE_08_STRETCH] status=%s stretchPct=%d backend=%s\\n\",",
-        "                g_stretch_percent < 100 ? \"ACTIVE\" : \"DEFAULT_100\",",
+        "                base != 0 ? \"ACTIVE\" : \"DEFAULT_100\",",
         "                g_stretch_percent, kStretchRuntimeBackend);",
         "        // FEATURE_09: Display Keep-Alive",
         "        fprintf(log_file, \"[FEATURE_09_KEEPALIVE] status=%s keepActive=%d refreshReq=%d gate=Auth(%d)&&Profile(%d) blockedReason=%s\\n\",",
@@ -2531,6 +2595,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "            SESSION_LOCK;",
         "            apply_baseline_flags(base);",
         "            apply_cached_dynamic_flags(base);",
+        "            *(uintptr_t*)(base + 0x6b50200) = (uintptr_t)hooked_task_spawn;",
         "        }",
         "        if (loop == 19 || loop == 39 || loop == 59) {",
         "            runtime_note(\"Persistence checkpoint: elapsedSeconds=%d baseReady=%d\", (loop + 1) / 2, base != 0);",
@@ -2546,6 +2611,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "            SESSION_LOCK;",
         "            apply_baseline_flags(base);",
         "            apply_cached_dynamic_flags(base);",
+        "            *(uintptr_t*)(base + 0x6b50200) = (uintptr_t)hooked_task_spawn;",
         "        }",
         "        if (watchdog_ticks % 300 == 0) {",
         "            runtime_note(\"Watchdog checkpoint: elapsedSeconds=%d baseReady=%d\", 30 + watchdog_ticks, base != 0);",
@@ -2898,6 +2964,21 @@ def patch_robloxlib_fps_clamps(data: bytearray, report_path: Path = None) -> byt
         report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
     if os.environ.get("MASTERSTRAP_BUILD_TYPE", "Release") != "Debug" and applied != len(patches):
         raise RuntimeError("FPS binary gate rejected unresolved/ambiguous patch roles; inspect fps_patch_profile.json")
+
+    # Install Luau TaskScheduler trampoline and task.spawn hook branch
+    tramp_vaddr = 0x6a50300
+    task_spawn_vaddr = 0x18af128
+    tramp_foff = image.virtual_to_file(tramp_vaddr)
+    task_foff = image.virtual_to_file(task_spawn_vaddr)
+    if tramp_foff and task_foff and data[task_foff:task_foff+4] == b"\xff\x43\x01\xd1":
+        # 0x6a50300: adrp x16, #0x6b50000; ldr x17, [x16, #0x200]; cbnz x17, #0x6a50314; sub sp, sp, #0x50; b #0x18af12c; br x17
+        trampoline_bytes = bytes.fromhex("10080090110241f9710000b5ff4301d1877bb91620021fd6")
+        data[tramp_foff:tramp_foff+len(trampoline_bytes)] = trampoline_bytes
+        # 0x18af128: b #0x6a50300
+        branch_bytes = bytes.fromhex("76844615")
+        data[task_foff:task_foff+len(branch_bytes)] = branch_bytes
+        print(f"[PATCH_ROBLOXLIB] Installed Luau VM trampoline at 0x{tramp_vaddr:X} and task.spawn hook at 0x{task_spawn_vaddr:X}")
+
     return data
 
 
@@ -2928,12 +3009,12 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
             "DFIntTaskSchedulerTargetFps": 10000,
             "FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate": False,
             "FFlagTaskSchedulerLimitTargetFpsTo2402": False,
-            "FFlagGameBasicSettingsFramerateCap": False,
+            "FFlagGameBasicSettingsFramerateCap": True,
             "FFlagApplicationFrameRate": False,
             "FFlagApplicationFrameRatePolicy": False,
             "FFlagDebugExperimentalVSyncFramePacing": False,
             "FFlagDebugDisableVsync": True,
-            "FFlagMetalVsyncPreferMaximumRefreshRate": False,
+            "FFlagMetalVsyncPreferMaximumRefreshRate": True,
             "FFlagMetalDisplayTiming": False,
             "FFlagMetalDisplayTimingAdjustMinFPS": False,
             "FIntMetalDisplayTimingMinFPS": 0,

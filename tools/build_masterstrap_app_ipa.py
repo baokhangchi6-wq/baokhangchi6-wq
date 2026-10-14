@@ -1460,7 +1460,7 @@ function onFpsInputChange(el) {
     if (targetFps > 60) {
         activeFlags["FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate"] = "false";
         activeFlags["FFlagTaskSchedulerLimitTargetFpsTo2402"] = "false";
-        activeFlags["FFlagGameBasicSettingsFramerateCap"] = "false";
+        activeFlags["FFlagGameBasicSettingsFramerateCap"] = "true";
         activeFlags["FFlagDebugDisableVsync"] = "true";
         activeFlags["FFlagMetalVsyncPreferMaximumRefreshRate"] = "true";
     } else {
@@ -1565,7 +1565,7 @@ function prepareFlagsForRoblox(flags) {
     if (targetFpsVal > 60) {
         clean["FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate"] = false;
         clean["FFlagTaskSchedulerLimitTargetFpsTo2402"] = false;
-        clean["FFlagGameBasicSettingsFramerateCap"] = false;
+        clean["FFlagGameBasicSettingsFramerateCap"] = true;
         clean["FFlagDebugDisableVsync"] = true;
         clean["FFlagMetalVsyncPreferMaximumRefreshRate"] = true;
         clean["FIntMetalDisplayTimingMinFPS"] = 0;
