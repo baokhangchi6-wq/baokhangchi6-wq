@@ -904,6 +904,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "extern size_t strlen(const char *str);",
         "extern int strcmp(const char *s1, const char *s2);",
         "extern int strncmp(const char *s1, const char *s2, size_t n);",
+        "extern int strcasecmp(const char *s1, const char *s2);",
         "extern int pthread_create(void **thread, const void *attr, void *(*start_routine)(void *), void *arg);",
         "extern int pthread_detach(void *thread);",
         "extern char* strstr(const char *haystack, const char *needle);",
