@@ -893,8 +893,8 @@ static void ms_apply_process_main(void* context) {
     if (g_ms_policy.boost) {
         pthread_set_qos_class_self_np(0x21 /* QOS_CLASS_USER_INTERACTIVE */, 0);
     }
-    runtime_note("[CAPABILITY][SAFE] status=ACTIVE thermalGuard=SYSTEM_RESPECTED lowPower=%d thermal=%d ramCleanup=ACTIVE_ZONE_RELIEF networkAcceleration=ACTIVE_LOW_LATENCY", ms_low_power(), ms_thermal());
-    runtime_note("[CAPABILITY][TURBO] requested=%d status=ACTIVE qosClass=USER_INTERACTIVE threadPriority=MAXIMAL", g_ms_policy.boost);
+    runtime_note("[CAPABILITY][SAFE] status=ACTIVE thermalGuard=SYSTEM_RESPECTED lowPower=%d thermal=%d ramCleanup=UNSUPPORTED networkAcceleration=UNSUPPORTED zoneRelief=ACTIVE", ms_low_power(), ms_thermal());
+    runtime_note("[CAPABILITY][TURBO] requested=%d status=ACTIVE qosClass=USER_INTERACTIVE cpuOverclock=UNSUPPORTED gpuOverclock=UNSUPPORTED androidPowerHints=UNSUPPORTED", g_ms_policy.boost);
     ms_update_probe_environment();
     ms_refresh_links("profile-loaded");
     ms_stretch_write_receipt();
