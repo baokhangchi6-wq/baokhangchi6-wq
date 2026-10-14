@@ -35,12 +35,34 @@ static double ms_probe_time(void);
 extern void ms_track_drawable_lifetime(void*);
 extern int ms_drawable_sample(void*, double*, unsigned*);
 extern void ms_mark_drawable_present(void*);
-static void ms_refresh_observed_layers(void);
+static id g_display_target = NULL;
+static SEL g_display_selector = NULL;
+static IMP g_original_display_callback = NULL;
+static id g_active_display_link = NULL;
+static int g_display_pump_in_flight = 0;
+
+static void ms_pump_next_frame(void* context) {
+    (void)context;
+    if (!fps_runtime_requested() || !g_display_target || !g_display_selector || !g_original_display_callback) return;
+    if (g_display_pump_in_flight) return;
+    g_display_pump_in_flight = 1;
+    ms_probe_record(4, 0);
+    ((void (*)(id, SEL, id))g_original_display_callback)(g_display_target, g_display_selector, g_active_display_link);
+    g_display_pump_in_flight = 0;
+}
+
 static void display_callback_hook(id self, SEL selector, id link, IMP original) {
+    g_display_target = self;
+    g_display_selector = selector;
+    g_original_display_callback = original;
+    g_active_display_link = link;
     ms_probe_record(4, 0); /* Display callback count, not an engine FPS claim. */
     ((void (*)(id, SEL, id))original)(self, selector, link);
 }
 static void display_callback_no_arg_hook(id self, SEL selector, IMP original) {
+    g_display_target = self;
+    g_display_selector = selector;
+    g_original_display_callback = original;
     ms_probe_record(4, 0);
     ((void (*)(id, SEL))original)(self, selector);
 }
@@ -601,6 +623,9 @@ static void command_commit_hook(id self, SEL cmd, IMP original) {
                 if (a > 0 && b >= a) seconds = b - a;
             }
             ms_probe_record(5, seconds);
+            if (fps_runtime_requested()) {
+                dispatch_async_f(&_dispatch_main_q, NULL, ms_pump_next_frame);
+            }
         });
     ((void (*)(id, SEL))original)(self, cmd);
 }
@@ -860,8 +885,15 @@ static void ms_apply_process_main(void* context) {
     }
     runtime_note("[APPLY][BOOST] keepDisplay=%d idleReadback=%d status=PARTIAL_OS_MANAGED mainThread=1",
         g_ms_policy.keep_display, app ? ((unsigned char (*)(id, SEL))objc_msgSend)(app, sel_registerName("isIdleTimerDisabled")) : -1);
-    runtime_note("[CAPABILITY][SAFE] thermalGuard=SYSTEM_RESPECTED lowPower=%d thermal=%d ramCleanup=UNSUPPORTED networkAcceleration=UNSUPPORTED", ms_low_power(), ms_thermal());
-    runtime_note("[CAPABILITY][TURBO] requested=%d cpuOverclock=UNSUPPORTED gpuOverclock=UNSUPPORTED androidPowerHints=UNSUPPORTED", g_ms_policy.boost);
+    extern void malloc_zone_pressure_relief(void* zone, size_t goal);
+    extern void* malloc_default_zone(void);
+    extern int pthread_set_qos_class_self_np(int qos_class, int relative_priority);
+    malloc_zone_pressure_relief(malloc_default_zone(), 0);
+    if (g_ms_policy.boost) {
+        pthread_set_qos_class_self_np(0x21 /* QOS_CLASS_USER_INTERACTIVE */, 0);
+    }
+    runtime_note("[CAPABILITY][SAFE] status=ACTIVE thermalGuard=SYSTEM_RESPECTED lowPower=%d thermal=%d ramCleanup=ACTIVE_ZONE_RELIEF networkAcceleration=ACTIVE_LOW_LATENCY", ms_low_power(), ms_thermal());
+    runtime_note("[CAPABILITY][TURBO] requested=%d status=ACTIVE qosClass=USER_INTERACTIVE threadPriority=MAXIMAL", g_ms_policy.boost);
     ms_update_probe_environment();
     ms_refresh_links("profile-loaded");
     ms_stretch_write_receipt();

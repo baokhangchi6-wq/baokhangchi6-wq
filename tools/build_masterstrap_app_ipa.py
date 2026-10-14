@@ -675,6 +675,16 @@ static void scriptMessageHandler(id self, SEL _cmd, id userContentController, id
         save_all_configurations(utf8str(body), NULL, NULL, NULL, NULL);
     }
 
+    if (strcmp(name_str, "saveConfig") == 0) {
+        id app = ((id (*)(id, SEL))objc_msgSend)(objc_getClass("UIApplication"), sel_registerName("sharedApplication"));
+        id target = ((id (*)(id, SEL, id))objc_msgSend)(objc_getClass("NSURL"), sel_registerName("URLWithString:"),
+            nsstr(strcmp(channel_target, "vng") == 0 ? "masterstrap-rbx-vng-bridge-v1://apply" : "masterstrap-rbx-bridge-v1://apply"));
+        if (app && target && ((unsigned char (*)(id, SEL, id))objc_msgSend)(app, sel_registerName("canOpenURL:"), target)) {
+            id bridge_payload = serialize_bridge_payload(body);
+            open_roblox_app_channel(channel_target, bridge_payload, NULL, NULL);
+        }
+    }
+
     if (strcmp(name_str, "launchRoblox") == 0) {
         if (g_launch_in_flight) { app_log("[BRIDGE][LAUNCH] duplicate ignored"); return; }
         g_launch_in_flight = true;
@@ -2372,20 +2382,7 @@ window.toggleFasterSpeedVIP = function(checkbox) {
 
 const msOnToggleTurboMaster = typeof onToggleTurboMaster === "function" ? onToggleTurboMaster : null;
 onToggleTurboMaster = function(isChecked, isRestoring) {
-    if (isRestoring || !isChecked) {
-        if (msOnToggleTurboMaster) return msOnToggleTurboMaster(isChecked);
-        return;
-    }
-    if (MasterstrapAds.isFree()) {
-        const sw = document.getElementById("sw-gm-master");
-        if (sw) sw.checked = false;
-        localStorage.setItem("masterstrap_turbo_master", "false");
-        localStorage.setItem("masterstrap_toggle_sw-gm-master", "false");
-        if (msOnToggleTurboMaster) msOnToggleTurboMaster(false);
-        showToast(getI18nText("msg_feature_requires_plus_max"));
-        return;
-    }
-    if (msOnToggleTurboMaster) msOnToggleTurboMaster(true);
+    if (msOnToggleTurboMaster) return msOnToggleTurboMaster(isChecked);
 };
 
 const msApplyGamePreset = applyGamePreset;
@@ -2486,15 +2483,9 @@ function syncConfigToNative() {
     syncTimer = setTimeout(() => {
         if (!window.webkit?.messageHandlers?.saveConfig) return;
         if (typeof updateFlagState === "function") updateFlagState();
-        const isFree = window.MasterstrapAds ? window.MasterstrapAds.isFree() : (!["PLUS", "MAX"].includes((localStorage.getItem("masterstrap_license_plan") || "FREE").toUpperCase()));
         let stretchVal = parseInt(document.getElementById("slider-stretch-screen")?.value) || 100;
         let targetFpsVal = parseInt(document.getElementById("sel-target-fps")?.value) || 9999;
-        let masterMode = document.getElementById("sw-gm-master")?.checked ?? false;
-        if (isFree) {
-            stretchVal = 100;
-            if (targetFpsVal > 60) targetFpsVal = 60;
-            masterMode = false;
-        }
+        let masterMode = document.getElementById("sw-gm-master")?.checked ?? true;
         const clientJson = JSON.stringify(prepareFlagsForRoblox(activeFlags || {}), null, 2);
         const turboProfile = JSON.stringify({
             safe_ram_cleanup: document.getElementById("sw-gm-safe-ram")?.checked ?? true,

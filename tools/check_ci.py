@@ -22,6 +22,9 @@ def get_token():
     return None
 
 def get_repo():
+    import os
+    if os.environ.get("GITHUB_REPOSITORY"):
+        return os.environ.get("GITHUB_REPOSITORY")
     try:
         proc = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True, check=True)
         url = proc.stdout.strip()
