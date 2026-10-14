@@ -665,12 +665,14 @@ static void scriptMessageHandler(id self, SEL _cmd, id userContentController, id
             MSLevelPlayRequestFn request = (MSLevelPlayRequestFn)dlsym(RTLD_DEFAULT, "MSLevelPlayRequest");
             MSAppodealRequestFn appodeal_request = (MSAppodealRequestFn)dlsym(RTLD_DEFAULT, "MSAppodealRequest");
             app_log("[ADS] request format=%s id=%s lp_bridge=%d ap_bridge=%d", utf8str(format), utf8str(request_id), request != NULL, appodeal_request != NULL);
-            if (strcmp(name_str, "requestAppodealAd") == 0 && appodeal_request) {
+            if (strcmp(name_str, "requestAppodealAd") == 0 && appodeal_request && objc_getClass("Appodeal")) {
                 appodeal_request(utf8str(format), utf8str(request_id));
-            } else if (appodeal_request) {
-                appodeal_request(utf8str(format), utf8str(request_id));
+            } else if (strcmp(name_str, "requestLevelPlayAd") == 0 && request) {
+                request(utf8str(format), utf8str(request_id));
             } else if (request) {
                 request(utf8str(format), utf8str(request_id));
+            } else if (appodeal_request && objc_getClass("Appodeal")) {
+                appodeal_request(utf8str(format), utf8str(request_id));
             } else if (g_web_view) {
                 char js[768];
                 const char* outcome = strcmp(utf8str(format), "interstitial") == 0 ? "continue" : "failed";

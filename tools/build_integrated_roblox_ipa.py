@@ -188,16 +188,12 @@ if _G.__MASTERSTRAP_CORE_APPLIED ~= "applied" and _G.__MASTERSTRAP_CORE_APPLIED 
     task.defer(function()
 
     local function runCoreEngine()
-        local placeId = game.PlaceId
-        if not placeId or placeId == 0 then
+        local ok, placeId = pcall(function() return game.PlaceId end)
+        if not ok or not placeId or placeId <= 0 then
             _G.__MASTERSTRAP_CORE_APPLIED = nil
             warn("MASTERSTRAP_CORE_IDLE_MENU")
-            local conn
-            conn = game:GetPropertyChangedSignal("PlaceId"):Connect(function()
-                if game.PlaceId and game.PlaceId > 0 then
-                    conn:Disconnect()
-                    task.defer(runCoreEngine)
-                end
+            task.delay(1, function()
+                task.defer(runCoreEngine)
             end)
             return
         end
@@ -2383,6 +2379,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        luau_load_fn p_luau_load = (luau_load_fn)(base + 0x4246884);",
         "        lua_resume_fn p_lua_resume = (lua_resume_fn)(base + 0x42266e0);",
         "",
+        "        void* old_top = *(void**)((char*)L + 0x70);",
         "        void* th = p_newthread(L);",
         "        if (th) {",
         "            typedef struct {",
@@ -2409,7 +2406,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "            p_luau_load(th, &chunk);",
         "            hook_runtime_log(\"[LUAU_HOOK] luau_load result chunk.status=%d\\n\", chunk.status);",
         "            if (chunk.status == 0) {",
-        "                int resume_res = p_lua_resume(L, th, 0);",
+        "                int resume_res = p_lua_resume(th, L, 0);",
         "                g_last_injected_global = global;",
         "                hook_runtime_log(\"[LUAU_HOOK] lua_resume executed res=%d global=0x%lx INJECTED SUCCESS!\\n\",",
         "                                 resume_res, (unsigned long)global);",
@@ -2418,6 +2415,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "                hook_runtime_log(\"[LUAU_HOOK] luau_load error status=%d\\n\", chunk.status);",
         "                syslog(LOG_ERR, \"[Masterstrap-iOS] luau_load error: %d\", chunk.status);",
         "            }",
+        "            *(void**)((char*)L + 0x70) = old_top;",
         "        } else {",
         "            hook_runtime_log(\"[LUAU_HOOK] lua_newthread failed (returned NULL)\\n\");",
         "        }",
