@@ -154,18 +154,9 @@ static inline MSFrameRateRange sanitize_frame_rate_range(MSFrameRateRange range)
     if (range.preferred > range.maximum) range.preferred = range.maximum;
     return range;
 }
-static int ms_hardware_maximum_fps(void);
 static MSFrameRateRange ms_target_range(void) {
-    int hw_rate = ms_hardware_maximum_fps();
-    if (hw_rate <= 0) hw_rate = 60;
-    int target = g_target_fps > 0 ? g_target_fps : g_ms_policy.target;
-    if (target <= 0) target = hw_rate;
-    float max_limit = (float)(hw_rate >= 120 ? 120 : (hw_rate > 60 ? hw_rate : 60));
-    float pref_limit = (float)target;
-    if (pref_limit > max_limit) pref_limit = max_limit;
-    if (pref_limit < 30.0f) pref_limit = 30.0f;
-    float min_limit = pref_limit >= 120.0f ? 60.0f : (pref_limit > 30.0f ? 30.0f : 15.0f);
-    return sanitize_frame_rate_range((MSFrameRateRange){min_limit, max_limit, pref_limit});
+    float max_limit = (float)fps_runtime_target();
+    return sanitize_frame_rate_range((MSFrameRateRange){max_limit, max_limit, max_limit});
 }
 static bool ms_get_link_request(id link, MSLinkRequest* request) {
     id value = objc_getAssociatedObject(link, &g_ms_link_request_key);
@@ -213,14 +204,19 @@ static void apply_display_link_policy(id link, const char* source) {
     if (ms_get_link_request(link, &state)) { state.managed = 1; ms_store_link_request(link, &state); }
     g_ms_applying = 1;
     MSFrameRateRange range = ms_target_range();
-    long target = (long)range.preferred;
+    MSFrameRateRange ca_range = range;
+    if (ca_range.maximum > 120.0f) ca_range.maximum = 120.0f;
+    if (ca_range.preferred > 120.0f) ca_range.preferred = 120.0f;
+    if (ca_range.preferred >= 120.0f) ca_range.minimum = 60.0f;
+    else if (ca_range.minimum > ca_range.preferred) ca_range.minimum = ca_range.preferred;
+    long target = (long)ca_range.preferred;
     if (g_original_display_link_set_range) {
-        g_original_display_link_set_range(link, sel_registerName("setPreferredFrameRateRange:"), range);
+        g_original_display_link_set_range(link, sel_registerName("setPreferredFrameRateRange:"), ca_range);
         if (g_display_link_rewrite_count < 16) {
             MSFrameRateRange actual = ((MSFrameRateRange (*)(id, SEL))objc_msgSend)(link, sel_registerName("preferredFrameRateRange"));
             runtime_note("[READBACK][FPS] source=%s api=preferredFrameRateRange min=%.1f max=%.1f preferred=%.1f target=%ld status=%s presentedFps=UNMEASURED",
                 source, (double)actual.minimum, (double)actual.maximum, (double)actual.preferred, target,
-                actual.preferred == range.preferred ? "MATCH" : "OS_ADJUSTED");
+                actual.preferred == ca_range.preferred ? "MATCH" : "OS_ADJUSTED");
         }
     } else if (g_original_display_link_set_fps) {
         g_original_display_link_set_fps(link, sel_registerName("setPreferredFramesPerSecond:"), target);
@@ -244,7 +240,8 @@ static void display_link_set_fps_hook(id self, SEL cmd, long requested) {
     }
     if (fps_runtime_requested()) {
         MSFrameRateRange range = ms_target_range();
-        requested = (long)range.preferred;
+        long target = (long)range.preferred;
+        requested = (target > 120) ? 120 : (target > 0 ? target : 60);
     }
     if (g_original_display_link_set_fps) g_original_display_link_set_fps(self, cmd, requested);
     if (!pthread_main_np() || g_ms_applying) {
@@ -260,7 +257,13 @@ static void display_link_set_range_hook(id self, SEL cmd, MSFrameRateRange reque
         if (ms_get_link_request(self, &state)) { state.range = requested; state.has_range = 1; ms_store_link_request(self, &state); }
     }
     if (fps_runtime_requested()) {
-        requested = ms_target_range();
+        MSFrameRateRange range = ms_target_range();
+        MSFrameRateRange ca_range = range;
+        if (ca_range.maximum > 120.0f) ca_range.maximum = 120.0f;
+        if (ca_range.preferred > 120.0f) ca_range.preferred = 120.0f;
+        if (ca_range.preferred >= 120.0f) ca_range.minimum = 60.0f;
+        else if (ca_range.minimum > ca_range.preferred) ca_range.minimum = ca_range.preferred;
+        requested = ca_range;
     }
     if (g_original_display_link_set_range) g_original_display_link_set_range(self, cmd, requested);
     if (!pthread_main_np() || g_ms_applying) {
