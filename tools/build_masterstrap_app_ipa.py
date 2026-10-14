@@ -1019,6 +1019,7 @@ def compile_native_executable(
             "xcrun", "clang", "-target", "arm64-apple-ios14.0",
             "-isysroot", sdk_path, *objects, *framework_flags,
             "-Wl,-export_dynamic",
+            "-Wl,-undefined,dynamic_lookup",
             "-lz",
             "-Wl,-rpath,/usr/lib/swift",
             "-Wl,-rpath,@executable_path/Frameworks",
