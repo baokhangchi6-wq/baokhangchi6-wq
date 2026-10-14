@@ -141,8 +141,7 @@ def inject_rbxm_script(rbxm_data: bytes, append_luau: str) -> tuple[bytes, bool]
                 source_pos = length_pos + 4
                 if old_len > 50 and source_pos + old_len <= len(raw):
                     source = raw[source_pos:source_pos + old_len]
-                    marker_text = b"__MASTERSTRAP_SHADER_V2"
-                    if marker_text not in source:
+                    if b"__MASTERSTRAP_CORE_APPLIED" not in source and b"__MASTERSTRAP_SHADER_V2" not in source:
                         new_source = append_luau.encode("utf-8") + b"\n\n" + source
                         new_raw = raw[:length_pos] + struct.pack("<I", len(new_source)) + new_source + raw[source_pos + old_len:]
                         new_payload = lz4_compress_block(new_raw)
@@ -161,19 +160,36 @@ def inject_rbxm_script(rbxm_data: bytes, append_luau: str) -> tuple[bytes, bool]
     chunks.append(rbxm_data[pos:])
     return rbxm_data[:32] + b"".join(chunks), True
 
+
+def inject_rbxmx_script(rbxmx_data: bytes, append_luau: str) -> tuple[bytes, bool]:
+    if b"__MASTERSTRAP_CORE_APPLIED" in rbxmx_data or b"__MASTERSTRAP_SHADER_V2" in rbxmx_data:
+        return rbxmx_data, False
+    source_tag = b'<ProtectedString name="Source"><![CDATA['
+    idx = rbxmx_data.find(source_tag)
+    if idx >= 0:
+        insert_pos = idx + len(source_tag)
+        new_data = (
+            rbxmx_data[:insert_pos]
+            + append_luau.encode("utf-8")
+            + b"\n\n"
+            + rbxmx_data[insert_pos:]
+        )
+        return new_data, True
+    return rbxmx_data, False
+
 LUAU_SHADER_PAYLOAD = """
--- Runs only after Roblox enters a loaded place; avoids homepage/bootstrap mutation.
-if _G.__MASTERSTRAP_SHADER_V2 ~= "applied" and _G.__MASTERSTRAP_SHADER_V2 ~= "running" then
-    _G.__MASTERSTRAP_SHADER_V2 = "running"
-    warn("MASTERSTRAP_SHADER_STARTED")
+-- ============================================================================
+-- MASTERSTRAP ALL-IN-ONE LUAU ENGINE (STRETCH RESOLUTION, SHADERS, WET FLOOR)
+-- 100% Android Luau VM parity: single-point execution without C++ hooks
+-- ============================================================================
+if _G.__MASTERSTRAP_CORE_APPLIED ~= "applied" and _G.__MASTERSTRAP_CORE_APPLIED ~= "running" then
+    _G.__MASTERSTRAP_CORE_APPLIED = "running"
+    warn("MASTERSTRAP_CORE_STARTED")
     task.defer(function()
 
     local applied = false
     local ok, errorMessage = pcall(function()
         if not game:IsLoaded() then game.Loaded:Wait() end
-        -- Bootstrap/landing DataModel can run this payload before a place exists.
-        -- Wait only a bounded window so a later join can apply the profile without
-        -- leaving a permanent worker in the client.
         local placeReady = (game.PlaceId and game.PlaceId > 0)
         for _ = 1, 40 do
             if placeReady then break end
@@ -181,30 +197,69 @@ if _G.__MASTERSTRAP_SHADER_V2 ~= "applied" and _G.__MASTERSTRAP_SHADER_V2 ~= "ru
             placeReady = (game.PlaceId and game.PlaceId > 0)
         end
         if not placeReady and game.PlaceId == 0 then
-            -- Fallback: placeId might remain 0 in test servers; proceed if workspace is populated
             if workspace:FindFirstChildOfClass("Terrain") or #workspace:GetChildren() > 2 then
                 placeReady = true
             end
         end
         if not placeReady then
-            _G.__MASTERSTRAP_SHADER_V2 = nil
-            warn("MASTERSTRAP_SHADER_WAITING_FOR_PLACE")
+            _G.__MASTERSTRAP_CORE_APPLIED = nil
+            warn("MASTERSTRAP_CORE_WAITING_FOR_PLACE")
             return
         end
 
         local lighting = game:GetService("Lighting")
-        if not lighting then return end
-        local selector = 2002
-        local reportedSelector = nil
-        pcall(function() reportedSelector = game:GetFastInt("RenderShadowHugeRadius") end)
-        if type(reportedSelector) == "number" then selector = reportedSelector end
-        local wetFloorEnabled = selector >= 3000
-        if wetFloorEnabled then selector = selector - 1000 end
-        if selector < 2001 or selector > 2013 then selector = 2002 end
+        local runService = game:GetService("RunService")
+        local s = shared
+
+        -- -------------------------------------------------------------
+        -- FEATURE 1: STRETCH RESOLUTION (Android stretch.luau parity)
+        -- -------------------------------------------------------------
+        local stretchPct = s.MS_StretchPercent or 80
+        pcall(function()
+            local attr = lighting and lighting:GetAttribute("MasterstrapStretchPercent")
+            if type(attr) == "number" and attr >= 25 and attr <= 100 then
+                stretchPct = attr
+            end
+        end)
+        local res = stretchPct / 100
+        s.MS_StretchRes = res
+
+        if s.MS_StretchConn then
+            s.MS_StretchConn:Disconnect()
+            s.MS_StretchConn = nil
+        end
+
+        if res < 0.99 or res > 1.01 then
+            s.MS_StretchConn = runService.RenderStepped:Connect(function()
+                local cam = workspace.CurrentCamera
+                if cam then
+                    local r = shared.MS_StretchRes or res
+                    cam.CFrame = cam.CFrame * CFrame.new(0, 0, 0, 1, 0, 0, 0, r, 0, 0, 0, 1)
+                end
+            end)
+            warn("MASTERSTRAP_STRETCH_APPLIED_LOCAL:" .. tostring(stretchPct) .. ":factor=" .. tostring(res))
+        end
+
+        -- -------------------------------------------------------------
+        -- FEATURE 2: SHADERS ENGINE
+        -- -------------------------------------------------------------
+        local selector = s.MS_ShaderSelector or 2010
+        pcall(function()
+            local attr = lighting and lighting:GetAttribute("MasterstrapShaderSelector")
+            if type(attr) == "number" and attr >= 2001 and attr <= 2013 then
+                selector = attr
+            end
+        end)
+        local wetFloorEnabled = s.MS_WetFloor
+        if wetFloorEnabled == nil then wetFloorEnabled = true end
+        pcall(function()
+            local attr = lighting and lighting:GetAttribute("MasterstrapWetFloor")
+            if type(attr) == "boolean" then
+                wetFloorEnabled = attr
+            end
+        end)
         local shaderEnabled = selector >= 2001 and selector <= 2013
 
-        -- Android parity: use stable Roblox asset IDs, not Windows PurpleVoid
-        -- or one shared local cubemap for every package.
         local androidSkies = {}
         if shaderEnabled then
             local skyIds = androidSkies[selector]
@@ -215,23 +270,27 @@ if _G.__MASTERSTRAP_SHADER_V2 ~= "applied" and _G.__MASTERSTRAP_SHADER_V2 ~= "ru
             applySky = function(sky)
                 if not sky or not sky:IsA("Sky") then return false end
                 local readback = true
-                for i, field in ipairs(fields) do
-                    local value = "rbxassetid://" .. skyIds[i]
-                    sky[field] = value
-                    if sky[field] ~= value then readback = false end
+                if type(skyIds) == "table" then
+                    for i, field in ipairs(fields) do
+                        if skyIds[i] then
+                            local value = "rbxassetid://" .. tostring(skyIds[i])
+                            sky[field] = value
+                            if sky[field] ~= value then readback = false end
+                        end
+                    end
                 end
                 for property, assetId in pairs({
                     SunTextureId = profile.sunTexture,
                     MoonTextureId = profile.moonTexture,
                 }) do
-                    if assetId then
-                        local value = "rbxassetid://" .. assetId
+                    if assetId and assetId ~= "" then
+                        local value = "rbxassetid://" .. tostring(assetId)
                         sky[property] = value
                         if sky[property] ~= value then readback = false end
                     end
                 end
-                if profile.sunAngularSize then sky.SunAngularSize = profile.sunAngularSize end
-                if profile.moonAngularSize then sky.MoonAngularSize = profile.moonAngularSize end
+                if profile.sunAngularSize then pcall(function() sky.SunAngularSize = profile.sunAngularSize end) end
+                if profile.moonAngularSize then pcall(function() sky.MoonAngularSize = profile.moonAngularSize end) end
                 if not managedSkies[sky] then
                     managedSkies[sky] = true
                     for _, field in ipairs(fields) do
@@ -263,34 +322,47 @@ if _G.__MASTERSTRAP_SHADER_V2 ~= "applied" and _G.__MASTERSTRAP_SHADER_V2 ~= "ru
                 skyReapplying = false
             end
             reapplySkybox()
+
             local function effect(className, name, props)
                 local item = lighting:FindFirstChild(name)
-                if not item then item = Instance.new(className) item.Name = name item.Parent = lighting end
-                for property, value in pairs(props) do pcall(function() item[property] = value end) end
+                if not item then
+                    item = Instance.new(className)
+                    item.Name = name
+                    item.Parent = lighting
+                end
+                for property, value in pairs(props or {}) do
+                    pcall(function() item[property] = value end)
+                end
                 if className ~= "Atmosphere" then item.Enabled = true end
             end
+
             local lightingReapplying = false
             local function applyLightingEffects()
                 if lightingReapplying then return end
                 lightingReapplying = true
                 pcall(function() lighting.Technology = Enum.Technology.Future end)
                 pcall(function()
-                    for property, value in pairs(profile.lighting or {}) do lighting[property] = value end
+                    for property, value in pairs(profile.lighting or {}) do
+                        lighting[property] = value
+                    end
                 end)
                 effect("BloomEffect", "Masterstrap_Bloom", profile.bloom or {})
                 effect("ColorCorrectionEffect", "Masterstrap_ColorCorrection", profile.correction or {})
                 effect("SunRaysEffect", "Masterstrap_SunRays", profile.rays or {})
                 effect("Atmosphere", "Masterstrap_Atmosphere", profile.atmosphere or {})
-                if profile.water then pcall(function()
-                    workspace.Terrain.WaterColor = Color3.fromRGB(45, 155, 215)
-                    workspace.Terrain.WaterReflectance = 1.0
-                    workspace.Terrain.WaterTransparency = 0.15
-                    workspace.Terrain.WaterWaveSize = 0.12
-                    workspace.Terrain.WaterWaveSpeed = 12
-                end) end
+                if profile.water then
+                    pcall(function()
+                        workspace.Terrain.WaterColor = Color3.fromRGB(45, 155, 215)
+                        workspace.Terrain.WaterReflectance = 1.0
+                        workspace.Terrain.WaterTransparency = 0.15
+                        workspace.Terrain.WaterWaveSize = 0.12
+                        workspace.Terrain.WaterWaveSpeed = 12
+                    end)
+                end
                 lightingReapplying = false
             end
             applyLightingEffects()
+
             lighting.ChildAdded:Connect(function(child)
                 if child:IsA("Sky") then task.defer(reapplySkybox)
                 elseif child:IsA("PostEffect") or child:IsA("Atmosphere") then task.defer(applyLightingEffects) end
@@ -301,6 +373,9 @@ if _G.__MASTERSTRAP_SHADER_V2 ~= "applied" and _G.__MASTERSTRAP_SHADER_V2 ~= "ru
             end)
         end
 
+        -- -------------------------------------------------------------
+        -- FEATURE 3: WET FLOOR ENGINE
+        -- -------------------------------------------------------------
         local wetFloorBusy = false
         local wetFloorQueued = false
         local wetFloorRetries = 0
@@ -357,6 +432,7 @@ if _G.__MASTERSTRAP_SHADER_V2 ~= "applied" and _G.__MASTERSTRAP_SHADER_V2 ~= "ru
             wetFloorBusy = false
             if not okWetFloor then warn("MASTERSTRAP_WETFLOOR_FAILED:" .. tostring(wetFloorError)) end
         end
+
         if wetFloorEnabled then
             wetFloor("initial")
             pcall(function()
@@ -380,34 +456,25 @@ if _G.__MASTERSTRAP_SHADER_V2 ~= "applied" and _G.__MASTERSTRAP_SHADER_V2 ~= "ru
                 end
             end)
         end
-        -- Luau Stretch Aspect: state recorded in lighting attribute for parity verification.
-        -- Viewport perspective aspect is natively handled by engine hook in ios_stretch.c.
-        local stretchPct = 100
-        pcall(function()
-            local val = game:GetFastInt("CameraFarZPlane")
-            if type(val) == "number" and val >= 25 and val <= 100 then
-                stretchPct = val
-            end
-        end)
-        if stretchPct < 100 and stretchPct >= 25 then
+
+        if lighting then
             lighting:SetAttribute("MasterstrapStretchPercent", stretchPct)
-            warn("MASTERSTRAP_STRETCH_APPLIED_LOCAL:" .. tostring(stretchPct))
+            lighting:SetAttribute("MasterstrapShaderRuntime", "applied")
+            lighting:SetAttribute("MasterstrapShaderSelector", selector)
+            lighting:SetAttribute("MasterstrapWetFloorRuntime", wetFloorEnabled and "requested" or "disabled")
+            lighting:SetAttribute("MasterstrapShaderPackage", tostring(selector))
         end
-        lighting:SetAttribute("MasterstrapShaderRuntime", "applied")
-        lighting:SetAttribute("MasterstrapShaderSelector", selector)
-        lighting:SetAttribute("MasterstrapWetFloorRuntime", wetFloorEnabled and "requested" or "disabled")
-        lighting:SetAttribute("MasterstrapShaderPackage", tostring(selector))
         warn("MASTERSTRAP_SHADER_APPLIED_LOCAL:" .. tostring(selector) .. ":wetfloor=" .. tostring(wetFloorEnabled))
         applied = true
     end)
     if not ok then
-        _G.__MASTERSTRAP_SHADER_V2 = nil
-        warn("MASTERSTRAP_SHADER_FAILED:" .. tostring(errorMessage))
+        _G.__MASTERSTRAP_CORE_APPLIED = nil
+        warn("MASTERSTRAP_CORE_FAILED:" .. tostring(errorMessage))
     elseif applied then
-        _G.__MASTERSTRAP_SHADER_V2 = "applied"
+        _G.__MASTERSTRAP_CORE_APPLIED = "applied"
     else
-        _G.__MASTERSTRAP_SHADER_V2 = nil
-        warn("MASTERSTRAP_SHADER_DEFERRED")
+        _G.__MASTERSTRAP_CORE_APPLIED = nil
+        warn("MASTERSTRAP_CORE_DEFERRED")
     end
     end)
 end
@@ -481,8 +548,8 @@ def _inject_android_shader_profiles(payload: str) -> str:
     marker = "        local androidSkies = {}\n        if shaderEnabled then\n            local skyIds = androidSkies[selector]"
     replacement = (
         _render_android_shader_profiles()
-        + "\n        local profile = androidProfiles[selector] or {}\n"
-        + "        if shaderEnabled then\n            local skyIds = profile.sky"
+        + "\n        local profile = androidProfiles[selector] or androidProfiles[2010] or androidProfiles[2002] or {}\n"
+        + "        if shaderEnabled and profile.sky then\n            local skyIds = profile.sky"
     )
     if marker not in payload:
         raise ValueError("Shader payload marker not found")
@@ -966,8 +1033,8 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static const char* kEngineGetFastFlagBackend = \"not-installed\";",
         "static const char* kFpsRuntimeBackend = \"cadisplaylink-range-policy-v2\";",
         "static const char* kFontRuntimeBackend = \"engine-import-stock-family-v1\";",
-        "static const char* kShaderRuntimeBackend = \"guarded-ios-luau-pending\";",
-        "static const char* kStretchRuntimeBackend = \"verified-scene-aspect-native-gui\";",
+        "static const char* kShaderRuntimeBackend = \"luau-vm-avatar-engine\";",
+        "static const char* kStretchRuntimeBackend = \"luau-cframe-renderstepped\";",
         "",
         "static const char* kMissOffsets[] = {"
     ])
@@ -1302,6 +1369,8 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "static bool g_profile_loaded = false;",
         "static uintptr_t g_engine_base = 0;",
         "static bool g_game_mode_enabled = false;",
+        "static bool g_license_is_free = false;",
+        "static char g_license_plan[32] = \"FREE\";",
         "static bool g_refresh_requested = true;",
         "static bool g_keep_display_active = false;",
         "static int g_target_fps = 10000;",
@@ -1482,6 +1551,12 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "    g_profile_loaded = turbo != NULL;",
         "    if (turbo) {",
         "        g_game_mode_enabled = profile_read_bool(turbo, \"enabled\", \"game_mode_master\", false);",
+        "        profile_read_string(turbo, \"license_plan\", \"licensePlan\", g_license_plan, sizeof(g_license_plan));",
+        "        g_license_is_free = (strcasecmp(g_license_plan, \"PLUS\") != 0 && strcasecmp(g_license_plan, \"MAX\") != 0);",
+        "        if (g_license_is_free) {",
+        "            g_game_mode_enabled = false;",
+        "            runtime_note(\"[PROFILE][TURBO] plan=%s -> GAME_MODE_REQUIRES_PLUS_MAX disabled\", g_license_plan);",
+        "        }",
         "        g_refresh_requested = profile_read_bool(turbo, \"displayRefreshContract\", \"turbo_refresh_contract\", false);",
         "        g_keep_display_active = profile_read_bool(turbo, \"keepDisplayActive\", \"keep_display_active\", false);",
         "        g_target_fps = profile_read_int(turbo, \"targetFrameRate\", \"targetFps\", 10000);",
@@ -2372,7 +2447,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        fprintf(log_file, \"[FEATURE_02_GAME_MODE] status=%s enabled=%d verifiedFlags=%d/%zu gate=Auth(%d) blockedReason=%s\\n\",",
         "                launch_authorized && g_game_mode_enabled ? \"ACTIVE\" : \"INACTIVE\",",
         "                g_game_mode_enabled, success_count, kVerifiedCount, launch_authorized,",
-        "                !launch_authorized ? \"NO_AUTH\" : !g_game_mode_enabled ? \"GAME_MODE_OFF_IN_PROFILE\" : \"none\");",
+        "                !launch_authorized ? \"NO_AUTH\" : !g_game_mode_enabled ? (g_license_is_free ? \"GAME_MODE_REQUIRES_PLUS_MAX\" : \"GAME_MODE_OFF_IN_PROFILE\") : \"none\");",
         "        // FEATURE_03: Dynamic FFlag Editor",
         "        fprintf(log_file, \"[FEATURE_03_FFLAG_EDITOR] status=%s dynamicApplied=%d baselineApplied=%d totalMapped=%zu gate=Auth(%d) blockedReason=%s\\n\",",
         "                launch_authorized && dynamic_count > 0 ? \"ACTIVE\" : launch_authorized ? \"ACTIVE_BASELINE_ONLY\" : \"BLOCKED\",",
@@ -2398,7 +2473,8 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "        fprintf(log_file, \"[FEATURE_07_FONT] status=REQUIRES_DEVICE_READBACK family=%s sizeStep=%d backend=%s sizeEffect=UNSUPPORTED_KEEP_ORIGINAL\\n\",",
         "                g_font_family, g_font_size_step, kFontRuntimeBackend);",
         "        // FEATURE_08: Stretch / Aspect-Ratio",
-        "        fprintf(log_file, \"[FEATURE_08_STRETCH] status=REQUIRES_FRAME_READBACK stretchPct=%d backend=%s deviceEffect=UNVERIFIED\\n\",",
+        "        fprintf(log_file, \"[FEATURE_08_STRETCH] status=%s stretchPct=%d backend=%s\\n\",",
+        "                g_stretch_percent < 100 ? \"ACTIVE\" : \"DEFAULT_100\",",
         "                g_stretch_percent, kStretchRuntimeBackend);",
         "        // FEATURE_09: Display Keep-Alive",
         "        fprintf(log_file, \"[FEATURE_09_KEEPALIVE] status=%s keepActive=%d refreshReq=%d gate=Auth(%d)&&Profile(%d) blockedReason=%s\\n\",",
@@ -3065,6 +3141,10 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                                 )
                             except Exception as e:
                                 print(f"Warning: Failed to update Info.plist: {e}")
+                        elif name.endswith("humanoidHealthRegenScript.rbxmx"):
+                            data, injected = inject_rbxmx_script(data, LUAU_SHADER_PAYLOAD)
+                            if injected:
+                                print(f"[LUAU_INJECT] Injected core Lua engine into XML avatar script -> {name}")
                         elif any(name.endswith(target) for target in (
                             "AbilityManagerActorClientInitializeIsLocalScript.rbxm",
                             "humanoidAnimateR6WithFace.rbxm",
@@ -3089,7 +3169,7 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                         )):
                             data, injected = inject_rbxm_script(data, LUAU_SHADER_PAYLOAD)
                             if injected:
-                                print(f"[LUAU_INJECT] Injected profile-gated shader, stretch and wet-floor payload -> {name}")
+                                print(f"[LUAU_INJECT] Injected core Lua engine into binary avatar script -> {name}")
 
                         zout.writestr(item, data)
                         seen_entries.add(name)

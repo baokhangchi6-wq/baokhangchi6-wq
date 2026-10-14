@@ -511,6 +511,30 @@ static void finish_bridge_launch(bool opened) {
                      : "window.msLaunchFinished && window.msLaunchFinished(false)"), NULL);
 }
 
+static void try_open_schemes(id app, id empty_dict, const char** schemes, int index) {
+    if (!schemes || !schemes[index]) {
+        finish_bridge_launch(false);
+        return;
+    }
+    const char* current = schemes[index];
+    id NSURL = objc_getClass("NSURL");
+    id url = ((id (*)(id, SEL, id))objc_msgSend)(NSURL, sel_registerName("URLWithString:"), nsstr(current));
+    if (!url) {
+        try_open_schemes(app, empty_dict, schemes, index + 1);
+        return;
+    }
+    void* comp = (void*)^(unsigned char basic_opened) {
+        app_log("[BRIDGE][SCHEME_OPEN] scheme=%s opened=%d", current, basic_opened != 0);
+        if (basic_opened) {
+            finish_bridge_launch(true);
+        } else {
+            try_open_schemes(app, empty_dict, schemes, index + 1);
+        }
+    };
+    ((void (*)(id, SEL, id, id, void*))objc_msgSend)(app, sel_registerName("openURL:options:completionHandler:"), url, empty_dict, comp);
+    app_log("Triggered openURL with %s", current);
+}
+
 static void launch_via_workspace_or_scheme(id app, id empty_dict, const char* channel,
                                            const char* bundleId, const char* urlScheme) {
     id LSApplicationWorkspace = objc_getClass("LSApplicationWorkspace");
@@ -531,17 +555,11 @@ static void launch_via_workspace_or_scheme(id app, id empty_dict, const char* ch
     }
 
     if (!opened) {
-        id NSURL = objc_getClass("NSURL");
-        id url = ((id (*)(id, SEL, id))objc_msgSend)(NSURL, sel_registerName("URLWithString:"), nsstr(urlScheme));
-        if (url) {
-            void* comp = (void*)^(unsigned char basic_opened) {
-                app_log("[BRIDGE][SCHEME_OPEN] opened=%d", basic_opened != 0);
-                finish_bridge_launch(basic_opened != 0);
-            };
-            ((void (*)(id, SEL, id, id, void*))objc_msgSend)(app, sel_registerName("openURL:options:completionHandler:"), url, empty_dict, comp);
-            app_log("Triggered openURL with %s", urlScheme);
-            return;
-        }
+        static const char* global_schemes[] = {"robloxmobile://", "masterstrap-rbx-bridge-v1://", "roblox://", NULL};
+        static const char* vng_schemes[] = {"roblox-vng://", "masterstrap-rbx-vng-bridge-v1://", "roblox://", NULL};
+        const char** schemes = (channel && strcmp(channel, "vng") == 0) ? vng_schemes : global_schemes;
+        try_open_schemes(app, empty_dict, schemes, 0);
+        return;
     }
     finish_bridge_launch(opened);
 }
@@ -2336,6 +2354,30 @@ function updateVipLocks() {
         }
     }
 
+    // 4. Turbo Game Mode Master Hard-Lock (sw-gm-master: Plus / Max only)
+    const swGmMaster = document.getElementById("sw-gm-master");
+    if (swGmMaster) {
+        if (isFree) {
+            swGmMaster.checked = false;
+            swGmMaster.disabled = true;
+            localStorage.setItem("masterstrap_toggle_sw-gm-master", "false");
+            if (typeof onToggleTurboMaster === "function") onToggleTurboMaster(false);
+        } else {
+            swGmMaster.disabled = false;
+        }
+    }
+
+    const cardGameMode = document.getElementById("card-game-mode");
+    if (cardGameMode && !cardGameMode.dataset.vipBound) {
+        cardGameMode.dataset.vipBound = "true";
+        cardGameMode.addEventListener("click", () => {
+            const isFreeNow = window.MasterstrapAds ? window.MasterstrapAds.isFree() : (!["PLUS", "MAX"].includes((localStorage.getItem("masterstrap_license_plan") || "FREE").toUpperCase()));
+            if (isFreeNow) {
+                if (typeof showToast === "function") showToast(getI18nText("msg_feature_requires_plus_max"));
+            }
+        });
+    }
+
     if (typeof updateFlagState === "function") updateFlagState();
 }
 
@@ -2388,6 +2430,14 @@ window.toggleFasterSpeedVIP = function(checkbox) {
 
 const msOnToggleTurboMaster = typeof onToggleTurboMaster === "function" ? onToggleTurboMaster : null;
 onToggleTurboMaster = function(isChecked, isRestoring) {
+    const isFree = window.MasterstrapAds ? window.MasterstrapAds.isFree() : (!["PLUS", "MAX"].includes((localStorage.getItem("masterstrap_license_plan") || "FREE").toUpperCase()));
+    if (isFree && isChecked) {
+        const sw = document.getElementById("sw-gm-master");
+        if (sw) sw.checked = false;
+        showToast(getI18nText("msg_feature_requires_plus_max"));
+        if (msOnToggleTurboMaster) msOnToggleTurboMaster(false);
+        return;
+    }
     if (msOnToggleTurboMaster) return msOnToggleTurboMaster(isChecked);
 };
 
@@ -2489,12 +2539,17 @@ function syncConfigToNative() {
     syncTimer = setTimeout(() => {
         if (!window.webkit?.messageHandlers?.saveConfig) return;
         if (typeof updateFlagState === "function") updateFlagState();
+        const isFree = window.MasterstrapAds ? window.MasterstrapAds.isFree() : (!["PLUS", "MAX"].includes((localStorage.getItem("masterstrap_license_plan") || "FREE").toUpperCase()));
         let stretchVal = parseInt(document.getElementById("slider-stretch-screen")?.value) || 100;
         let targetFpsVal = parseInt(document.getElementById("sel-target-fps")?.value) || 9999;
         let masterMode = document.getElementById("sw-gm-master")?.checked ?? true;
+        if (isFree) masterMode = false;
+        const licPlan = (window.msLicenseTier || (isFree ? "FREE" : (localStorage.getItem("masterstrap_license_plan") || "PLUS"))).toUpperCase();
         const clientJson = JSON.stringify(prepareFlagsForRoblox(activeFlags || {}), null, 2);
         const turboProfile = JSON.stringify({
             enabled: masterMode,
+            license_plan: licPlan,
+            licensePlan: licPlan,
             safe_ram_cleanup: document.getElementById("sw-gm-safe-ram")?.checked ?? true,
             safe_network_opt: document.getElementById("sw-gm-safe-net")?.checked ?? true,
             safe_power_opt: document.getElementById("sw-gm-safe-power")?.checked ?? true,
@@ -2637,7 +2692,7 @@ window.SettingsPersistence = (() => {
         
         // 1. Restore all checkboxes (matches Android SettingsPersistence.loadToggle)
         document.querySelectorAll('input[type="checkbox"][id]').forEach(cb => {
-            if (cb.id === "sw-ffs-desync" || cb.id === "sw-ffs-faster-speed") {
+            if (cb.id === "sw-ffs-desync" || cb.id === "sw-ffs-faster-speed" || cb.id === "sw-gm-master") {
                 if (isFree) {
                     cb.checked = false;
                     localStorage.setItem("masterstrap_toggle_" + cb.id, "false");
@@ -2735,7 +2790,7 @@ document.addEventListener("change", (e) => {
         }
         SettingsPersistence.saveFps(target.value);
     } else if (target.type === "checkbox") {
-        if (isFree && (target.id === "sw-ffs-desync" || target.id === "sw-ffs-faster-speed")) {
+        if (isFree && (target.id === "sw-ffs-desync" || target.id === "sw-ffs-faster-speed" || target.id === "sw-gm-master")) {
             target.checked = false;
             SettingsPersistence.saveToggle(target.id, false);
             showToast(getI18nText("msg_feature_requires_plus_max"));
