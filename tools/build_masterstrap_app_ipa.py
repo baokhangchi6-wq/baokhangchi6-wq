@@ -511,6 +511,41 @@ static void finish_bridge_launch(bool opened) {
                      : "window.msLaunchFinished && window.msLaunchFinished(false)"), NULL);
 }
 
+static void launch_via_workspace_or_scheme(id app, id empty_dict, const char* channel,
+                                           const char* bundleId, const char* urlScheme) {
+    id LSApplicationWorkspace = objc_getClass("LSApplicationWorkspace");
+    bool opened = false;
+    if (LSApplicationWorkspace) {
+        id workspace = ((id (*)(id, SEL))objc_msgSend)(LSApplicationWorkspace, sel_registerName("defaultWorkspace"));
+        if (workspace) {
+            opened = ((bool (*)(id, SEL, id))objc_msgSend)(workspace, sel_registerName("openApplicationWithBundleID:"), nsstr(bundleId));
+            app_log("LSApplicationWorkspace openApplicationWithBundleID (%s) returned: %d", bundleId, opened);
+            if (!opened && (!channel || strcmp(channel, "vng") != 0)) {
+                const char* fallback_ids[] = {"com.roblox.client", "com.delta.client", NULL};
+                for (int i = 0; fallback_ids[i] && !opened; i++) {
+                    opened = ((bool (*)(id, SEL, id))objc_msgSend)(workspace, sel_registerName("openApplicationWithBundleID:"), nsstr(fallback_ids[i]));
+                    app_log("LSApplicationWorkspace fallback bundleId (%s) returned: %d", fallback_ids[i], opened);
+                }
+            }
+        }
+    }
+
+    if (!opened) {
+        id NSURL = objc_getClass("NSURL");
+        id url = ((id (*)(id, SEL, id))objc_msgSend)(NSURL, sel_registerName("URLWithString:"), nsstr(urlScheme));
+        if (url) {
+            void* comp = (void*)^(unsigned char basic_opened) {
+                app_log("[BRIDGE][SCHEME_OPEN] opened=%d", basic_opened != 0);
+                finish_bridge_launch(basic_opened != 0);
+            };
+            ((void (*)(id, SEL, id, id, void*))objc_msgSend)(app, sel_registerName("openURL:options:completionHandler:"), url, empty_dict, comp);
+            app_log("Triggered openURL with %s", urlScheme);
+            return;
+        }
+    }
+    finish_bridge_launch(opened);
+}
+
 static void open_roblox_app_channel(const char* channel, id bridge_payload,
                                     const char* bridge_v2_request,
                                     const char* bridge_v2_ticket) {
@@ -534,7 +569,12 @@ static void open_roblox_app_channel(const char* channel, id bridge_payload,
     const char* appBridgeScheme = (channel && strcmp(channel, "vng") == 0) ? "roblox-vng" : "robloxmobile";
     void* completion = (void*)^(unsigned char opened) {
         app_log("[BRIDGE][OPEN] opened=%d", opened != 0);
-        finish_bridge_launch(opened != 0);
+        if (opened) {
+            finish_bridge_launch(true);
+        } else {
+            app_log("[BRIDGE][OPEN] failed; falling back to workspace/scheme");
+            launch_via_workspace_or_scheme(app, empty_dict, channel, bundleId, urlScheme);
+        }
     };
 
     app_log("Attempting launch: channel=%s, bundleId=%s, scheme=%s, bridgeV2=%d, bridgeV1=%d",
@@ -584,32 +624,7 @@ static void open_roblox_app_channel(const char* channel, id bridge_payload,
         }
     }
 
-    id LSApplicationWorkspace = objc_getClass("LSApplicationWorkspace");
-    bool opened = false;
-    if (LSApplicationWorkspace) {
-        id workspace = ((id (*)(id, SEL))objc_msgSend)(LSApplicationWorkspace, sel_registerName("defaultWorkspace"));
-        if (workspace) {
-            opened = ((bool (*)(id, SEL, id))objc_msgSend)(workspace, sel_registerName("openApplicationWithBundleID:"), nsstr(bundleId));
-            app_log("LSApplicationWorkspace openApplicationWithBundleID (%s) returned: %d", bundleId, opened);
-            if (!opened && (!channel || strcmp(channel, "vng") != 0)) {
-                const char* fallback_ids[] = {"com.roblox.client", "com.delta.client", NULL};
-                for (int i = 0; fallback_ids[i] && !opened; i++) {
-                    opened = ((bool (*)(id, SEL, id))objc_msgSend)(workspace, sel_registerName("openApplicationWithBundleID:"), nsstr(fallback_ids[i]));
-                    app_log("LSApplicationWorkspace fallback bundleId (%s) returned: %d", fallback_ids[i], opened);
-                }
-            }
-        }
-    }
-
-    if (!opened) {
-        id url = ((id (*)(id, SEL, id))objc_msgSend)(NSURL, sel_registerName("URLWithString:"), nsstr(urlScheme));
-        if (url) {
-            ((void (*)(id, SEL, id, id, void*))objc_msgSend)(app, sel_registerName("openURL:options:completionHandler:"), url, empty_dict, completion);
-            app_log("Triggered openURL with %s", urlScheme);
-            return;
-        }
-    }
-    finish_bridge_launch(opened);
+    launch_via_workspace_or_scheme(app, empty_dict, channel, bundleId, urlScheme);
 }
 
 static void scriptMessageHandler(id self, SEL _cmd, id userContentController, id message) {
@@ -676,24 +691,12 @@ static void scriptMessageHandler(id self, SEL _cmd, id userContentController, id
     }
 
     if (strcmp(name_str, "saveConfig") == 0) {
-        id app = ((id (*)(id, SEL))objc_msgSend)(objc_getClass("UIApplication"), sel_registerName("sharedApplication"));
-        id target = ((id (*)(id, SEL, id))objc_msgSend)(objc_getClass("NSURL"), sel_registerName("URLWithString:"),
-            nsstr(strcmp(channel_target, "vng") == 0 ? "masterstrap-rbx-vng-bridge-v1://apply" : "masterstrap-rbx-bridge-v1://apply"));
-        if (app && target && ((unsigned char (*)(id, SEL, id))objc_msgSend)(app, sel_registerName("canOpenURL:"), target)) {
-            id bridge_payload = serialize_bridge_payload(body);
-            open_roblox_app_channel(channel_target, bridge_payload, NULL, NULL);
-        }
+        return;
     }
 
     if (strcmp(name_str, "launchRoblox") == 0) {
         if (g_launch_in_flight) { app_log("[BRIDGE][LAUNCH] duplicate ignored"); return; }
         g_launch_in_flight = true;
-        id app = ((id (*)(id, SEL))objc_msgSend)(objc_getClass("UIApplication"), sel_registerName("sharedApplication"));
-        id target = ((id (*)(id, SEL, id))objc_msgSend)(objc_getClass("NSURL"), sel_registerName("URLWithString:"),
-            nsstr(strcmp(channel_target, "vng") == 0 ? "masterstrap-rbx-vng-bridge-v1://apply" : "masterstrap-rbx-bridge-v1://apply"));
-        if (!app || !target || !((unsigned char (*)(id, SEL, id))objc_msgSend)(app, sel_registerName("canOpenURL:"), target)) {
-            app_log("[BRIDGE][LAUNCH] aborted: patched Roblox scheme unavailable"); finish_bridge_launch(false); return;
-        }
         id bridge_payload = serialize_bridge_payload(body);
         char bridge_v2_request[96] = {0};
         char bridge_v2_ticket[96] = {0};
@@ -706,8 +709,9 @@ static void scriptMessageHandler(id self, SEL _cmd, id userContentController, id
                 bridge_v2_request, sizeof(bridge_v2_request),
                 bridge_v2_ticket, sizeof(bridge_v2_ticket));
         }
-        if (!bridge_v2_ready && (!bridge_payload || payload_len > 2048)) {
-            app_log("[BRIDGE][LAUNCH] aborted: complete payload unavailable"); finish_bridge_launch(false); return;
+        if (!bridge_v2_ready && payload_len > 2048) {
+            app_log("[BRIDGE][LAUNCH] network bridge unavailable; launching via disk configuration");
+            bridge_payload = NULL;
         }
         open_roblox_app_channel(
             channel_target,
@@ -1537,6 +1541,17 @@ function onFpsInputChange(el) {
 
 function prepareFlagsForRoblox(flags) {
     const clean = sanitizeFlagsForRoblox(flags);
+    const targetFpsVal = parseInt(document.getElementById("sel-target-fps")?.value) || 9999;
+    clean["DFIntTaskSchedulerTargetFps"] = targetFpsVal;
+    if (targetFpsVal > 60) {
+        clean["FFlagTaskSchedulerLimitTargetFpsToScreenRefreshRate"] = false;
+        clean["FFlagTaskSchedulerLimitTargetFpsTo2402"] = false;
+        clean["FFlagGameBasicSettingsFramerateCap"] = false;
+        clean["FFlagDebugDisableVsync"] = true;
+        clean["FFlagMetalVsyncPreferMaximumRefreshRate"] = true;
+        clean["FIntMetalDisplayTimingMinFPS"] = 0;
+    }
+    clean["FFlagEnableLocalFlagLuaApis"] = true;
     const shaderPackage = document.getElementById("display-shader-pkg")?.value || "none";
     const wetFloor = Boolean(document.getElementById("sw-display-wet-floor")?.checked);
     const shaderSelectors = {
@@ -2307,7 +2322,7 @@ function updateVipLocks() {
         }
     }
 
-    // 3. VIP Toggles Hard-Lock (sw-ffs-desync, sw-ffs-faster-speed, sw-gm-master)
+    // 3. VIP Toggles Hard-Lock (sw-ffs-desync, sw-ffs-faster-speed)
     if (isFree) {
         const swDesync = document.getElementById("sw-ffs-desync");
         if (swDesync && swDesync.checked) {
@@ -2318,15 +2333,6 @@ function updateVipLocks() {
         if (swSpeed && swSpeed.checked) {
             swSpeed.checked = false;
             localStorage.setItem("masterstrap_toggle_sw-ffs-faster-speed", "false");
-        }
-        const swMaster = document.getElementById("sw-gm-master");
-        if (swMaster && swMaster.checked) {
-            swMaster.checked = false;
-            localStorage.setItem("masterstrap_turbo_master", "false");
-            localStorage.setItem("masterstrap_toggle_sw-gm-master", "false");
-            if (typeof onToggleTurboMaster === "function") {
-                onToggleTurboMaster(false, true);
-            }
         }
     }
 
@@ -2488,6 +2494,7 @@ function syncConfigToNative() {
         let masterMode = document.getElementById("sw-gm-master")?.checked ?? true;
         const clientJson = JSON.stringify(prepareFlagsForRoblox(activeFlags || {}), null, 2);
         const turboProfile = JSON.stringify({
+            enabled: masterMode,
             safe_ram_cleanup: document.getElementById("sw-gm-safe-ram")?.checked ?? true,
             safe_network_opt: document.getElementById("sw-gm-safe-net")?.checked ?? true,
             safe_power_opt: document.getElementById("sw-gm-safe-power")?.checked ?? true,
@@ -2630,16 +2637,10 @@ window.SettingsPersistence = (() => {
         
         // 1. Restore all checkboxes (matches Android SettingsPersistence.loadToggle)
         document.querySelectorAll('input[type="checkbox"][id]').forEach(cb => {
-            if (cb.id === "sw-gm-master" || cb.id === "sw-ffs-desync" || cb.id === "sw-ffs-faster-speed") {
+            if (cb.id === "sw-ffs-desync" || cb.id === "sw-ffs-faster-speed") {
                 if (isFree) {
                     cb.checked = false;
                     localStorage.setItem("masterstrap_toggle_" + cb.id, "false");
-                    if (cb.id === "sw-gm-master") {
-                        localStorage.setItem("masterstrap_turbo_master", "false");
-                        if (typeof onToggleTurboMaster === "function") {
-                            onToggleTurboMaster(false, true);
-                        }
-                    }
                     return;
                 }
             }
@@ -2734,7 +2735,7 @@ document.addEventListener("change", (e) => {
         }
         SettingsPersistence.saveFps(target.value);
     } else if (target.type === "checkbox") {
-        if (isFree && (target.id === "sw-gm-master" || target.id === "sw-ffs-desync" || target.id === "sw-ffs-faster-speed")) {
+        if (isFree && (target.id === "sw-ffs-desync" || target.id === "sw-ffs-faster-speed")) {
             target.checked = false;
             SettingsPersistence.saveToggle(target.id, false);
             showToast(getI18nText("msg_feature_requires_plus_max"));

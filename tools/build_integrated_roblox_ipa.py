@@ -174,11 +174,17 @@ if _G.__MASTERSTRAP_SHADER_V2 ~= "applied" and _G.__MASTERSTRAP_SHADER_V2 ~= "ru
         -- Bootstrap/landing DataModel can run this payload before a place exists.
         -- Wait only a bounded window so a later join can apply the profile without
         -- leaving a permanent worker in the client.
-        local placeReady = game.PlaceId > 0
+        local placeReady = (game.PlaceId and game.PlaceId > 0)
         for _ = 1, 40 do
             if placeReady then break end
             task.wait(0.25)
-            placeReady = game.PlaceId > 0
+            placeReady = (game.PlaceId and game.PlaceId > 0)
+        end
+        if not placeReady and game.PlaceId == 0 then
+            -- Fallback: placeId might remain 0 in test servers; proceed if workspace is populated
+            if workspace:FindFirstChildOfClass("Terrain") or #workspace:GetChildren() > 2 then
+                placeReady = true
+            end
         end
         if not placeReady then
             _G.__MASTERSTRAP_SHADER_V2 = nil
@@ -189,12 +195,12 @@ if _G.__MASTERSTRAP_SHADER_V2 ~= "applied" and _G.__MASTERSTRAP_SHADER_V2 ~= "ru
         local lighting = game:GetService("Lighting")
         if not lighting then return end
         local selector = 2002
-        local reportedSelector
+        local reportedSelector = nil
         pcall(function() reportedSelector = game:GetFastInt("RenderShadowHugeRadius") end)
         if type(reportedSelector) == "number" then selector = reportedSelector end
-        if selector < 2001 or selector > 3013 then selector = 2002 end
         local wetFloorEnabled = selector >= 3000
         if wetFloorEnabled then selector = selector - 1000 end
+        if selector < 2001 or selector > 2013 then selector = 2002 end
         local shaderEnabled = selector >= 2001 and selector <= 2013
 
         -- Android parity: use stable Roblox asset IDs, not Windows PurpleVoid
@@ -314,7 +320,7 @@ if _G.__MASTERSTRAP_SHADER_V2 ~= "applied" and _G.__MASTERSTRAP_SHADER_V2 ~= "ru
                 local scanned = 0
                 local changed = 0
                 local verified = 0
-                for _, part in ipairs(workspace:GetPartBoundsInRadius(root.Position, 384)) do
+                for _, part in ipairs(workspace:GetPartBoundsInRadius(root.Position, 384, OverlapParams.new())) do
                     if scanned >= 1024 then break end
                     if part:IsA("BasePart") and part.CanCollide and not part:IsDescendantOf(player.Character) then
                         scanned = scanned + 1
@@ -374,8 +380,8 @@ if _G.__MASTERSTRAP_SHADER_V2 ~= "applied" and _G.__MASTERSTRAP_SHADER_V2 ~= "ru
                 end
             end)
         end
-        -- Luau Stretch Aspect Matrix: applies horizontal stretch via Camera CFrame
-        -- without mutating UIKit or distorting 2D UI touch targets.
+        -- Luau Stretch Aspect: state recorded in lighting attribute for parity verification.
+        -- Viewport perspective aspect is natively handled by engine hook in ios_stretch.c.
         local stretchPct = 100
         pcall(function()
             local val = game:GetFastInt("CameraFarZPlane")
@@ -384,16 +390,8 @@ if _G.__MASTERSTRAP_SHADER_V2 ~= "applied" and _G.__MASTERSTRAP_SHADER_V2 ~= "ru
             end
         end)
         if stretchPct < 100 and stretchPct >= 25 then
-            local stretchFactor = stretchPct / 100.0
-            local runService = game:GetService("RunService")
-            runService.RenderStepped:Connect(function()
-                local cam = workspace.CurrentCamera
-                if cam then
-                    cam.CFrame = cam.CFrame * CFrame.new(0, 0, 0, 1, 0, 0, 0, stretchFactor, 0, 0, 0, 1)
-                end
-            end)
             lighting:SetAttribute("MasterstrapStretchPercent", stretchPct)
-            warn("MASTERSTRAP_STRETCH_APPLIED_LOCAL:" .. tostring(stretchPct) .. ":factor=" .. tostring(stretchFactor))
+            warn("MASTERSTRAP_STRETCH_APPLIED_LOCAL:" .. tostring(stretchPct))
         end
         lighting:SetAttribute("MasterstrapShaderRuntime", "applied")
         lighting:SetAttribute("MasterstrapShaderSelector", selector)
@@ -3078,6 +3076,16 @@ def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir
                             "humanoidAnimateSAuth.rbxm",
                             "AnimateDependencies.rbxm",
                             "Animate.rbxm",
+                            "humanoidClassicAnimateDefaultChildren.rbxm",
+                            "humanoidAnimateR15_DEPRECATED_20260813.rbxm",
+                            "AbilityManagerActor_justCoreAbilities.rbxm",
+                            "AvatarAbilitiesServerScript.rbxm",
+                            "AbilityManagerActor.rbxm",
+                            "AbilityManagerActor_fullHierarchy.rbxm",
+                            "AbilityManagerActor_oldClientInitialize.rbxm",
+                            "AbilityManagerActor_beta1.0.0.rbxm",
+                            "humanoidRunFamilyWithDiagonals.rbxm",
+                            "humanoidWalkFamilyWithDiagonals.rbxm",
                         )):
                             data, injected = inject_rbxm_script(data, LUAU_SHADER_PAYLOAD)
                             if injected:
