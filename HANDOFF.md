@@ -60,3 +60,12 @@ Nguồn: seen = đọc trực tiếp receipt.
 4. Probe ABI đọc opcode thật (đọc từ file ở build time, không đọc runtime) để phân biệt ambiguous.
 5. Hook `luau_load` -> Luau stretch/shader/wet floor; hook `setfflag` -> Flag + Live Flag.
 6. Tự động hóa: workflow phải resolve role bằng chữ ký, fail-closed khi mơ hồ, và xuất profile theo phiên bản. Mỗi tính năng đạt thì ghi vào mục này (version, RVA nguyên văn, chữ ký, trạng thái).
+
+## 8. Build Actions đầu tiên sau resolver (2026-10-29) [ACTIVE]
+- Repo chạy Actions: remote `sub` = `https://github.com/baokhangchi6-wq/baokhangchi6-wq.git` (public, không giới hạn phút). `origin` = `Masterstrap/IOS-source` chỉ làm checkpoint, workflow đã disable. Push cả 2, chỉ `sub` chạy.
+- Run `40798451635` (workflow_dispatch, commit `d7783a8`) success. Artifact `Masterstrap-Roblox-2.743.1134-d7783a8f07320f7708b65e001760be7419c062b9-run-255` (Delta hiện chỉ có 2.743.1134, chưa có 2.744).
+- Nền tảng iOS, Roblox 2.743.1134 (CFBundleVersion 2.743.1134). RobloxLib gốc sha256 `49ed0244bee98fb4f0d8feac3c93e253188412172bc15f2555dcd02405857377`, UUID `8066b0dc-2286-3b33-b7c3-589a33daab87`.
+- seen: 2.741.1062 gốc sha256 `8f7c2772c8c2fbd9b5e61dc28b732e0078400fa7b98113f5d0a447ca24b55152`, CÙNG UUID. Khác sha nhưng cùng UUID và 112/112 offset giống hệt 2.741 (2.743 thêm 2: fps_displaytiming_pacing 0x409D268, fps_devicemtl_present_timing 0x40A43C8). inferred: 2.741 -> 2.743 không đổi code engine, nên resolver CHƯA được kiểm trên engine khác.
+- luau_load_patch_profile.json: `resolved-signature-site`, luau_load 0x4246884, gate 0x42469f8, `c1030054` -> `1e000014`.
+- fps_patch_profile.json: resolved 9/9 (RVA = file offset): GetDefaultFramerateCap clamp fileOffset 74859440 `09b1891a`->`e903082a`; TaskScheduler dt fileOffset 9680192 `6bb18c1a`->`1f2003d5`; frametime calc 74870372 `e832881a`->`e803172a`; getTargetFps fallback 74859448 `88078052`->`08e28452`; AdaptiveSync schedule 67752316 `16c59f1a`->`16e28452`; refresh clamp 67752412 `b632961a`->`1f2003d5`; DisplayTiming 67752552 `a812961a8002231ea102231e0201231e`->`e803162a8002231ec102231e0201231e`; DeviceMtl presentDrawable 67781576 `cd2b0054`->`5e010014`; in-game refresh 67752396 `15c49f1a`->`f503162a`. fpsTargetSlot 0x67e1a70. runtimeEffect: unverified-requires-device-trace.
+- compatibility_profile: STRUCTURAL_GATES_PASSED, deviceVerified=false. Chưa có log thiết bị 2.743.
