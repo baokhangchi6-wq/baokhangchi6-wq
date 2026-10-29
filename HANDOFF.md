@@ -95,3 +95,10 @@ Trạng thái nguồn IPA lúc ghi: App Store US = `2.744.11082` (phát hành 20
 ### Đề xuất tiếp theo (chưa làm)
 1. Sửa trước (không cần thiết bị): ma trận 10/10 ghi đúng trạng thái; `screenMaximum` lấy `maximumFramesPerSecond` thật; ABI probe đọc opcode từ file lúc build; tách role trùng RVA (luau_load vs validateheader, game_loaded vs ongameloaded, loadstring vs sandboxthread).
 2. Khi có IPA 2.744: cài, vào game, lấy log mới (xóa/lưu `Log/Roblox` cũ trước), mới đánh giá FPS/Stretch/Shader/Live Flag.
+
+## 10. Sửa cron chống build lặp (2026-10-29) [ACTIVE]
+- Nguyên nhân (seen): gate cũ so App Store `2.744.11082` với checkpoint `2.741.1062` => luôn build; Delta chỉ có `2.743.1136` nên checkpoint (chỉ tiến khi ipa_version == store_version) không bao giờ tiến => build lại mỗi tick (runs #231-#242).
+- Sửa: job `gate` chạy `ubuntu-latest` (sparse checkout `tools` + checkpoint, không pip, không macOS). Cron `17 */6 * * *`: `tools/fetch_roblox_ios_ipa.py --probe` lấy version từ URL Delta (`version_from_url`), rồi `tools/check_roblox_ios_version.py --source-version <ver>` so với `last_built_roblox_ios_version.json`. Job `build` (macos-15) chỉ chạy khi `should_build=true`. push/workflow_dispatch bỏ qua gate (dispatch theo `force_rebuild`).
+- Checkpoint chỉ tiến trên run `schedule` sau khi build ra IPA, tiến tới version nguồn Delta (không phải App Store); `write_checkpoint` không bao giờ lùi version. Checkpoint đặt tay = `2.743.1136` (đã build 2.743.1134 thủ công, bản Delta hiện tại).
+- Khi Delta ra `2.744.x`: cron tự build 1 lần rồi checkpoint tiến; không build lặp.
+- Tải thẳng App Store (inferred, chưa kiểm bằng thực nghiệm): IPA App Store mã hóa FairPlay; pipeline cần Mach-O đã giải mã (`image.is_encrypted` chặn). Chỉ iTunes Lookup (version) dùng được trong CI. ipatool/Apple ID tải được IPA nhưng vẫn mã hóa, giải mã cần thiết bị jailbreak. Nên giữ Delta hoặc secret `IOS_IPA_URL`.

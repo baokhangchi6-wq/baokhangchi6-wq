@@ -2,7 +2,7 @@ name: Build Global IPA
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Build Global IPA (Restored to Build 091 stable baseline)
-# Immediate threshold = 0: build as soon as ANY new App Store version appears.
+# Scheduled: build only when Delta hosts an IPA newer than the checkpoint (gate job on ubuntu).
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -17,8 +17,8 @@ on:
       - 'patterns.ios.json'
       - '.github/workflows/build_roblox_ios_arm64.yml'
   schedule:
-    # Check every 3 hours (at :17 past the hour)
-    - cron: '17 */3 * * *'
+    # Cheap ubuntu gate every 6 hours; macOS build only if Delta has a newer IPA
+    - cron: '17 */6 * * *'
 
   workflow_dispatch:
     inputs:
@@ -46,8 +46,40 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
+  # Cheap Linux gate: scheduled runs only continue to the macOS build when Delta hosts a NEWER
+  # decrypted IPA than the last one built. push/dispatch bypass the gate.
+  gate:
     if: github.event_name != 'push' || !contains(github.event.head_commit.message, '[masterstrap-only]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      should_build: ${{ steps.g.outputs.should_build }}
+      source_version: ${{ steps.g.outputs.source_version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          sparse-checkout: |
+            tools
+            last_built_roblox_ios_version.json
+          sparse-checkout-cone-mode: true
+      - name: Probe source IPA and compare with checkpoint
+        id: g
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            python3 tools/fetch_roblox_ios_ipa.py --probe
+            SRC="$(grep -h '^source_version=' "$GITHUB_OUTPUT" | tail -n1 | cut -d= -f2)"
+            if [ -z "$SRC" ]; then echo "should_build=false" >> "$GITHUB_OUTPUT"; exit 0; fi
+            python3 tools/check_roblox_ios_version.py --checkpoint-file last_built_roblox_ios_version.json --source-version "$SRC"
+          else
+            FORCE="${{ inputs.force_rebuild || 'true' }}"
+            echo "should_build=$FORCE" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: gate
+    if: needs.gate.outputs.should_build == 'true'
     runs-on: macos-15
     timeout-minutes: 90
     env:
@@ -79,33 +111,14 @@ jobs:
           python -B tools/check_ios_offscreen.py
           PYTHONPATH=roblox python -B -m unittest discover -s roblox/tests -t roblox
 
-      # ── STEP 1: Version Gate (threshold = 0, IMMEDIATE) ──────────────────
-      - name: Check Roblox iOS App Store version (threshold=0)
-        id: version_gate
-        shell: bash
-        run: |
-          FORCE="${{ inputs.force_rebuild || 'false' }}"
-          if [ "${{ github.event_name }}" = "push" ]; then
-            FORCE="true"
-          fi
-          FORCE_ARG=""
-          if [ "$FORCE" = "true" ]; then
-            FORCE_ARG="--force"
-          fi
-          python tools/check_roblox_ios_version.py \
-            --checkpoint-file last_built_roblox_ios_version.json \
-            $FORCE_ARG
-          # Output: should_build, store_version, last_version
-
       # ── STEP 2: Resolve & Download Decrypted Roblox IPA ─────────────────
       - name: Resolve & Download Decrypted Roblox iOS IPA
-        if: steps.version_gate.outputs.should_build == 'true'
         id: prepare_ipa
         shell: bash
         env:
           INPUT_IPA_URL: ${{ github.event.inputs.ipa_url }}
           SECRET_IPA_URL: ${{ secrets.IOS_IPA_URL }}
-          STORE_VERSION: ${{ steps.version_gate.outputs.store_version }}
+          STORE_VERSION: ${{ needs.gate.outputs.source_version }}
           EXPECTED_IPA_VERSION: ${{ inputs.source_version || '' }}
         run: |
           set -euo pipefail
@@ -130,7 +143,6 @@ jobs:
 
       # ── STEP 3: Auto-dump offsets from IPA ───────────────────────────────
       - name: Auto Dump iOS Offsets & FFlags from IPA
-        if: steps.version_gate.outputs.should_build == 'true'
         shell: bash
         run: |
           echo "=== [1/4] Running iOS Dumper ==="
@@ -151,7 +163,6 @@ jobs:
 
       # ── STEP 4: Build Masterstrap iOS Native Hook & IPA ──────────────────
       - name: Build Masterstrap iOS Native Hook & Integrate IPA
-        if: steps.version_gate.outputs.should_build == 'true'
         id: build_ipa
         shell: bash
         run: |
@@ -184,12 +195,11 @@ jobs:
           else
             echo "has_ipa=false" >> "$GITHUB_OUTPUT"
             echo "ipa_name=" >> "$GITHUB_OUTPUT"
-            echo "ipa_version=${{ steps.version_gate.outputs.store_version }}" >> "$GITHUB_OUTPUT"
+            echo "ipa_version=${{ needs.gate.outputs.source_version }}" >> "$GITHUB_OUTPUT"
           fi
 
       # ── STEP 5: Print Diagnostic Log ─────────────────────────────────────
       - name: Inspect Feature Diagnostic Log
-        if: steps.version_gate.outputs.should_build == 'true'
         shell: bash
         run: |
           echo "=== [3/4] Feature Diagnostic Report ==="
@@ -234,24 +244,18 @@ jobs:
 
       # ── STEP 7: Advance iOS checkpoint ───────────────────────────────────
       - name: Record iOS build candidate checkpoint (not device approval)
-        if: steps.version_gate.outputs.should_build == 'true' && steps.build_ipa.outputs.has_ipa == 'true' && inputs.source_version == '' && steps.build_ipa.outputs.ipa_version == steps.version_gate.outputs.store_version
+        if: github.event_name == 'schedule' && steps.build_ipa.outputs.has_ipa == 'true'
         shell: bash
         env:
-          BUILT_VERSION: ${{ steps.build_ipa.outputs.ipa_version }}
-          STORE_VERSION: ${{ steps.version_gate.outputs.store_version }}
+          SOURCE_VERSION: ${{ needs.gate.outputs.source_version }}
         run: |
           set -euo pipefail
-          TARGET_VER="${BUILT_VERSION:-$STORE_VERSION}"
-          python tools/check_roblox_ios_version.py \
-            --checkpoint-file last_built_roblox_ios_version.json \
-            --expected-version "$TARGET_VER" \
-            --advance-checkpoint \
-            --force
+          python tools/check_roblox_ios_version.py             --checkpoint-file last_built_roblox_ios_version.json             --expected-version "$SOURCE_VERSION"             --advance-checkpoint             --force
 
           git config user.name 'Masterstrap'
           git config user.email 'contact@masterstrap.org'
           git add last_built_roblox_ios_version.json
           if ! git diff --cached --quiet; then
-            git commit -m "chore: update iOS ARM64 checkpoint $BUILT_VERSION"
+            git commit -m "chore: update iOS ARM64 checkpoint $SOURCE_VERSION"
             git push origin HEAD
           fi

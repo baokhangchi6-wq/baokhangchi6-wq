@@ -99,6 +99,13 @@ def scrape_delta_direct_url(timeout: int = 30, max_retries: int = 3, expected_ve
     return ""
 
 
+def version_from_url(url: str) -> str:
+    """'.../Delta%20v2.743.1136.ipa' or '.../Delta-2.743.1134.ipa' -> '2.743.1136' ('' if absent)."""
+    from urllib.parse import unquote
+    m = re.search(r'(\d+(?:\.\d+){2,})\.ipa$', unquote(url))
+    return m[1] if m else ""
+
+
 def download_file(url: str, dest_path: Path, max_retries: int = 3) -> bool:
     """Download file with progress report and retry logic."""
     log(f"Starting download: {url}")
@@ -172,10 +179,19 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Masterstrap iOS – Fetch Roblox iOS Decrypted IPA")
     ap.add_argument("--url", default="", help="Explicit direct HTTPS URL to decrypted IPA")
     ap.add_argument("--output", default="roblox_input/roblox.ipa", help="Destination path")
+    ap.add_argument("--probe", action="store_true", help="Only resolve source URL + version (no download)")
     ap.add_argument("--expected-version", default="", help="Reject an IPA for a different App Store version")
     args = ap.parse_args()
     if args.expected_version and not re.fullmatch(r'\d+(\.\d+)+',args.expected_version):
         ap.error('expected-version must be a numeric dotted version')
+
+    if args.probe:
+        url = scrape_delta_direct_url(max_retries=2)
+        ver = version_from_url(url) if url else ""
+        emit_github_output("available", "true" if ver else "false")
+        emit_github_output("source_version", ver)
+        emit_github_output("source_url", url)
+        return 0
 
     out_path = Path(args.output)
     target_url = (

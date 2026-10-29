@@ -81,6 +81,10 @@ def load_checkpoint(checkpoint_file: Path) -> dict:
 def write_checkpoint(checkpoint_file: Path, version: str) -> None:
     """Persist the newly built version to the checkpoint JSON."""
     import os
+    old = load_checkpoint(checkpoint_file).get("version", "")
+    if old and version_tuple(old) > version_tuple(version):
+        print(f"[CHECKPOINT] Keep {old}; refusing to move back to {version}")
+        return
     data = {
         "version": version,
         "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -115,6 +119,7 @@ def check_version(
     force: bool = False,
     advance: bool = False,
     expected_version: str = "",
+    source_version: str = "",
 ) -> int:
     """
     Core check logic.
@@ -131,8 +136,13 @@ def check_version(
 
     # 1. Fetch live App Store version
     try:
-        store_version = fetch_appstore_version()
-        print(f"[CHECK] App Store (id=431946152) -> {store_version}")
+        if source_version:
+            # Gate on the IPA that is really downloadable, not on the App Store (which runs ahead of the decrypted mirrors).
+            store_version = source_version
+            print(f"[CHECK] Source IPA version -> {store_version}")
+        else:
+            store_version = fetch_appstore_version()
+            print(f"[CHECK] App Store (id=431946152) -> {store_version}")
     except RuntimeError as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
         emit_github_output("should_build", "false")
@@ -204,6 +214,7 @@ def main() -> int:
         default="",
         help="Optional version string to confirm (informational; does not gate the build).",
     )
+    ap.add_argument("--source-version", default="", help="Gate on this downloadable IPA version instead of the App Store version.")
     ap.add_argument(
         "--force",
         action="store_true",
@@ -222,6 +233,7 @@ def main() -> int:
         force=args.force,
         advance=args.advance_checkpoint,
         expected_version=args.expected_version,
+        source_version=args.source_version,
     )
 
 
