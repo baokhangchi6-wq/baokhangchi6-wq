@@ -95,9 +95,8 @@ def scrape_delta_direct_url(timeout: int = 30, max_retries: int = 3, expected_ve
         log(f"Requested version '{expected_version}' not hosted yet. Falling back to latest distributor IPA: {latest_distributor_url}")
         return latest_distributor_url
 
-    fallback_url = "https://deltaexecutor.filesadda.com/Delta-2.741.1062.ipa"
-    log(f"All distributor scrape attempts failed; falling back to direct mirror: {fallback_url}")
-    return fallback_url
+    log("ERROR: all distributor scrape attempts failed; no version-agnostic fallback (refusing a stale hard-coded IPA)")
+    return ""
 
 
 def download_file(url: str, dest_path: Path, max_retries: int = 3) -> bool:

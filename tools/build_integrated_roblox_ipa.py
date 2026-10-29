@@ -1099,8 +1099,6 @@ def fetch_or_load_offsets_map(local_hpp: Path) -> dict:
         content = local_hpp.read_text(encoding="utf-8", errors="ignore")
     else:
         fallback_paths = [
-            ROOT / "output" / "2.735.1135" / "Offsets.hpp",
-            ROOT / "roblox" / "output" / "2.735.1135" / "Offsets.hpp",
             ROOT / "output" / "Offsets.hpp",
             Path(r"C:\Users\Administrator\Desktop\Website\Data\IOS\IOS_Offsets.hpp")
         ]
@@ -2784,7 +2782,7 @@ def generate_native_hook_source(entries: list, miss_offsets: list, total_flags_c
         "                    \"abortLogger=%d reportBytecode=%d validateHeader=%d \"",
         "                    \"scriptTimeout=%d validateCaller=%d validateAndSetupCaps=%d telemetry=%d \"",
         "                    \"gate=EngineBase(%d) blockedReason=%s\\n\",",
-        "                    base != 0 && stl_total==7 ? \"ACTIVE_ALL\" : base != 0 && stl_total>0 ? \"ACTIVE_PARTIAL\" : \"BLOCKED\",",
+        "                    base != 0 && stl_total==7 ? \"LOADED_NOT_HOOKED\" : base != 0 && stl_total>0 ? \"PARTIAL_NOT_HOOKED\" : \"BLOCKED\",",
         "                    stl_total, stl_abort, stl_rbc, stl_vh, stl_st, stl_vc, stl_vc2, stl_tel,",
         "                    (base != 0),",
         "                    base == 0 ? \"ENGINE_BASE_NOT_FOUND\" : stl_total < 7 ? \"SOME_OFFSETS_NOT_DUMPED\" : \"none\");",
@@ -3182,15 +3180,58 @@ def patch_robloxlib_fps_clamps(data: bytearray, report_path: Path = None) -> byt
     if os.environ.get("MASTERSTRAP_BUILD_TYPE", "Release") != "Debug" and applied != len(patches):
         raise RuntimeError("FPS binary gate rejected unresolved/ambiguous patch roles; inspect fps_patch_profile.json")
 
-    # Bypass Roblox luau_load bytecode verification (RVA 0x42469F8: b.ne -> b #0x4246a70)
-    luau_load_verify_vaddr = 0x42469f8
-    verify_foff = image.virtual_to_file(luau_load_verify_vaddr)
-    if verify_foff and data[verify_foff:verify_foff+4] == bytes.fromhex("c1030054"):
-        # Replace conditional branch `b.ne #0x4246a70` with unconditional `b #0x4246a70`
-        data[verify_foff:verify_foff+4] = bytes.fromhex("1e000014")
-        print(f"[PATCH_ROBLOXLIB] Patched Luau VM bytecode verification at 0x{luau_load_verify_vaddr:X} (bypassed signature check)")
-
+    patch_luau_load_verify(data, image, report_path.with_name("luau_load_patch_profile.json") if report_path else None)
     return data
+
+
+LUAU_LOAD_VERSION_STRING = "%s: bytecode version mismatch (expected [%d..%d], got %d)"
+
+
+def patch_luau_load_verify(data: bytearray, image, report_path: Path = None) -> dict:
+    """Version-agnostic luau_load signature-check bypass.
+
+    luau_load is found via its bytecode-version string xref. Inside it, the verify gate is the unique
+    `bl <check>; cmp w0,#1; b.ne <error>` triple; b.ne is rewritten to an unconditional `b` (same target).
+    Fail-closed: zero or several candidates -> nothing patched (Release raises).
+    2.741.1062 clue: luau_load 0x4246884, gate 0x42469f8 (c1030054 -> 1e000014).
+    """
+    from roblox_ios_dumper.scanner import Arm64Scanner
+    from bisect import bisect_right
+    record = {"schema": 1, "uuid": image.uuid, "role": "luau_load verify gate", "status": "unresolved"}
+    scanner = Arm64Scanner(image)
+    xrefs = scanner.find_string_xrefs(LUAU_LOAD_VERSION_STRING)
+    funcs = {scanner.resolve_function_start(x.instruction_address)[0] for x in xrefs} - {None}
+    record["luauLoadCandidates"] = sorted(hex(image.to_rva(f)) for f in funcs)
+    if len(funcs) == 1:
+        start = funcs.pop()
+        idx = bisect_right(image.function_starts, start)
+        end = min(image.function_starts[idx] if idx < len(image.function_starts) else start + 0x800, start + 0x800)
+        sites = []
+        for addr in range(start, end - 8, 4):
+            w0, w1, w2 = scanner._word(addr), scanner._word(addr + 4), scanner._word(addr + 8)
+            if None in (w0, w1, w2):
+                continue
+            # bl ; cmp w0,#1 (subs wzr,w0,#1) ; b.ne
+            if (w0 & 0xfc000000) == 0x94000000 and w1 == 0x7100041f and (w2 & 0xff00001f) == 0x54000001:
+                sites.append(addr + 8)
+        record["gateCandidates"] = [hex(image.to_rva(s)) for s in sites]
+        if len(sites) == 1:
+            foff = image.virtual_to_file(sites[0])
+            imm19 = (struct.unpack_from('<I', data, foff)[0] >> 5) & 0x7ffff
+            if imm19 & (1 << 18):
+                imm19 -= 1 << 19
+            new = struct.pack('<I', 0x14000000 | (imm19 & 0x3ffffff))
+            record.update(status="resolved-signature-site", luauLoadRva=image.to_rva(start), gateRva=image.to_rva(sites[0]),
+                          fileOffset=foff, before=bytes(data[foff:foff + 4]).hex(), after=new.hex())
+            data[foff:foff + 4] = new
+            print(f"[PATCH_ROBLOXLIB] luau_load verify gate bypassed @ 0x{image.to_rva(sites[0]):X} (luau_load 0x{image.to_rva(start):X})")
+    if record["status"] != "resolved-signature-site":
+        print(f"[PATCH_ROBLOXLIB] luau_load verify gate unresolved: {record}")
+    if report_path:
+        report_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
+    if record["status"] != "resolved-signature-site" and os.environ.get("MASTERSTRAP_BUILD_TYPE", "Release") != "Debug":
+        raise RuntimeError("luau_load verify gate unresolved/ambiguous; inspect luau_load_patch_profile.json")
+    return record
 
 
 def build_pipeline(input_ipa: Path, settings_json: Path, hpp_path: Path, out_dir: Path, embed_flags: bool = True, shader_enabled: bool = True, stretch_enabled: bool = True, fps_enabled: bool = True):

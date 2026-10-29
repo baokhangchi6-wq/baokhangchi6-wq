@@ -173,7 +173,7 @@ def watch_latest_run_and_download():
                     for info in z.infolist():
                         if info.filename.endswith(".ipa"):
                             import shutil
-                            out_ipa = download_dir / "Masterstrap-2.741.1062.ipa"
+                            out_ipa = download_dir / Path(info.filename).name
                             if out_ipa.exists():
                                 out_ipa.unlink()
                             with z.open(info) as src, open(out_ipa, "wb") as dst:
@@ -206,7 +206,7 @@ def watch_latest_run_and_download():
 
     download_dir = Path(r"C:\Users\Administrator\Downloads")
     download_dir.mkdir(parents=True, exist_ok=True)
-    out_file = download_dir / "Masterstrap-2.741.1062.ipa"
+    out_file = download_dir / ipa_asset.get("name", "Masterstrap.ipa")
     if out_file.exists():
         print(f"Removing previous build at {out_file} before downloading new build...")
         out_file.unlink()
